@@ -1,11 +1,17 @@
-# Planner — AI To-Do & Planner for iOS
+# Tertiary Planner — AI To-Do & Planner for iOS
 
 A native iOS app for managing **to-dos and appointments by voice or touch**. Speak naturally —
 *"Lunch with Sam tomorrow at 1pm"* — and on-device intelligence turns it into a scheduled
 appointment; *"Buy groceries"* becomes a to-do. Appointments appear in a built-in calendar,
-checked items auto-archive, and everything syncs to your personal iCloud.
+checked items auto-archive, and everything can sync to your personal iCloud.
 
-![Planner — home screen](screenshot.png)
+![App Store](https://img.shields.io/badge/App%20Store-Waiting%20for%20Review-0D96F6?logo=apple&logoColor=white)
+
+> **Tertiary Planner** is submitted to the App Store (in review). Version 1.0 ships with
+> on-device storage; **iCloud sync** (already implemented in the codebase) is enabled in a v1.1
+> update once the CloudKit container provisioning is finalized.
+
+![Tertiary Planner — home screen](screenshot.png)
 
 ## Features
 

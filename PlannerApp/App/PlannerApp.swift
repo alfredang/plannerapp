@@ -29,7 +29,35 @@ struct PlannerApp: App {
         WindowGroup {
             MainTabView()
                 .tint(Theme.accent)
+                .task { seedSampleDataIfRequested() }
         }
         .modelContainer(container)
+    }
+
+    /// DEBUG-only: seed demo data for App Store screenshots when launched with `-seedSampleData`.
+    /// Never compiled into Release/App Store builds.
+    private func seedSampleDataIfRequested() {
+        #if DEBUG
+        guard CommandLine.arguments.contains("-seedSampleData") else { return }
+        let ctx = container.mainContext
+        let existing = (try? ctx.fetch(FetchDescriptor<PlannerItem>())) ?? []
+        guard existing.isEmpty else { return }
+        let cal = Calendar.current
+        let now = Date()
+        func at(_ h: Int, _ m: Int, addDays d: Int = 0) -> Date {
+            let base = cal.date(byAdding: .day, value: d, to: now) ?? now
+            return cal.date(bySettingHour: h, minute: m, second: 0, of: base) ?? base
+        }
+        let items: [PlannerItem] = [
+            PlannerItem(title: "Lunch with Sam", kind: .appointment, date: at(13, 0)),
+            PlannerItem(title: "Team standup", kind: .appointment, date: at(9, 30, addDays: 1)),
+            PlannerItem(title: "Dentist appointment", kind: .appointment, date: at(15, 30, addDays: 2)),
+            PlannerItem(title: "Buy groceries", kind: .task),
+            PlannerItem(title: "Renew gym membership", kind: .task),
+            PlannerItem(title: "Reply to client email", kind: .task)
+        ]
+        items.forEach { ctx.insert($0) }
+        try? ctx.save()
+        #endif
     }
 }
