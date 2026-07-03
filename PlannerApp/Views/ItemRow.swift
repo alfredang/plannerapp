@@ -1,9 +1,11 @@
 import SwiftUI
 
 /// A single planner row with a tappable checkbox. Checking the box auto-archives the item.
+/// Tapping the row content opens the edit form (when `onEdit` is provided).
 struct ItemRow: View {
     @Bindable var item: PlannerItem
     var onToggle: () -> Void
+    var onEdit: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -42,7 +44,10 @@ struct ItemRow: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { onEdit?() }
         .accessibilityElement(children: .combine)
+        .accessibilityHint(onEdit != nil ? "Double tap to edit" : "")
     }
 
     private func dateFormat(for item: PlannerItem) -> Date.FormatStyle {

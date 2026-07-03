@@ -13,6 +13,7 @@ struct CalendarView: View {
     private var appointments: [PlannerItem]
 
     @State private var selectedDate = Date()
+    @State private var editingItem: PlannerItem?
 
     private var cal: Calendar { Calendar.current }
 
@@ -48,6 +49,8 @@ struct CalendarView: View {
                         ForEach(appointmentsOnSelectedDay) { item in
                             ItemRow(item: item) {
                                 withAnimation { item.toggleDone() }
+                            } onEdit: {
+                                editingItem = item
                             }
                         }
                     }
@@ -58,12 +61,15 @@ struct CalendarView: View {
                         ForEach(upcoming) { item in
                             ItemRow(item: item) {
                                 withAnimation { item.toggleDone() }
+                            } onEdit: {
+                                editingItem = item
                             }
                         }
                     }
                 }
             }
             .navigationTitle("Calendar")
+            .sheet(item: $editingItem) { AddItemView(item: $0) }
         }
     }
 

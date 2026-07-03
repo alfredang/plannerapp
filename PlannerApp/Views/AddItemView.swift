@@ -9,6 +9,9 @@ struct AddItemView: View {
     /// Optional prefill (used when confirming a voice-parsed entry).
     var prefill: ParsedEntry?
 
+    /// When set, the form edits this existing item in place instead of creating a new one.
+    var itemToEdit: PlannerItem?
+
     @State private var title = ""
     @State private var notes = ""
     @State private var kind: PlannerKind = .task
@@ -18,6 +21,12 @@ struct AddItemView: View {
     init(prefill: ParsedEntry? = nil) {
         self.prefill = prefill
     }
+
+    init(item: PlannerItem) {
+        self.itemToEdit = item
+    }
+
+    private var isEditing: Bool { itemToEdit != nil }
 
     private var canSave: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -48,7 +57,7 @@ struct AddItemView: View {
                     }
                 }
             }
-            .navigationTitle(kind == .task ? "New To-Do" : "New Appointment")
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -66,7 +75,24 @@ struct AddItemView: View {
         }
     }
 
+    private var navigationTitle: String {
+        if isEditing {
+            return kind == .task ? "Edit To-Do" : "Edit Appointment"
+        }
+        return kind == .task ? "New To-Do" : "New Appointment"
+    }
+
     private func applyPrefill() {
+        if let itemToEdit {
+            title = itemToEdit.title
+            notes = itemToEdit.notes
+            kind = itemToEdit.kind
+            if let d = itemToEdit.date {
+                date = d
+                includeDate = true
+            }
+            return
+        }
         guard let prefill else { return }
         title = prefill.title
         kind = prefill.kind
@@ -77,13 +103,23 @@ struct AddItemView: View {
     }
 
     private func save() {
-        let item = PlannerItem(
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
-            kind: kind,
-            date: includeDate ? date : nil
-        )
-        context.insert(item)
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let itemToEdit {
+            itemToEdit.title = trimmedTitle
+            itemToEdit.notes = trimmedNotes
+            itemToEdit.kind = kind
+            itemToEdit.date = includeDate ? date : nil
+        } else {
+            let item = PlannerItem(
+                title: trimmedTitle,
+                notes: trimmedNotes,
+                kind: kind,
+                date: includeDate ? date : nil
+            )
+            context.insert(item)
+        }
         dismiss()
     }
 }

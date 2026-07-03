@@ -15,6 +15,7 @@ struct TodoListView: View {
 
     @State private var showingAdd = false
     @State private var showingVoice = false
+    @State private var editingItem: PlannerItem?
 
     private var tasks: [PlannerItem] { items.filter { $0.kind == .task } }
     private var appointments: [PlannerItem] { items.filter { $0.kind == .appointment } }
@@ -53,12 +54,15 @@ struct TodoListView: View {
             .safeAreaInset(edge: .bottom) { voiceButton }
             .sheet(isPresented: $showingAdd) { AddItemView() }
             .sheet(isPresented: $showingVoice) { VoiceCaptureView() }
+            .sheet(item: $editingItem) { AddItemView(item: $0) }
         }
     }
 
     private func row(_ item: PlannerItem) -> some View {
         ItemRow(item: item) {
             withAnimation { item.toggleDone() }   // checking auto-archives
+        } onEdit: {
+            editingItem = item
         }
     }
 

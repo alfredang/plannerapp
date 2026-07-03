@@ -21,6 +21,8 @@ checked items auto-archive, and everything can sync to your personal iCloud.
   assistant uses Apple's FoundationModels framework to classify and word entries; everywhere
   else it falls back to the deterministic parser. Both paths are fully local.
 - ✅ **To-dos & appointments in one list** — add either from a single, smart form.
+- ✏️ **Tap to edit** — tap any item in the Planner or Calendar to fix a typo or change its
+  title, notes, type, or date in the same form used to create it.
 - 🎙️ **Voice capture** — tap the mic, speak, and native iOS speech-to-text transcribes it.
 - 🧠 **On-device "AI" parsing** — detects dates/times, classifies task vs. appointment, and
   cleans up the title automatically (no network, fully private).
