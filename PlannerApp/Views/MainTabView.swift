@@ -4,6 +4,9 @@ import SwiftUI
 struct MainTabView: View {
     var body: some View {
         TabView {
+            AssistantChatView()
+                .tabItem { Label("Assistant", systemImage: "sparkles") }
+
             TodoListView()
                 .tabItem { Label("Planner", systemImage: "checklist") }
 

@@ -1,0 +1,133 @@
+- generic [active] [ref=f13e1]:
+  - banner "App Store Connect" [ref=f13e3]:
+    - generic [ref=f13e4]:
+      - heading "App Store Connect" [level=1] [ref=f13e20]:
+        - link "App Store Connect" [ref=f13e21] [cursor=pointer]:
+          - /url: /
+      - navigation "Global" [ref=f13e7]:
+        - list [ref=f13e23]:
+          - listitem [ref=f13e24]:
+            - link "Apps" [ref=f13e25] [cursor=pointer]:
+              - /url: /apps
+          - listitem [ref=f13e26]:
+            - link "Trends" [ref=f13e27] [cursor=pointer]:
+              - /url: /trends
+          - listitem [ref=f13e28]:
+            - link "Reports" [ref=f13e29] [cursor=pointer]:
+              - /url: /itc/payments_and_financial_reports
+          - listitem [ref=f13e30]:
+            - link "Business" [ref=f13e31] [cursor=pointer]:
+              - /url: /business
+          - listitem [ref=f13e32]:
+            - link "Users and Access" [ref=f13e33] [cursor=pointer]:
+              - /url: /access/users
+      - button "Chew Hoe Ang Alfred Ang|1001438682|1 Account name menu" [ref=f13e35] [cursor=pointer]:
+        - generic:
+          - generic: Chew Hoe Ang
+          - generic: Alfred Ang|1001438682|1
+          - img [ref=f13e36]
+  - generic [ref=f13e41]:
+    - button "Apps menu, Tertiary Planner, selected" [ref=f13e46] [cursor=pointer]:
+      - generic [ref=f13e47]:
+        - generic "Tertiary Planner" [ref=f13e48]:
+          - img "Tertiary Planner" [ref=f13e49]
+        - generic [ref=f13e50]: Tertiary Planner
+      - img [ref=f13e52]
+    - navigation "Apps" [ref=f13e55]:
+      - list [ref=f13e56]:
+        - listitem [ref=f13e57]:
+          - link "Distribution" [ref=f13e58] [cursor=pointer]:
+            - /url: /apps/6785397240/distribution
+        - listitem [ref=f13e59]:
+          - link "Analytics" [ref=f13e60] [cursor=pointer]:
+            - /url: /apps/6785397240/analytics
+        - listitem [ref=f13e61]:
+          - link "TestFlight" [ref=f13e62] [cursor=pointer]:
+            - /url: /teams/f026f849-65f1-4ca4-9d49-1b6764131f40/apps/6785397240/testflight
+        - listitem [ref=f13e63]:
+          - link "Xcode Cloud" [ref=f13e64] [cursor=pointer]:
+            - /url: /teams/f026f849-65f1-4ca4-9d49-1b6764131f40/apps/6785397240/ci
+  - main [ref=f13e71]:
+    - generic [ref=f13e79]:
+      - generic [ref=f13e80]:
+        - link "App Review" [ref=f13e83] [cursor=pointer]:
+          - /url: /apps/6785397240/distribution/reviewsubmissions
+          - generic [ref=f13e84]:
+            - img [ref=f13e85]
+            - text: App Review
+        - generic [ref=f13e87]:
+          - heading "iOS Submission" [level=2] [ref=f13e88]
+          - button "Resubmit to App Review" [disabled] [ref=f13e90]
+        - paragraph [ref=f13e91]:
+          - generic [ref=f13e92]:
+            - img [ref=f13e93]
+            - text: Unresolved Issues
+      - generic [ref=f13e95]:
+        - img [ref=f13e96]
+        - paragraph [ref=f13e98]: Your app version was rejected and no other items submitted can be accepted or approved. You can make edits to your app version below.
+      - generic [ref=f13e99]:
+        - heading "Items Submitted (1)" [level=3] [ref=f13e100]
+        - generic [ref=f13e101]: You can review and make edits to your items below, or communicate with Apple. Accepted items won't be available for release until all items with issues are resubmitted and accepted. You can also remove those items and resubmit them later.
+        - table [ref=f13e105]:
+          - rowgroup [ref=f13e106]:
+            - row "Item Type Review Status Action" [ref=f13e107]:
+              - columnheader "Item" [ref=f13e108]:
+                - generic [ref=f13e110]: Item
+              - columnheader "Type" [ref=f13e111]:
+                - generic [ref=f13e113]: Type
+              - columnheader "Review Status" [ref=f13e114]:
+                - generic [ref=f13e116]: Review Status
+              - columnheader "Action" [ref=f13e117]:
+                - generic [ref=f13e119]: Action
+              - columnheader [ref=f13e120]
+          - rowgroup [ref=f13e121]:
+            - row "App Icon iOS App 1.0 App Version Rejected Edit Delete" [ref=f13e122]:
+              - cell "App Icon iOS App 1.0" [ref=f13e123]:
+                - generic [ref=f13e126]:
+                  - generic "App Icon" [ref=f13e128]:
+                    - img "App Icon" [ref=f13e129]
+                  - generic [ref=f13e131]:
+                    - paragraph [ref=f13e132]: iOS App 1.0
+                    - paragraph
+              - cell "App Version" [ref=f13e133]:
+                - generic [ref=f13e134]: App Version
+              - cell "Rejected" [ref=f13e135]:
+                - generic [ref=f13e137]:
+                  - img [ref=f13e138]
+                  - text: Rejected
+              - cell "Edit" [ref=f13e140]:
+                - link "Edit" [ref=f13e142] [cursor=pointer]:
+                  - /url: /apps/6785397240/distribution/ios/version/inflight
+              - cell "Delete" [ref=f13e143]:
+                - button "Delete":
+                  - img [ref=f13e144] [cursor=pointer]
+      - generic [ref=f13e147]:
+        - generic [ref=f13e148]:
+          - generic [ref=f13e149]: Date Submitted
+          - generic [ref=f13e150]: Jun 29, 2026 at 3:25 PM
+        - generic [ref=f13e151]:
+          - generic [ref=f13e152]: Submission ID
+          - generic [ref=f13e153]: 9716f289-a76e-41c0-a352-cc16ec1c693f
+        - generic [ref=f13e154]:
+          - generic [ref=f13e155]: Submitted By
+          - generic [ref=f13e156]: Chew Hoe Ang
+      - button "Cancel Submission" [ref=f13e159] [cursor=pointer]
+  - contentinfo [ref=f13e10]:
+    - generic [ref=f13e11]:
+      - list [ref=f13e65]:
+        - listitem [ref=f13e66]:
+          - link "App Store Connect" [ref=f13e67] [cursor=pointer]:
+            - /url: /apps
+      - list [ref=f13e12]:
+        - listitem [ref=f13e13]: Copyright © 2026 Apple Inc. All rights reserved. |
+        - listitem [ref=f13e14]:
+          - link "Terms of Service" [ref=f13e15] [cursor=pointer]:
+            - /url: /WebObjects/iTunesConnect.woa/wa/termsOfService
+          - text: "|"
+        - listitem [ref=f13e16]:
+          - link "Privacy Policy" [ref=f13e17] [cursor=pointer]:
+            - /url: https://www.apple.com/legal/privacy
+          - text: "|"
+        - listitem [ref=f13e18]:
+          - link "Contact Us" [ref=f13e19] [cursor=pointer]:
+            - /url: /contact-us

@@ -1,8 +1,17 @@
 import SwiftUI
 import SwiftData
+#if DEBUG
+import CoreData
+#endif
 
 @main
 struct PlannerApp: App {
+
+    init() {
+        #if DEBUG
+        Self.initializeCloudKitSchemaIfRequested()
+        #endif
+    }
 
     /// SwiftData container backed by the user's **private iCloud** database. With the iCloud
     /// entitlement present, SwiftData mirrors every change to CloudKit automatically, so the
@@ -33,6 +42,36 @@ struct PlannerApp: App {
         }
         .modelContainer(container)
     }
+
+    #if DEBUG
+    /// DEBUG-only: create/update the CloudKit **development** schema for the SwiftData models.
+    /// SwiftData has no schema-init API, so this mirrors the models through
+    /// `NSPersistentCloudKitContainer.initializeCloudKitSchema`. Run once on a simulator with
+    /// `-initCloudKitSchema`, then deploy Development -> Production in the CloudKit console —
+    /// App Store builds sync against Production and fail silently without it.
+    private static func initializeCloudKitSchemaIfRequested() {
+        guard CommandLine.arguments.contains("-initCloudKitSchema") else { return }
+        guard let mom = NSManagedObjectModel.makeManagedObjectModel(for: [PlannerItem.self]) else {
+            print("CK-SCHEMA: failed to build managed object model")
+            return
+        }
+        let desc = NSPersistentStoreDescription(
+            url: URL.temporaryDirectory.appending(path: "ck-schema-init.sqlite"))
+        desc.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(
+            containerIdentifier: "iCloud.com.tertiaryinfotech.plannerapp")
+        let container = NSPersistentCloudKitContainer(name: "PlannerApp", managedObjectModel: mom)
+        container.persistentStoreDescriptions = [desc]
+        container.loadPersistentStores { _, error in
+            if let error { print("CK-SCHEMA: store load error: \(error)") }
+        }
+        do {
+            try container.initializeCloudKitSchema(options: [])
+            print("CK-SCHEMA: SUCCESS — development schema initialized")
+        } catch {
+            print("CK-SCHEMA: FAILED — \(error)")
+        }
+    }
+    #endif
 
     /// DEBUG-only: seed demo data for App Store screenshots when launched with `-seedSampleData`.
     /// Never compiled into Release/App Store builds.

@@ -15,6 +15,11 @@ checked items auto-archive, and everything can sync to your personal iCloud.
 
 ## Features
 
+- 💬 **Assistant chat** — the app's front door: tell the assistant what you need, by text or
+  voice, and it drafts a nicely worded to-do or appointment and saves it instantly (with undo).
+- 🍎 **Apple Intelligence on-device** — on iOS 26+ devices with the system model available, the
+  assistant uses Apple's FoundationModels framework to classify and word entries; everywhere
+  else it falls back to the deterministic parser. Both paths are fully local.
 - ✅ **To-dos & appointments in one list** — add either from a single, smart form.
 - 🎙️ **Voice capture** — tap the mic, speak, and native iOS speech-to-text transcribes it.
 - 🧠 **On-device "AI" parsing** — detects dates/times, classifies task vs. appointment, and
@@ -37,10 +42,13 @@ checked items auto-archive, and everything can sync to your personal iCloud.
 
 - **UI:** SwiftUI, Human Interface Guidelines, SF Symbols, Dynamic Type, dark-mode theming.
 - **Persistence & sync:** SwiftData with automatic CloudKit mirroring (private database).
-- **Voice:** `SFSpeechRecognizer` + `AVAudioEngine` (prefers on-device recognition).
-- **Intelligence:** `NSDataDetector` + `NaturalLanguage` for date extraction and classification
-  (the `SmartParser.parse(_:)` entry point is provider-agnostic and can be swapped for an LLM).
-- **Project:** generated from `project.yml` via [XcodeGen](https://github.com/yonik0/XcodeGen).
+- **Voice:** `SFSpeechRecognizer` + `AVAudioEngine` (prefers on-device recognition); the audio
+  engine is created lazily so no microphone prompt appears until dictation is actually used.
+- **Intelligence:** `IntentAssistant` uses Apple's on-device **FoundationModels** (Apple
+  Intelligence, iOS 26+) for intent classification and title wording, falling back to
+  `SmartParser` (`NSDataDetector` + `NaturalLanguage`). Dates always come from the
+  deterministic parser so clock math never hallucinates.
+- **Project:** generated from `project.yml` via [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ## Architecture
 
@@ -48,11 +56,13 @@ checked items auto-archive, and everything can sync to your personal iCloud.
 PlannerApp/
 ├── App/        PlannerApp.swift        — @main, SwiftData + CloudKit container
 ├── Models/     PlannerItem.swift       — single CloudKit-safe model (task | appointment)
-├── Services/   SpeechRecognizer.swift  — native speech-to-text
-│               SmartParser.swift       — date/time + intent parsing ("AI")
+├── Services/   IntentAssistant.swift   — on-device Apple Intelligence drafting (iOS 26+)
+│               SmartParser.swift       — deterministic date/time + intent parsing
+│               SpeechRecognizer.swift  — native speech-to-text
 ├── Theme/      Theme.swift             — central color tokens (auto dark mode)
-└── Views/      MainTabView, TodoListView, CalendarView, ArchiveView,
-                AddItemView, VoiceCaptureView, ItemRow, FeedbackView, AboutView
+└── Views/      MainTabView, AssistantChatView, TodoListView, CalendarView,
+                ArchiveView, AddItemView, VoiceCaptureView, ItemRow,
+                FeedbackView, AboutView
 ```
 
 ## Getting Started

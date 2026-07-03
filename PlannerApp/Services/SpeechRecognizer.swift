@@ -20,9 +20,19 @@ final class SpeechRecognizer {
     var errorMessage: String?
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-    private let audioEngine = AVAudioEngine()
+    // Built on demand (see `engine`) so nothing audio-related — and no microphone permission
+    // prompt — is touched until the user actually starts dictation. The assistant screen, which
+    // is the app's first tab, must open silently. @ObservationIgnored keeps it out of @Observable.
+    @ObservationIgnored private var audioEngine: AVAudioEngine?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
+
+    private var engine: AVAudioEngine {
+        if let audioEngine { return audioEngine }
+        let e = AVAudioEngine()
+        audioEngine = e
+        return e
+    }
 
     var isListening: Bool { state == .listening }
 
@@ -64,14 +74,14 @@ final class SpeechRecognizer {
             }
             self.request = request
 
-            let input = audioEngine.inputNode
+            let input = engine.inputNode
             let format = input.outputFormat(forBus: 0)
             input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
                 self?.request?.append(buffer)
             }
 
-            audioEngine.prepare()
-            try audioEngine.start()
+            engine.prepare()
+            try engine.start()
             state = .listening
 
             task = recognizer.recognitionTask(with: request) { [weak self] result, error in
@@ -90,7 +100,7 @@ final class SpeechRecognizer {
     }
 
     func stop() {
-        if audioEngine.isRunning {
+        if let audioEngine, audioEngine.isRunning {
             audioEngine.stop()
             audioEngine.inputNode.removeTap(onBus: 0)
         }
