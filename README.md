@@ -5,9 +5,12 @@ A native iOS app for managing **to-dos and appointments by voice or touch**. Spe
 appointment; *"Buy groceries"* becomes a to-do. Appointments appear in a built-in calendar,
 checked items auto-archive, and everything can sync to your personal iCloud.
 
-![App Store](https://img.shields.io/badge/App%20Store-Waiting%20for%20Review-0D96F6?logo=apple&logoColor=white)
+<a href="https://apps.apple.com/app/tertiary-planner/id6785397240">
+  <img src="https://toolbox.marketingtools.apple.com/api/badges/download-on-the-app-store/black/en-us?releaseDate=1751500800" alt="Download on the App Store" height="54">
+</a>
 
-> **Tertiary Planner** is submitted to the App Store (in review). Version 1.0 ships with
+> **Tertiary Planner** is available on the
+> [App Store](https://apps.apple.com/app/tertiary-planner/id6785397240). Version 1.0 ships with
 > on-device storage; **iCloud sync** (already implemented in the codebase) is enabled in a v1.1
 > update once the CloudKit container provisioning is finalized.
 
