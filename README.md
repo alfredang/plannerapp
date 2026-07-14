@@ -1,18 +1,24 @@
-# Tertiary Planner — AI To-Do & Planner for iOS
+# Tertiary Planner — AI To-Do & Planner for iOS & macOS
 
-A native iOS app for managing **to-dos and appointments by voice or touch**. Speak naturally —
-*"Lunch with Sam tomorrow at 1pm"* — and on-device intelligence turns it into a scheduled
-appointment; *"Buy groceries"* becomes a to-do. Appointments appear in a built-in calendar,
-checked items auto-archive, and everything can sync to your personal iCloud.
+A native iOS + macOS app for managing **to-dos and appointments by voice or touch**. Speak
+naturally — *"Lunch with Sam tomorrow at 1pm"* — and on-device intelligence turns it into a
+scheduled appointment; *"Buy groceries"* becomes a to-do. Organize items into your own lists,
+see appointments in a built-in calendar, and everything syncs across your iPhone and Mac
+through your personal iCloud.
 
 <a href="https://apps.apple.com/app/tertiary-planner/id6785397240">
   <img src="https://toolbox.marketingtools.apple.com/api/badges/download-on-the-app-store/black/en-us?releaseDate=1751500800" alt="Download on the App Store" height="54">
 </a>
+&nbsp;
+<a href="https://github.com/alfredang/plannerapp/releases/latest/download/Planner.dmg">
+  <img src="https://img.shields.io/badge/%EF%A3%BF%20Download%20for%20Mac-DMG-2C2C2C?style=for-the-badge" alt="Download for Mac (DMG)" height="54">
+</a>
 
-> **Tertiary Planner** is available on the
-> [App Store](https://apps.apple.com/app/tertiary-planner/id6785397240). Version 1.0 ships with
-> on-device storage; **iCloud sync** (already implemented in the codebase) is enabled in a v1.1
-> update once the CloudKit container provisioning is finalized.
+> **iPhone / iPad:** get it on the
+> [App Store](https://apps.apple.com/app/tertiary-planner/id6785397240).
+> **Mac:** [download the DMG](https://github.com/alfredang/plannerapp/releases/latest/download/Planner.dmg),
+> open it, and drag **Planner** onto **Applications** — no App Store needed. Both apps sync
+> through the same private iCloud database.
 
 ![Tertiary Planner — home screen](screenshot.png)
 
@@ -33,8 +39,14 @@ checked items auto-archive, and everything can sync to your personal iCloud.
   upcoming lists.
 - 📥 **Auto-archive** — checking off an item moves it to the Archive automatically; uncheck to
   restore.
+- 🗂 **Your own lists** — create, rename, and delete lists ("Work", "Groceries", …), file items
+  into them, and filter the planner by list. Lists sync like everything else.
 - ☁️ **iCloud sync** — SwiftData + CloudKit mirrors your data to your private iCloud database
-  across all your devices.
+  across all your devices, iPhone and Mac alike.
+- 🖥 **macOS desktop edition** — a two-column Mac app: smart categories and your lists in the
+  sidebar, and the item list with a chatbot-style capture bar (type or dictate) on the right.
+  Distributed as a [DMG](https://github.com/alfredang/plannerapp/releases/latest/download/Planner.dmg);
+  build it yourself with `./scripts/build-macos-dmg.sh`.
 - 💬 **Feedback & About** — house-style tabs (WhatsApp feedback, developer info, version).
 
 ## Tech Stack
@@ -58,16 +70,26 @@ checked items auto-archive, and everything can sync to your personal iCloud.
 ## Architecture
 
 ```
-PlannerApp/
+PlannerApp/                             — iOS app + code shared with the Mac target
 ├── App/        PlannerApp.swift        — @main, SwiftData + CloudKit container
-├── Models/     PlannerItem.swift       — single CloudKit-safe model (task | appointment)
-├── Services/   IntentAssistant.swift   — on-device Apple Intelligence drafting (iOS 26+)
+├── Models/     PlannerItem.swift       — CloudKit-safe model (task | appointment)
+│               PlannerList.swift       — user-created list (items kept on delete)
+│               ChatMessage.swift       — assistant conversation turn (shared)
+├── Services/   IntentAssistant.swift   — on-device Apple Intelligence drafting (iOS/macOS 26+)
 │               SmartParser.swift       — deterministic date/time + intent parsing
-│               SpeechRecognizer.swift  — native speech-to-text
+│               SpeechRecognizer.swift  — native speech-to-text (cross-platform)
 ├── Theme/      Theme.swift             — central color tokens (auto dark mode)
 └── Views/      MainTabView, AssistantChatView, TodoListView, CalendarView,
-                ArchiveView, AddItemView, VoiceCaptureView, ItemRow,
-                FeedbackView, AboutView
+                ArchiveView, AddItemView, ListsManagerView, VoiceCaptureView,
+                ItemRow, FeedbackView, AboutView
+
+PlannerAppMac/                          — macOS desktop edition (DMG)
+├── App/        PlannerMacApp.swift     — @main, same schema + iCloud container
+└── Views/      MacRootView.swift       — sidebar: smart categories + user lists
+                MacPlannerPane.swift    — item list + chatbot capture bar (text/voice)
+
+scripts/build-macos-dmg.sh              — Release build → DMG (+ notarization when a
+                                          Developer ID certificate is present)
 ```
 
 ## Getting Started

@@ -35,7 +35,7 @@ struct ArchiveView: View {
             .navigationTitle("Archive")
             .toolbar {
                 if !archived.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .primaryAction) {
                         Button(role: .destructive) { clearAll() } label: {
                             Text("Clear")
                         }

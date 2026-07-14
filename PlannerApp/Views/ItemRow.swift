@@ -30,6 +30,10 @@ struct ItemRow: View {
                         Text("•")
                         Text(date, format: dateFormat(for: item))
                     }
+                    if let list = item.list {
+                        Text("•")
+                        Label(list.name, systemImage: "folder")
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

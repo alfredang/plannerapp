@@ -18,7 +18,7 @@ struct PlannerApp: App {
     /// data syncs across all of the user's signed-in devices. If iCloud is unavailable the app
     /// falls back to a purely local store so it still works offline.
     let container: ModelContainer = {
-        let schema = Schema([PlannerItem.self])
+        let schema = Schema([PlannerItem.self, PlannerList.self])
         do {
             let config = ModelConfiguration(
                 schema: schema,
@@ -51,8 +51,8 @@ struct PlannerApp: App {
     /// App Store builds sync against Production and fail silently without it.
     private static func initializeCloudKitSchemaIfRequested() {
         guard CommandLine.arguments.contains("-initCloudKitSchema") else { return }
-        guard let mom = NSManagedObjectModel.makeManagedObjectModel(for: [PlannerItem.self]) else {
-            print("CK-SCHEMA: failed to build managed object model")
+        guard let mom = NSManagedObjectModel.makeManagedObjectModel(for: [PlannerItem.self, PlannerList.self]) else {
+            report("CK-SCHEMA: failed to build managed object model")
             return
         }
         let desc = NSPersistentStoreDescription(
@@ -62,14 +62,22 @@ struct PlannerApp: App {
         let container = NSPersistentCloudKitContainer(name: "PlannerApp", managedObjectModel: mom)
         container.persistentStoreDescriptions = [desc]
         container.loadPersistentStores { _, error in
-            if let error { print("CK-SCHEMA: store load error: \(error)") }
+            if let error { report("CK-SCHEMA: store load error: \(error)") }
         }
         do {
             try container.initializeCloudKitSchema(options: [])
-            print("CK-SCHEMA: SUCCESS — development schema initialized")
+            report("CK-SCHEMA: SUCCESS — development schema initialized")
         } catch {
-            print("CK-SCHEMA: FAILED — \(error)")
+            report("CK-SCHEMA: FAILED — \(error)")
         }
+    }
+
+    /// DEBUG-only: print AND persist the schema-init outcome to Documents so headless test
+    /// runs (simctl) can read the result from the app container.
+    private static func report(_ message: String) {
+        print(message)
+        let url = URL.documentsDirectory.appending(path: "ck-schema-result.txt")
+        try? message.write(to: url, atomically: true, encoding: .utf8)
     }
     #endif
 

@@ -13,17 +13,29 @@ struct TodoListView: View {
     )
     private var items: [PlannerItem]
 
+    @Query(sort: \PlannerList.createdAt) private var lists: [PlannerList]
+
     @State private var showingAdd = false
     @State private var showingVoice = false
+    @State private var showingLists = false
     @State private var editingItem: PlannerItem?
+    @State private var selectedListID: UUID?
 
-    private var tasks: [PlannerItem] { items.filter { $0.kind == .task } }
-    private var appointments: [PlannerItem] { items.filter { $0.kind == .appointment } }
+    private var selectedList: PlannerList? { lists.first { $0.id == selectedListID } }
+
+    /// Items in the currently selected list (or every active item when no list is selected).
+    private var visibleItems: [PlannerItem] {
+        guard let selectedListID else { return items }
+        return items.filter { $0.list?.id == selectedListID }
+    }
+
+    private var tasks: [PlannerItem] { visibleItems.filter { $0.kind == .task } }
+    private var appointments: [PlannerItem] { visibleItems.filter { $0.kind == .appointment } }
 
     var body: some View {
         NavigationStack {
             Group {
-                if items.isEmpty {
+                if visibleItems.isEmpty {
                     emptyState
                 } else {
                     List {
@@ -42,8 +54,9 @@ struct TodoListView: View {
                     }
                 }
             }
-            .navigationTitle("Planner")
+            .navigationTitle(selectedList?.name ?? "Planner")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) { listMenu }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingAdd = true } label: {
                         Image(systemName: "plus")
@@ -52,10 +65,38 @@ struct TodoListView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) { voiceButton }
-            .sheet(isPresented: $showingAdd) { AddItemView() }
+            .sheet(isPresented: $showingAdd) { AddItemView(defaultList: selectedList) }
             .sheet(isPresented: $showingVoice) { VoiceCaptureView() }
+            .sheet(isPresented: $showingLists) { ListsManagerView() }
             .sheet(item: $editingItem) { AddItemView(item: $0) }
+            .onChange(of: lists.count) {
+                // If the selected list was deleted, fall back to all items.
+                if selectedListID != nil && selectedList == nil { selectedListID = nil }
+            }
         }
+    }
+
+    /// Switch between "all items" and a specific user list, and manage the lists themselves.
+    private var listMenu: some View {
+        Menu {
+            Picker("List", selection: $selectedListID) {
+                Label("All Items", systemImage: "tray.full").tag(UUID?.none)
+                ForEach(lists) { list in
+                    Label(list.name, systemImage: "folder").tag(Optional(list.id))
+                }
+            }
+            Divider()
+            Button {
+                showingLists = true
+            } label: {
+                Label("Manage Lists…", systemImage: "folder.badge.gearshape")
+            }
+        } label: {
+            Image(systemName: selectedListID == nil
+                  ? "line.3.horizontal.decrease.circle"
+                  : "line.3.horizontal.decrease.circle.fill")
+        }
+        .accessibilityLabel("Choose list")
     }
 
     private func row(_ item: PlannerItem) -> some View {
@@ -84,7 +125,8 @@ struct TodoListView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("Nothing planned yet", systemImage: "sparkles")
+            Label(selectedList == nil ? "Nothing planned yet" : "“\(selectedList!.name)” is empty",
+                  systemImage: "sparkles")
         } description: {
             Text("Tap + to add a to-do or appointment, or use the mic to add one by voice.")
         }

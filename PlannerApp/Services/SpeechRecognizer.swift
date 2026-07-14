@@ -3,7 +3,8 @@ import AVFoundation
 import Speech
 
 /// Wraps Apple's on-device `SFSpeechRecognizer` + `AVAudioEngine` to provide live
-/// speech-to-text. All transcription happens through the native iOS speech stack.
+/// speech-to-text. All transcription happens through the native Apple speech stack.
+/// Cross-platform: the `AVAudioSession` calls are iOS-only (macOS has no audio session).
 @Observable
 @MainActor
 final class SpeechRecognizer {
@@ -109,12 +110,16 @@ final class SpeechRecognizer {
         request = nil
         task = nil
         if state == .listening { state = .idle }
+        #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 
     private func configureAudioSession() throws {
+        #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.record, mode: .measurement, options: .duckOthers)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
+        #endif
     }
 }

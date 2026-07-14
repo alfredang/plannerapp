@@ -12,14 +12,21 @@ struct AddItemView: View {
     /// When set, the form edits this existing item in place instead of creating a new one.
     var itemToEdit: PlannerItem?
 
+    /// Pre-selected list for new items (e.g. the list currently open in the UI).
+    var defaultList: PlannerList?
+
+    @Query(sort: \PlannerList.createdAt) private var lists: [PlannerList]
+
     @State private var title = ""
     @State private var notes = ""
     @State private var kind: PlannerKind = .task
     @State private var includeDate = false
     @State private var date = Date()
+    @State private var selectedListID: UUID?
 
-    init(prefill: ParsedEntry? = nil) {
+    init(prefill: ParsedEntry? = nil, defaultList: PlannerList? = nil) {
         self.prefill = prefill
+        self.defaultList = defaultList
     }
 
     init(item: PlannerItem) {
@@ -56,9 +63,22 @@ struct AddItemView: View {
                             .datePickerStyle(.compact)
                     }
                 }
+
+                if !lists.isEmpty {
+                    Section {
+                        Picker("List", selection: $selectedListID) {
+                            Text("None").tag(UUID?.none)
+                            ForEach(lists) { list in
+                                Label(list.name, systemImage: "folder").tag(Optional(list.id))
+                            }
+                        }
+                    }
+                }
             }
             .navigationTitle(navigationTitle)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -73,6 +93,10 @@ struct AddItemView: View {
                 if newKind == .appointment && !includeDate { includeDate = true }
             }
         }
+        #if os(macOS)
+        .formStyle(.grouped)
+        .frame(minWidth: 420, minHeight: 320)
+        #endif
     }
 
     private var navigationTitle: String {
@@ -87,12 +111,14 @@ struct AddItemView: View {
             title = itemToEdit.title
             notes = itemToEdit.notes
             kind = itemToEdit.kind
+            selectedListID = itemToEdit.list?.id
             if let d = itemToEdit.date {
                 date = d
                 includeDate = true
             }
             return
         }
+        selectedListID = defaultList?.id
         guard let prefill else { return }
         title = prefill.title
         kind = prefill.kind
@@ -105,12 +131,14 @@ struct AddItemView: View {
     private func save() {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let list = lists.first { $0.id == selectedListID }
 
         if let itemToEdit {
             itemToEdit.title = trimmedTitle
             itemToEdit.notes = trimmedNotes
             itemToEdit.kind = kind
             itemToEdit.date = includeDate ? date : nil
+            itemToEdit.list = list
         } else {
             let item = PlannerItem(
                 title: trimmedTitle,
@@ -118,6 +146,7 @@ struct AddItemView: View {
                 kind: kind,
                 date: includeDate ? date : nil
             )
+            item.list = list
             context.insert(item)
         }
         dismiss()

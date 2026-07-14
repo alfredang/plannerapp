@@ -62,6 +62,8 @@ struct AssistantChatView: View {
                 }
                 .padding(.vertical, 16)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { inputFocused = false }
             .onChange(of: messages.count) {
                 withAnimation {
                     proxy.scrollTo(messages.last?.id, anchor: .bottom)
@@ -127,6 +129,7 @@ struct AssistantChatView: View {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isThinking else { return }
         speech?.stop()
+        inputFocused = false
         input = ""
         messages.append(ChatMessage(role: .user, text: text))
         isThinking = true
@@ -152,37 +155,6 @@ struct AssistantChatView: View {
         context.delete(item)
         messages.append(ChatMessage(role: .assistant, text: "Removed “\(item.title)”."))
     }
-}
-
-// MARK: - Message model
-
-struct ChatMessage: Identifiable {
-    enum Role { case user, assistant }
-
-    struct ItemSummary {
-        let id: UUID
-        let title: String
-        let kind: PlannerKind
-        let date: Date?
-
-        init(_ item: PlannerItem) {
-            id = item.id
-            title = item.title
-            kind = item.kind
-            date = item.date
-        }
-    }
-
-    let id = UUID()
-    let role: Role
-    let text: String
-    var item: ItemSummary?
-
-    static let greeting = ChatMessage(
-        role: .assistant,
-        text: "Hi! Tell me what you need to do — type it or tap the mic. " +
-              "Try “Dentist appointment Friday 3pm” or “Buy groceries”."
-    )
 }
 
 // MARK: - Bubble

@@ -25,7 +25,7 @@ enum IntentAssistant {
         let fallback = SmartParser.parse(text)
 
         #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             if case .available = SystemLanguageModel.default.availability,
                let polished = await polish(text: text, fallback: fallback) {
                 return polished
@@ -39,7 +39,7 @@ enum IntentAssistant {
     }
 
     #if canImport(FoundationModels)
-    @available(iOS 26.0, *)
+    @available(iOS 26.0, macOS 26.0, *)
     @Generable
     fileprivate struct ItemDraft {
         @Guide(description: "\"task\" for a simple to-do, \"appointment\" for anything scheduled at a time or place")
@@ -54,7 +54,7 @@ enum IntentAssistant {
 
     /// Ask the on-device model to classify + word the entry. Dates still come from the
     /// deterministic `SmartParser` (NSDataDetector) because clock math must never hallucinate.
-    @available(iOS 26.0, *)
+    @available(iOS 26.0, macOS 26.0, *)
     private static func polish(text: String, fallback: ParsedEntry) async -> AssistantDraft? {
         let session = LanguageModelSession(instructions: """
             You turn short natural-language requests into planner entries. \

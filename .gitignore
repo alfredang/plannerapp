@@ -33,3 +33,6 @@ PlannerApp.xcodeproj/
 
 # macOS
 .DS_Store
+
+# DMG output
+dist/

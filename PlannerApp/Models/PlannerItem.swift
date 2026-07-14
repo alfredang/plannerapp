@@ -32,6 +32,10 @@ final class PlannerItem {
     var isDone: Bool = false
     var isArchived: Bool = false
 
+    /// The user list this item belongs to, if any. Optional (CloudKit requirement); the
+    /// inverse relationship is declared on `PlannerList.items`.
+    var list: PlannerList?
+
     var createdAt: Date = Date()
     var completedAt: Date?
 

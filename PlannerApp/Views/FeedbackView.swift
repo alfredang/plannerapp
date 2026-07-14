@@ -4,6 +4,8 @@ import SwiftUI
 struct FeedbackView: View {
     private let whatsAppNumber = "6588666375"   // +65 8866 6375, country code, no "+"/spaces
 
+    @Environment(\.openURL) private var openURL
+
     @State private var title = ""
     @State private var message = ""
 
@@ -73,7 +75,7 @@ struct FeedbackView: View {
         comps.host = "wa.me"
         comps.path = "/\(whatsAppNumber)"
         comps.queryItems = [URLQueryItem(name: "text", value: text)]
-        if let url = comps.url { UIApplication.shared.open(url) }
+        if let url = comps.url { openURL(url) }
     }
 }
 
