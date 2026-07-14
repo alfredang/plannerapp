@@ -1,8 +1,10 @@
 import SwiftUI
 import SwiftData
 
-/// The main planner screen: every active (non-archived) to-do and appointment, grouped by kind.
-/// Includes the **voice add** mic button and a manual add button.
+/// The main planner screen, aligned with the Mac desktop layout: the same smart categories
+/// (All Items, Today, Scheduled, To-Dos, Appointments) plus the user's own lists, shown as a
+/// visible chip bar. Tap a chip to filter; long-press a list chip to rename or delete it;
+/// "＋ New List" creates one. Includes the **voice add** mic button and a manual add button.
 struct TodoListView: View {
     @Environment(\.modelContext) private var context
 
@@ -15,18 +17,34 @@ struct TodoListView: View {
 
     @Query(sort: \PlannerList.createdAt) private var lists: [PlannerList]
 
+    @State private var filter: PlannerFilter = .category(.all)
     @State private var showingAdd = false
     @State private var showingVoice = false
     @State private var showingLists = false
+    @State private var showingNewList = false
+    @State private var newListName = ""
+    @State private var renamingList: PlannerList?
+    @State private var renameText = ""
     @State private var editingItem: PlannerItem?
-    @State private var selectedListID: UUID?
 
-    private var selectedList: PlannerList? { lists.first { $0.id == selectedListID } }
+    /// The open user list, when the filter is one.
+    private var currentList: PlannerList? {
+        guard case .list(let id) = filter else { return nil }
+        return lists.first { $0.id == id }
+    }
 
-    /// Items in the currently selected list (or every active item when no list is selected).
+    private var navigationTitle: String {
+        switch filter {
+        case .category(let c): return c == .all ? "Planner" : c.title
+        case .list:            return currentList?.name ?? "Planner"
+        }
+    }
+
     private var visibleItems: [PlannerItem] {
-        guard let selectedListID else { return items }
-        return items.filter { $0.list?.id == selectedListID }
+        switch filter {
+        case .category(let c): return items.filter { c.contains($0) }
+        case .list(let id):    return items.filter { $0.list?.id == id }
+        }
     }
 
     private var tasks: [PlannerItem] { visibleItems.filter { $0.kind == .task } }
@@ -34,29 +52,24 @@ struct TodoListView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                chipBar
+                Divider()
                 if visibleItems.isEmpty {
                     emptyState
                 } else {
-                    List {
-                        if !appointments.isEmpty {
-                            Section("Appointments") {
-                                ForEach(appointments) { row($0) }
-                                    .onDelete { delete(appointments, at: $0) }
-                            }
-                        }
-                        if !tasks.isEmpty {
-                            Section("To-Do") {
-                                ForEach(tasks) { row($0) }
-                                    .onDelete { delete(tasks, at: $0) }
-                            }
-                        }
-                    }
+                    itemList
                 }
             }
-            .navigationTitle(selectedList?.name ?? "Planner")
+            .navigationTitle(navigationTitle)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { listMenu }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showingLists = true } label: {
+                        Image(systemName: "folder.badge.gearshape")
+                    }
+                    .accessibilityLabel("Manage lists")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingAdd = true } label: {
                         Image(systemName: "plus")
@@ -65,38 +78,125 @@ struct TodoListView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) { voiceButton }
-            .sheet(isPresented: $showingAdd) { AddItemView(defaultList: selectedList) }
+            .sheet(isPresented: $showingAdd) { AddItemView(defaultList: currentList) }
             .sheet(isPresented: $showingVoice) { VoiceCaptureView() }
             .sheet(isPresented: $showingLists) { ListsManagerView() }
             .sheet(item: $editingItem) { AddItemView(item: $0) }
+            .alert("New List", isPresented: $showingNewList) {
+                TextField("Name", text: $newListName)
+                Button("Create") { createList() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Give your list a name.")
+            }
+            .alert("Rename List", isPresented: renameBinding, presenting: renamingList) { _ in
+                TextField("Name", text: $renameText)
+                Button("Rename") { commitRename() }
+                Button("Cancel", role: .cancel) {}
+            }
             .onChange(of: lists.count) {
-                // If the selected list was deleted, fall back to all items.
-                if selectedListID != nil && selectedList == nil { selectedListID = nil }
+                // If the selected list was deleted (locally or via sync), fall back to All.
+                if case .list(let id) = filter, !lists.contains(where: { $0.id == id }) {
+                    filter = .category(.all)
+                }
             }
         }
     }
 
-    /// Switch between "all items" and a specific user list, and manage the lists themselves.
-    private var listMenu: some View {
-        Menu {
-            Picker("List", selection: $selectedListID) {
-                Label("All Items", systemImage: "tray.full").tag(UUID?.none)
+    // MARK: - Chip bar (mirrors the Mac sidebar: smart categories, then My Lists)
+
+    private var chipBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(PlannerCategory.allCases) { category in
+                    chip(title: category.title,
+                         symbol: category.symbol,
+                         count: items.filter { category.contains($0) }.count,
+                         isSelected: filter == .category(category)) {
+                        withAnimation { filter = .category(category) }
+                    }
+                }
+
+                if !lists.isEmpty {
+                    Divider().frame(height: 22)
+                }
+
                 ForEach(lists) { list in
-                    Label(list.name, systemImage: "folder").tag(Optional(list.id))
+                    chip(title: list.name,
+                         symbol: "folder",
+                         count: list.activeCount,
+                         isSelected: filter == .list(list.id)) {
+                        withAnimation { filter = .list(list.id) }
+                    }
+                    .contextMenu {
+                        Button("Rename…") {
+                            renameText = list.name
+                            renamingList = list
+                        }
+                        Button("Delete", role: .destructive) {
+                            context.delete(list)   // items are kept — the relationship nullifies
+                        }
+                    }
+                }
+
+                Button {
+                    newListName = ""
+                    showingNewList = true
+                } label: {
+                    Label("New List", systemImage: "plus")
+                        .font(.subheadline.weight(.medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Theme.card, in: Capsule())
+                        .foregroundStyle(Theme.accent)
+                }
+                .accessibilityLabel("New list")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .background(Theme.bg)
+    }
+
+    private func chip(title: String, symbol: String, count: Int,
+                      isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.caption)
+                Text(title)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
                 }
             }
-            Divider()
-            Button {
-                showingLists = true
-            } label: {
-                Label("Manage Lists…", systemImage: "folder.badge.gearshape")
-            }
-        } label: {
-            Image(systemName: selectedListID == nil
-                  ? "line.3.horizontal.decrease.circle"
-                  : "line.3.horizontal.decrease.circle.fill")
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(isSelected ? Theme.accent : Theme.card, in: Capsule())
+            .foregroundStyle(isSelected ? .white : .primary)
         }
-        .accessibilityLabel("Choose list")
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    // MARK: - Items
+
+    private var itemList: some View {
+        List {
+            if !appointments.isEmpty {
+                Section("Appointments") {
+                    ForEach(appointments) { row($0) }
+                        .onDelete { delete(appointments, at: $0) }
+                }
+            }
+            if !tasks.isEmpty {
+                Section("To-Do") {
+                    ForEach(tasks) { row($0) }
+                        .onDelete { delete(tasks, at: $0) }
+                }
+            }
+        }
     }
 
     private func row(_ item: PlannerItem) -> some View {
@@ -125,11 +225,37 @@ struct TodoListView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label(selectedList == nil ? "Nothing planned yet" : "“\(selectedList!.name)” is empty",
-                  systemImage: "sparkles")
+            Label(emptyTitle, systemImage: "sparkles")
         } description: {
             Text("Tap + to add a to-do or appointment, or use the mic to add one by voice.")
         }
+        .frame(maxHeight: .infinity)
+    }
+
+    private var emptyTitle: String {
+        if let list = currentList { return "“\(list.name)” is empty" }
+        if case .category(let c) = filter, c != .all { return "Nothing in \(c.title)" }
+        return "Nothing planned yet"
+    }
+
+    // MARK: - List management
+
+    private var renameBinding: Binding<Bool> {
+        Binding(get: { renamingList != nil }, set: { if !$0 { renamingList = nil } })
+    }
+
+    private func createList() {
+        let name = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let list = PlannerList(name: name)
+        context.insert(list)
+        withAnimation { filter = .list(list.id) }
+    }
+
+    private func commitRename() {
+        let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let list = renamingList, !name.isEmpty { list.name = name }
+        renamingList = nil
     }
 
     private func delete(_ source: [PlannerItem], at offsets: IndexSet) {
