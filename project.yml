@@ -6,10 +6,18 @@ options:
     macOS: "14.0"
   createIntermediateGroups: true
 
+# Terminal emulator used by the Mac edition's embedded Hermes agent panel (Mac target only).
+# Pinned to 1.11.2 — 1.12.0 added a Metal GPU backend that requires the (multi-GB, often
+# uninstalled) Xcode Metal toolchain to compile; the CPU renderer is plenty for this panel.
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.11.2
+
 settings:
   base:
     MARKETING_VERSION: "1.2"
-    CURRENT_PROJECT_VERSION: "4"
+    CURRENT_PROJECT_VERSION: "5"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: GU9WTSTX9M
     CODE_SIGN_STYLE: Automatic
@@ -54,6 +62,8 @@ targets:
       - path: PlannerApp/Views/ArchiveView.swift
       - path: PlannerApp/Views/FeedbackView.swift
       - path: PlannerApp/Views/AboutView.swift
+    dependencies:
+      - package: SwiftTerm
     settings:
       base:
         PRODUCT_NAME: Planner

@@ -1,10 +1,25 @@
 # Changelog
 
-## [1.2] — 2026-07-14
+## [1.2] — 2026-07-15
 
 - Create your own lists — organize to-dos into lists you can create, rename, and delete
+- Your lists are now always visible as a chip bar on the Planner tab — tap to filter,
+  long-press to rename or delete
 - Pick a list when adding or editing an item, and filter the planner by list
 - Everything syncs across your devices with iCloud, including the new Mac desktop app
+
+## [1.2-mac.2] — 2026-07-15 (desktop only)
+
+- Hermes agent terminal: collapsible right panel with a real terminal that auto-starts
+  the Hermes CLI agent — tell it "add …", "move … to …", "mark … done" and it edits the
+  todo list through the app's `planner://` command bridge (`HermesBridge`), reading live
+  state from `planner-state.json` in its workspace
+- Adaptive layout: the panel docks beside the list (drag the divider to resize) and
+  becomes a slide-over sheet on narrow windows; ⌥⌘T or the toolbar button toggles it
+- iCloud sync status indicator at the bottom of the sidebar
+- Fixed: external `planner://` URL events no longer open a new window each time
+- Note: the Mac app is no longer sandboxed (required to launch the user's hermes CLI);
+  distribution is unchanged (Developer ID DMG, notarized)
 
 ## [1.2-mac] — 2026-07-14 (desktop only)
 

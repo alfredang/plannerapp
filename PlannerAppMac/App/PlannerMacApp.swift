@@ -7,6 +7,10 @@ import CoreData
 @main
 struct PlannerMacApp: App {
 
+    /// Mirrors the terminal panel visibility used by `MacRootView`, so the View-menu
+    /// command below and the toolbar button stay in sync via UserDefaults.
+    @AppStorage("hermesPanelVisible") private var hermesVisible = true
+
     init() {
         #if DEBUG
         Self.initializeCloudKitSchemaIfRequested()
@@ -26,7 +30,9 @@ struct PlannerMacApp: App {
                 isStoredInMemoryOnly: false,
                 cloudKitDatabase: .automatic
             )
-            return try ModelContainer(for: schema, configurations: config)
+            let container = try ModelContainer(for: schema, configurations: config)
+            Task { @MainActor in CloudSyncStatus.shared.containerUsesCloudKit = true }
+            return container
         } catch {
             // Fall back to a local-only store so the app never fails to launch.
             let local = ModelConfiguration(schema: schema, cloudKitDatabase: .none)
@@ -75,11 +81,21 @@ struct PlannerMacApp: App {
             MacRootView()
                 .tint(Theme.accent)
                 .frame(minWidth: 860, minHeight: 560)
+                // Route planner:// URL events (the Hermes bridge) into THIS window.
+                // Without this, every external URL spawns a brand-new window.
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         }
         .modelContainer(container)
+        .handlesExternalEvents(matching: ["*"])
         .defaultSize(width: 1080, height: 700)
         .commands {
             SidebarCommands()   // View > Toggle Sidebar
+            CommandGroup(after: .sidebar) {
+                Button(hermesVisible ? "Hide Hermes Terminal" : "Show Hermes Terminal") {
+                    hermesVisible.toggle()
+                }
+                .keyboardShortcut("t", modifiers: [.command, .option])
+            }
         }
     }
 }

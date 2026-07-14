@@ -40,13 +40,22 @@ through your personal iCloud.
 - 📥 **Auto-archive** — checking off an item moves it to the Archive automatically; uncheck to
   restore.
 - 🗂 **Your own lists** — create, rename, and delete lists ("Work", "Groceries", …), file items
-  into them, and filter the planner by list. Lists sync like everything else.
+  into them, and filter the planner by list. On iPhone your lists live in a chip bar right on
+  the Planner tab (tap to filter, long-press to rename/delete). Lists sync like everything else.
 - ☁️ **iCloud sync** — SwiftData + CloudKit mirrors your data to your private iCloud database
   across all your devices, iPhone and Mac alike.
 - 🖥 **macOS desktop edition** — a two-column Mac app: smart categories and your lists in the
-  sidebar, and the item list with a chatbot-style capture bar (type or dictate) on the right.
+  sidebar (with a live iCloud sync-status indicator), and the item list with a chatbot-style
+  capture bar (type or dictate) on the right.
   Distributed as a [DMG](https://github.com/alfredang/plannerapp/releases/latest/download/Planner.dmg);
   build it yourself with `./scripts/build-macos-dmg.sh`.
+- 🤖 **Hermes agent terminal (Mac)** — a collapsible right-hand panel (⌥⌘T) embeds a real
+  terminal ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) that auto-starts the
+  [Hermes Agent](https://hermes-agent.nousresearch.com) CLI when installed. Ask it in plain
+  language — *"add buy milk tomorrow"*, *"move the n8n task to AI-LMS-TMS"*, *"mark it done"* —
+  and it edits your planner through a local `planner://` command bridge, reading live state
+  from an auto-maintained JSON snapshot. The panel docks beside the list (drag the divider to
+  resize) and becomes a slide-over sheet on narrow windows.
 - 💬 **Feedback & About** — house-style tabs (WhatsApp feedback, developer info, version).
 
 ## Tech Stack
@@ -85,8 +94,12 @@ PlannerApp/                             — iOS app + code shared with the Mac t
 
 PlannerAppMac/                          — macOS desktop edition (DMG)
 ├── App/        PlannerMacApp.swift     — @main, same schema + iCloud container
-└── Views/      MacRootView.swift       — sidebar: smart categories + user lists
+├── Services/   HermesBridge.swift      — planner:// command scheme + JSON state snapshot
+│                                         + AGENTS.md workspace for the Hermes agent
+│               CloudSyncStatus.swift   — CloudKit account status for the sidebar badge
+└── Views/      MacRootView.swift       — sidebar: smart categories + user lists + sync badge
                 MacPlannerPane.swift    — item list + chatbot capture bar (text/voice)
+                MacTerminalPanel.swift  — collapsible SwiftTerm panel auto-running hermes
 
 scripts/build-macos-dmg.sh              — Release build → DMG (+ notarization when a
                                           Developer ID certificate is present)
