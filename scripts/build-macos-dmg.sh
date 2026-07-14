@@ -42,6 +42,7 @@ if security find-identity -v -p codesigning 2>/dev/null | grep -q "Developer ID 
              "CODE_SIGN_IDENTITY=${IDENTITY}"
              "PROVISIONING_PROFILE_SPECIFIER=${DEVID_PROFILE}"
              CODE_SIGN_ENTITLEMENTS=PlannerAppMac/PlannerAppMacDevID.entitlements
+             CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO   # no get-task-allow (notarization rejects it)
              "OTHER_CODE_SIGN_FLAGS=--timestamp")
   NOTARIZE=1
 else
@@ -58,16 +59,25 @@ if [ -f "${ASC_KEY}" ]; then
                    -authenticationKeyIssuerID "${ASC_ISSUER_ID}")
 fi
 
-echo "==> Building ${SCHEME} (Release)…"
-xcodebuild -project PlannerApp.xcodeproj \
-           -scheme "${SCHEME}" \
-           -configuration Release \
-           -derivedDataPath "${BUILD_DIR}" \
-           "${PROVISION_ARGS[@]}" \
-           "${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}" \
-           build | grep -E "error:|warning: .*deprecat|BUILD" || true
-
 APP="${BUILD_DIR}/Build/Products/Release/${APP_NAME}.app"
+rm -rf "${APP}"   # never package a stale build
+
+echo "==> Building ${SCHEME} (Release)…"
+BUILD_LOG="${BUILD_DIR}-xcodebuild.log"
+mkdir -p "${BUILD_DIR}"
+if ! xcodebuild -project PlannerApp.xcodeproj \
+                -scheme "${SCHEME}" \
+                -configuration Release \
+                -derivedDataPath "${BUILD_DIR}" \
+                "${PROVISION_ARGS[@]}" \
+                "${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}" \
+                build > "${BUILD_LOG}" 2>&1; then
+  echo "ERROR: build failed — last lines of ${BUILD_LOG}:"
+  tail -25 "${BUILD_LOG}"
+  exit 1
+fi
+grep -E "error:|BUILD" "${BUILD_LOG}" | tail -3
+
 [ -d "${APP}" ] || { echo "ERROR: ${APP} not found — build failed."; exit 1; }
 
 echo "==> Staging DMG contents…"
@@ -86,6 +96,8 @@ hdiutil create -volname "${APP_NAME}" \
 
 if [ "${NOTARIZE}" = "1" ]; then
   [ -f "${ASC_KEY}" ] || { echo "ERROR: ASC API key missing — cannot notarize."; exit 1; }
+  echo "==> Signing ${DMG}…"
+  codesign --force --sign "${IDENTITY}" --timestamp "${DMG}"
   echo "==> Notarizing ${DMG} (this usually takes a few minutes)…"
   xcrun notarytool submit "${DMG}" \
         --key "${ASC_KEY}" --key-id "${ASC_KEY_ID}" --issuer "${ASC_ISSUER_ID}" \
