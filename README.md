@@ -2,9 +2,10 @@
 
 A native iOS + macOS app for managing **to-dos and appointments by voice or touch**. Speak
 naturally — *"Lunch with Sam tomorrow at 1pm"* — and on-device intelligence turns it into a
-scheduled appointment; *"Buy groceries"* becomes a to-do. Organize items into your own lists,
-see appointments in a built-in calendar, and everything syncs across your iPhone and Mac
-through your personal iCloud.
+scheduled appointment; *"Buy groceries"* becomes a to-do. Organize items into your own lists
+and sub-lists, pin what matters, drag everything into your own order, see appointments in a
+built-in calendar — and it all syncs across your iPhone and Mac through your personal iCloud,
+with full undo.
 
 <a href="https://apps.apple.com/app/tertiary-planner/id6785397240">
   <img src="https://toolbox.marketingtools.apple.com/api/badges/download-on-the-app-store/black/en-us?releaseDate=1751500800" alt="Download on the App Store" height="54">
