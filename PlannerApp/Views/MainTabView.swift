@@ -6,7 +6,7 @@ struct MainTabView: View {
         case assistant, planner, calendar, archive, feedback, about
     }
 
-    @State private var selection: Tab = .assistant
+    @State private var selection: Tab = .planner
 
     init() {
         #if DEBUG
@@ -21,13 +21,15 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            AssistantChatView()
-                .tabItem { Label("Assistant", systemImage: "sparkles") }
-                .tag(Tab.assistant)
-
+            // Planner opens first: appointments on top, then the to-dos, with the
+            // chatbot capture bar pinned at the bottom. Chat keeps its own tab.
             TodoListView()
                 .tabItem { Label("Planner", systemImage: "checklist") }
                 .tag(Tab.planner)
+
+            AssistantChatView()
+                .tabItem { Label("Chat", systemImage: "sparkles") }
+                .tag(Tab.assistant)
 
             CalendarView()
                 .tabItem { Label("Calendar", systemImage: "calendar") }

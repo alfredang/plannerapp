@@ -21,8 +21,17 @@ struct TodoListView: View {
 
     @State private var filter: PlannerFilter = .category(.all)
     @State private var showingAdd = false
-    @State private var showingVoice = false
     @State private var showingLists = false
+
+    // Chatbot capture bar (mirrors the Mac pane): type or dictate, the assistant drafts
+    // and saves the entry, replying inline with Undo.
+    @State private var speech: SpeechRecognizer?
+    @State private var input = ""
+    @State private var isThinking = false
+    @State private var lastReply: ChatMessage?
+    @FocusState private var inputFocused: Bool
+
+    private var isListening: Bool { speech?.isListening ?? false }
     @State private var showingNewList = false
     @State private var newListName = ""
     /// When set, the New List alert creates a sub-list under this parent.
@@ -109,9 +118,8 @@ struct TodoListView: View {
                     .accessibilityLabel("Add item")
                 }
             }
-            .safeAreaInset(edge: .bottom) { voiceButton }
+            .safeAreaInset(edge: .bottom, spacing: 0) { captureBar }
             .sheet(isPresented: $showingAdd) { AddItemView(defaultList: currentList) }
-            .sheet(isPresented: $showingVoice) { VoiceCaptureView() }
             .sheet(isPresented: $showingLists) { ListsManagerView() }
             .sheet(item: $editingItem) { AddItemView(item: $0) }
             .alert(newListParent == nil ? "New List" : "New Sub-list", isPresented: $showingNewList) {
@@ -284,20 +292,141 @@ struct TodoListView: View {
         }
     }
 
-    private var voiceButton: some View {
-        Button {
-            showingVoice = true
-        } label: {
-            Label("Add by Voice", systemImage: "mic.fill")
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Theme.accent, in: Capsule())
-                .foregroundStyle(.white)
+    // MARK: - Chatbot capture bar (mirrors the Mac pane, pinned to the bottom)
+
+    private var captureBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if isThinking {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Drafting…").font(.footnote).foregroundStyle(.secondary)
+                }
+            } else if let reply = lastReply {
+                assistantBubble(reply)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            HStack(spacing: 10) {
+                TextField(isListening ? "Listening…" : "e.g. “Lunch with Sam tomorrow 1pm”",
+                          text: $input, axis: .vertical)
+                    .lineLimit(1...4)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Theme.card, in: Capsule())
+                    .focused($inputFocused)
+                    .onSubmit(send)
+
+                Button {
+                    // Construct the recognizer lazily; ask permission on first mic use only.
+                    let recognizer = speech ?? SpeechRecognizer()
+                    if speech == nil { speech = recognizer }
+                    Task {
+                        await recognizer.requestAuthorization()
+                        withAnimation { recognizer.toggle() }
+                    }
+                } label: {
+                    Image(systemName: isListening ? "stop.fill" : "mic.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(isListening ? Color.red : Theme.accent, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isListening ? "Stop dictation" : "Dictate")
+
+                Button(action: send) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(canSend ? Theme.accent : Color.secondary.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+                .accessibilityLabel("Send")
+            }
         }
-        .padding(.horizontal, 22)
-        .padding(.bottom, 6)
-        .accessibilityHint("Dictate a task or appointment")
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .onChange(of: speech?.transcript) { _, text in
+            if let text, !text.isEmpty { input = text }
+        }
+        .onChange(of: speech?.state) { old, new in
+            // When dictation finishes with text in the box, send it automatically.
+            if old == .listening, new == .idle,
+               !input.trimmingCharacters(in: .whitespaces).isEmpty {
+                send()
+            }
+        }
+    }
+
+    private func assistantBubble(_ message: ChatMessage) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "sparkles")
+                .foregroundStyle(Theme.accent)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message.text)
+                    .font(.subheadline)
+                if let item = message.item {
+                    HStack(spacing: 8) {
+                        Label(item.kind.title, systemImage: item.kind.symbol)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                        if let date = item.date {
+                            Label(date.formatted(.dateTime.weekday().month().day().hour().minute()),
+                                  systemImage: "clock")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Undo") { undoCapture(item.id) }
+                            .font(.caption.weight(.semibold))
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var canSend: Bool {
+        !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isThinking
+    }
+
+    private func send() {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isThinking else { return }
+        speech?.stop()
+        input = ""
+        isThinking = true
+
+        Task {
+            let draft = await IntentAssistant.draft(from: text)
+            var saved: PlannerItem?
+            if !draft.entry.title.isEmpty {
+                let item = draft.entry.makeItem()
+                item.list = currentList   // capture into the open list, if any
+                context.insert(item)
+                saved = item
+            }
+            withAnimation {
+                lastReply = ChatMessage(role: .assistant,
+                                        text: draft.reply,
+                                        item: saved.map(ChatMessage.ItemSummary.init))
+                isThinking = false
+            }
+        }
+    }
+
+    private func undoCapture(_ itemID: UUID) {
+        guard let item = try? context.fetch(FetchDescriptor<PlannerItem>()).first(where: { $0.id == itemID })
+        else { return }
+        context.delete(item)
+        withAnimation {
+            lastReply = ChatMessage(role: .assistant, text: "Removed “\(item.title)”.")
+        }
     }
 
     private var emptyState: some View {
