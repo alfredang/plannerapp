@@ -24,6 +24,9 @@ struct AddItemView: View {
     @State private var date = Date()
     @State private var selectedListID: UUID?
     @State private var assignedTo = ""
+    /// Armed after prefill so the date-toggle → appointment auto-switch only reacts to
+    /// the user, not to loading an existing dated to-do into the form.
+    @State private var autoKindEnabled = false
 
     init(prefill: ParsedEntry? = nil, defaultList: PlannerList? = nil) {
         self.prefill = prefill
@@ -100,6 +103,14 @@ struct AddItemView: View {
                 // Appointments need a time; default it on when switching.
                 if newKind == .appointment && !includeDate { includeDate = true }
             }
+            .onChange(of: includeDate) { _, isOn in
+                // Setting a date & time makes it an appointment automatically
+                // (tap To-Do again afterwards if you want a dated to-do). Only for
+                // user toggles — prefilling an existing dated to-do must not convert it.
+                if isOn && kind == .task && autoKindEnabled {
+                    withAnimation { kind = .appointment }
+                }
+            }
         }
         #if os(macOS)
         .formStyle(.grouped)
@@ -115,6 +126,8 @@ struct AddItemView: View {
     }
 
     private func applyPrefill() {
+        // Arm the auto-switch only after this prefill pass has rendered.
+        defer { Task { @MainActor in autoKindEnabled = true } }
         if let itemToEdit {
             title = itemToEdit.title
             notes = itemToEdit.notes
