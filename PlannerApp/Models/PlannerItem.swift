@@ -39,6 +39,11 @@ final class PlannerItem {
     var createdAt: Date = Date()
     var completedAt: Date?
 
+    /// Manual drag-rearrange position, synced via CloudKit so Mac and iOS agree. 0 (the
+    /// legacy default) means "never manually placed" — such rows keep the date sort among
+    /// themselves. Reordering a view writes 1-based positions for every visible row.
+    var sortOrder: Int = 0
+
     init(
         title: String,
         notes: String = "",

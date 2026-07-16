@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4] — 2026-07-16
+
+- Rearrange everything by hand: hold and drag to-dos, appointments, and your lists into
+  the order you want
+- Your custom order syncs across iPhone and Mac via iCloud
+- Bug fixes and performance improvements
+
 ## [1.3] — 2026-07-15
 
 - Your lists are now always visible as a chip bar on the Planner tab — tap a chip to

@@ -167,7 +167,7 @@ struct MacRootView: View {
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if hermesVisible && !compact {
-                    resizeDivider(totalWidth: geo.size.width)
+                    resizeDivider(maxPanelWidth: geo.size.width * 0.55)
                     MacTerminalPanel(isVisible: $hermesVisible)
                         .frame(width: panelWidth)
                         .transition(.move(edge: .trailing))
@@ -179,10 +179,13 @@ struct MacRootView: View {
                         Color.black.opacity(0.3)
                             .onTapGesture { withAnimation { hermesVisible = false } }
                             .transition(.opacity)
-                        MacTerminalPanel(isVisible: $hermesVisible)
-                            .frame(width: min(panelWidth, (geo.size.width - 44).rounded()))
-                            .shadow(color: .black.opacity(0.35), radius: 14, x: -6, y: 0)
-                            .transition(.move(edge: .trailing))
+                        HStack(spacing: 0) {
+                            resizeDivider(maxPanelWidth: geo.size.width - 44)
+                            MacTerminalPanel(isVisible: $hermesVisible)
+                                .frame(width: min(panelWidth, (geo.size.width - 44).rounded()))
+                        }
+                        .shadow(color: .black.opacity(0.35), radius: 14, x: -6, y: 0)
+                        .transition(.move(edge: .trailing))
                     }
                 }
             }
@@ -191,34 +194,40 @@ struct MacRootView: View {
     }
 
     /// Visible column divider between the item list and the Hermes panel — drag to resize
-    /// the columns (the width persists), highlights on hover.
-    private func resizeDivider(totalWidth: CGFloat) -> some View {
-        ZStack {
+    /// the columns (the width persists), highlights on hover with a grab handle. Mouse
+    /// handling is AppKit-based (`PanelResizeHandle`): a SwiftUI DragGesture here loses
+    /// events to the neighbouring AppKit terminal view.
+    private func resizeDivider(maxPanelWidth: CGFloat) -> some View {
+        let active = dividerHovered || panelDragStartWidth != nil
+        return ZStack {
             Rectangle()
-                .fill(Color.primary.opacity(dividerHovered || panelDragStartWidth != nil ? 0.12 : 0))
+                .fill(Color.primary.opacity(active ? 0.08 : 0))
+            // VSCode-style: the hairline becomes a solid blue bar on hover / while dragging.
             Rectangle()
-                .fill(Color(nsColor: .separatorColor))
-                .frame(width: 1)
+                .fill(active ? Color(nsColor: .controlAccentColor) : Color(nsColor: .separatorColor))
+                .frame(width: active ? 3 : 1)
+            if !active {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.45))
+                    .frame(width: 3, height: 28)
+            }
         }
-        .frame(width: 9)
-        .contentShape(Rectangle())
-        .onHover { inside in
-            dividerHovered = inside
-            if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-        }
-        .gesture(
-            DragGesture(minimumDistance: 1)
-                .onChanged { value in
+        .frame(width: 11)
+        .overlay(
+            PanelResizeHandle(
+                onHover: { dividerHovered = $0 },
+                onDrag: { deltaX in
                     if panelDragStartWidth == nil {
                         panelDragStartWidth = CGFloat(hermesPanelWidth)
                     }
-                    let proposed = (panelDragStartWidth ?? CGFloat(hermesPanelWidth))
-                        - value.translation.width
+                    let proposed = (panelDragStartWidth ?? CGFloat(hermesPanelWidth)) - deltaX
                     hermesPanelWidth = Double(min(max(Self.panelMinWidth, proposed),
-                                                  totalWidth * 0.55).rounded())
-                }
-                .onEnded { _ in panelDragStartWidth = nil }
+                                                  max(Self.panelMinWidth, maxPanelWidth)).rounded())
+                },
+                onEnded: { panelDragStartWidth = nil }
+            )
         )
+        .animation(.easeInOut(duration: 0.12), value: active)
         .accessibilityLabel("Resize agent panel")
     }
 
@@ -254,9 +263,10 @@ struct MacRootView: View {
                 }
             }
             Section("My Lists") {
-                ForEach(lists) { list in
+                ForEach(orderedLists) { list in
                     userListRow(list)
                 }
+                .onMove(perform: moveLists)
                 Button {
                     newListName = ""
                     showingNewList = true
@@ -338,6 +348,18 @@ struct MacRootView: View {
 
     // MARK: - List management
 
+    /// The user's lists in their manually chosen sidebar order (synced via CloudKit).
+    /// Never-placed lists go to the end, oldest first.
+    private var orderedLists: [PlannerList] {
+        ManualOrder.sorted(lists) { $0.sortOrder }
+    }
+
+    private func moveLists(from source: IndexSet, to destination: Int) {
+        ManualOrder.applyMove(orderedLists, from: source, to: destination) { list, position in
+            list.sortOrder = position
+        }
+    }
+
     private var renameBinding: Binding<Bool> {
         Binding(get: { renamingList != nil }, set: { if !$0 { renamingList = nil } })
     }
@@ -371,6 +393,69 @@ struct MacRootView: View {
             AboutView()
         default:
             MacPlannerPane(selection: selection)
+        }
+    }
+}
+
+/// AppKit-backed drag handle for the panel divider. Receives mouseDown/mouseDragged
+/// directly from the window (SwiftUI DragGestures next to an NSViewRepresentable
+/// terminal are unreliable) and owns the resize cursor via cursor rects.
+private struct PanelResizeHandle: NSViewRepresentable {
+    var onHover: (Bool) -> Void
+    /// Cumulative horizontal delta (points) since the drag began; positive = rightwards.
+    var onDrag: (CGFloat) -> Void
+    var onEnded: () -> Void
+
+    func makeNSView(context: Context) -> HandleView {
+        let view = HandleView()
+        view.onHover = onHover
+        view.onDrag = onDrag
+        view.onEnded = onEnded
+        return view
+    }
+
+    func updateNSView(_ view: HandleView, context: Context) {
+        view.onHover = onHover
+        view.onDrag = onDrag
+        view.onEnded = onEnded
+    }
+
+    final class HandleView: NSView {
+        var onHover: ((Bool) -> Void)?
+        var onDrag: ((CGFloat) -> Void)?
+        var onEnded: (() -> Void)?
+        private var dragStartX: CGFloat?
+
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .resizeLeftRight)
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(
+                rect: .zero,
+                options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                owner: self))
+        }
+
+        override func mouseEntered(with event: NSEvent) { onHover?(true) }
+        override func mouseExited(with event: NSEvent) { onHover?(false) }
+
+        override func mouseDown(with event: NSEvent) {
+            dragStartX = event.locationInWindow.x
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let start = dragStartX else { return }
+            onDrag?(event.locationInWindow.x - start)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            if dragStartX != nil {
+                dragStartX = nil
+                onEnded?()
+            }
         }
     }
 }

@@ -50,8 +50,20 @@ struct MacPlannerPane: View {
         }
     }
 
-    private var tasks: [PlannerItem] { items.filter { $0.kind == .task } }
-    private var appointments: [PlannerItem] { items.filter { $0.kind == .appointment } }
+    /// Rows in manual drag order (synced via CloudKit through `PlannerItem.sortOrder`);
+    /// never-placed rows keep their date order, after the placed ones.
+    private var tasks: [PlannerItem] {
+        ManualOrder.sorted(items.filter { $0.kind == .task }) { $0.sortOrder }
+    }
+    private var appointments: [PlannerItem] {
+        ManualOrder.sorted(items.filter { $0.kind == .appointment }) { $0.sortOrder }
+    }
+
+    private func moveItems(_ ordered: [PlannerItem], from source: IndexSet, to destination: Int) {
+        ManualOrder.applyMove(ordered, from: source, to: destination) { item, position in
+            item.sortOrder = position
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -93,13 +105,17 @@ struct MacPlannerPane: View {
     private var itemList: some View {
         List {
             if !appointments.isEmpty {
+                let ordered = appointments
                 Section("Appointments") {
-                    ForEach(appointments) { row($0) }
+                    ForEach(ordered) { row($0) }
+                        .onMove { moveItems(ordered, from: $0, to: $1) }
                 }
             }
             if !tasks.isEmpty {
+                let ordered = tasks
                 Section("To-Do") {
-                    ForEach(tasks) { row($0) }
+                    ForEach(ordered) { row($0) }
+                        .onMove { moveItems(ordered, from: $0, to: $1) }
                 }
             }
         }
@@ -107,10 +123,18 @@ struct MacPlannerPane: View {
     }
 
     private func row(_ item: PlannerItem) -> some View {
-        ItemRow(item: item) {
-            withAnimation { item.toggleDone() }   // checking auto-archives
-        } onEdit: {
-            editingItem = item
+        HStack(spacing: 10) {
+            ItemRow(item: item) {
+                withAnimation { item.toggleDone() }   // checking auto-archives
+            } onEdit: {
+                editingItem = item
+            }
+            // Drag affordance — the whole row drags, the grip just signals it.
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .help("Hold and drag to rearrange")
+                .accessibilityHidden(true)
         }
         .contextMenu {
             Button("Edit…") { editingItem = item }

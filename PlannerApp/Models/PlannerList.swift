@@ -12,6 +12,10 @@ final class PlannerList {
     var name: String = ""
     var createdAt: Date = Date()
 
+    /// Manual drag-rearrange position in the sidebar / chip bar, synced via CloudKit so
+    /// Mac and iOS agree. 0 (the legacy default) sorts by createdAt among itself.
+    var sortOrder: Int = 0
+
     @Relationship(deleteRule: .nullify, inverse: \PlannerItem.list)
     var items: [PlannerItem]? = []
 

@@ -26,7 +26,7 @@ struct ListsManagerView: View {
                     }
                 } else {
                     List {
-                        ForEach(lists) { list in
+                        ForEach(orderedLists) { list in
                             HStack {
                                 Label(list.name, systemImage: "folder")
                                 Spacer()
@@ -42,6 +42,7 @@ struct ListsManagerView: View {
                             }
                         }
                         .onDelete(perform: delete)
+                        .onMove(perform: move)
                     }
                 }
             }
@@ -53,6 +54,10 @@ struct ListsManagerView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
+                #if os(iOS)
+                // Shows the reorder grips; long-press-drag also works without it.
+                ToolbarItem(placement: .topBarTrailing) { EditButton() }
+                #endif
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         newName = ""
@@ -103,7 +108,20 @@ struct ListsManagerView: View {
     }
 
     private func delete(at offsets: IndexSet) {
-        for index in offsets { context.delete(lists[index]) }
+        let ordered = orderedLists
+        for index in offsets { context.delete(ordered[index]) }
+    }
+
+    /// The lists in their manual drag order (`sortOrder`, synced via CloudKit so the Mac
+    /// sidebar and the iOS chip bar agree); never-placed lists follow, oldest first.
+    private var orderedLists: [PlannerList] {
+        ManualOrder.sorted(lists) { $0.sortOrder }
+    }
+
+    private func move(from source: IndexSet, to destination: Int) {
+        ManualOrder.applyMove(orderedLists, from: source, to: destination) { list, position in
+            list.sortOrder = position
+        }
     }
 }
 

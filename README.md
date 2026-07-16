@@ -42,6 +42,8 @@ through your personal iCloud.
 - 🗂 **Your own lists** — create, rename, and delete lists ("Work", "Groceries", …), file items
   into them, and filter the planner by list. On iPhone your lists live in a chip bar right on
   the Planner tab (tap to filter, long-press to rename/delete). Lists sync like everything else.
+- ↕️ **Drag to rearrange** — hold and drag to-dos, appointments, and your lists into any order,
+  on iPhone and Mac alike; your custom order syncs across devices via iCloud.
 - ☁️ **iCloud sync** — SwiftData + CloudKit mirrors your data to your private iCloud database
   across all your devices, iPhone and Mac alike.
 - 🖥 **macOS desktop edition** — a two-column Mac app: smart categories and your lists in the
@@ -84,6 +86,7 @@ PlannerApp/                             — iOS app + code shared with the Mac t
 ├── Models/     PlannerItem.swift       — CloudKit-safe model (task | appointment)
 │               PlannerList.swift       — user-created list (items kept on delete)
 │               ChatMessage.swift       — assistant conversation turn (shared)
+│               ManualOrder.swift       — synced drag-rearrange ordering helper
 ├── Services/   IntentAssistant.swift   — on-device Apple Intelligence drafting (iOS/macOS 26+)
 │               SmartParser.swift       — deterministic date/time + intent parsing
 │               SpeechRecognizer.swift  — native speech-to-text (cross-platform)

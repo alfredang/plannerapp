@@ -47,8 +47,24 @@ struct TodoListView: View {
         }
     }
 
-    private var tasks: [PlannerItem] { visibleItems.filter { $0.kind == .task } }
-    private var appointments: [PlannerItem] { visibleItems.filter { $0.kind == .appointment } }
+    /// Rows in manual drag order (synced via CloudKit through `sortOrder`, so the Mac app
+    /// shows the same arrangement); never-placed rows keep their date order, after the
+    /// placed ones. Same for the list chips below.
+    private var tasks: [PlannerItem] {
+        ManualOrder.sorted(visibleItems.filter { $0.kind == .task }) { $0.sortOrder }
+    }
+    private var appointments: [PlannerItem] {
+        ManualOrder.sorted(visibleItems.filter { $0.kind == .appointment }) { $0.sortOrder }
+    }
+    private var orderedLists: [PlannerList] {
+        ManualOrder.sorted(lists) { $0.sortOrder }
+    }
+
+    private func moveItems(_ ordered: [PlannerItem], from source: IndexSet, to destination: Int) {
+        ManualOrder.applyMove(ordered, from: source, to: destination) { item, position in
+            item.sortOrder = position
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -121,7 +137,7 @@ struct TodoListView: View {
                     Divider().frame(height: 22)
                 }
 
-                ForEach(lists) { list in
+                ForEach(orderedLists) { list in
                     chip(title: list.name,
                          symbol: "folder",
                          count: list.activeCount,
@@ -185,25 +201,36 @@ struct TodoListView: View {
     private var itemList: some View {
         List {
             if !appointments.isEmpty {
+                let ordered = appointments
                 Section("Appointments") {
-                    ForEach(appointments) { row($0) }
-                        .onDelete { delete(appointments, at: $0) }
+                    ForEach(ordered) { row($0) }
+                        .onDelete { delete(ordered, at: $0) }
+                        .onMove { moveItems(ordered, from: $0, to: $1) }
                 }
             }
             if !tasks.isEmpty {
+                let ordered = tasks
                 Section("To-Do") {
-                    ForEach(tasks) { row($0) }
-                        .onDelete { delete(tasks, at: $0) }
+                    ForEach(ordered) { row($0) }
+                        .onDelete { delete(ordered, at: $0) }
+                        .onMove { moveItems(ordered, from: $0, to: $1) }
                 }
             }
         }
     }
 
     private func row(_ item: PlannerItem) -> some View {
-        ItemRow(item: item) {
-            withAnimation { item.toggleDone() }   // checking auto-archives
-        } onEdit: {
-            editingItem = item
+        HStack(spacing: 10) {
+            ItemRow(item: item) {
+                withAnimation { item.toggleDone() }   // checking auto-archives
+            } onEdit: {
+                editingItem = item
+            }
+            // Drag affordance — hold and drag anywhere on the row to rearrange.
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
     }
 
