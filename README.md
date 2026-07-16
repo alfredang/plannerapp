@@ -25,8 +25,11 @@ with full undo.
 
 ## Features
 
-- 💬 **Assistant chat** — the app's front door: tell the assistant what you need, by text or
-  voice, and it drafts a nicely worded to-do or appointment and saves it instantly (with undo).
+- 🗓️ **Appointments & To-Dos, each on its own tab** — clean, uncluttered pages; the app opens
+  to Appointments, with To-Dos one tap away. Both filter by your lists and sub-lists.
+- 💬 **Assistant everywhere** — a chatbot capture bar sits at the bottom of both tabs: tell it
+  what you need, by text or voice, and it drafts a nicely worded entry and saves it instantly
+  (with undo). The Chat tab holds full conversations.
 - 🍎 **Apple Intelligence on-device** — on iOS 26+ devices with the system model available, the
   assistant uses Apple's FoundationModels framework to classify and word entries; everywhere
   else it falls back to the deterministic parser. Both paths are fully local.
@@ -41,8 +44,9 @@ with full undo.
 - 📥 **Auto-archive** — checking off an item moves it to the Archive automatically; uncheck to
   restore.
 - 🗂 **Your own lists** — create, rename, and delete lists ("Work", "Groceries", …), file items
-  into them, and filter the planner by list. On iPhone your lists live in a chip bar right on
-  the Planner tab (tap to filter, long-press to rename/delete). Lists sync like everything else.
+  into them, and filter by list. On iPhone your lists live in a chip bar at the top of the
+  Appointments and To-Dos tabs (tap to filter, long-press to rename/delete). Lists sync like
+  everything else.
 - ↕️ **Drag to rearrange** — hold and drag to-dos, appointments, and your lists into any order,
   on iPhone and Mac alike; your custom order syncs across devices via iCloud.
 - 🗂️ **Sub-lists** — nest lists under a parent (e.g. each client under "Clients"): create one

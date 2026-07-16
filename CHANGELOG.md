@@ -2,8 +2,15 @@
 
 ## [1.4] — 2026-07-17
 
+- Appointments and To-Dos now live on their own tabs — cleaner, faster to scan; each is
+  filterable by your lists and sub-lists
+- Chatbot capture bar on both tabs: type or dictate and the assistant drafts and saves
+  the entry, with one-tap Undo; the Chat tab stays for full conversations
 - Rearrange everything by hand: hold and drag to-dos, appointments, and your lists into
   the order you want
+- Tap the pin on any row to pin it to the top; assign items to people with the new
+  "Assign to" field
+- Setting a date & time on a to-do turns it into an appointment automatically
 - Sub-lists: nest lists under a parent (e.g. clients under "Clients") — create one from
   a list's menu, or drag a list into a group; a parent shows its own and its sub-lists' items,
   and can be collapsed in the Mac sidebar
