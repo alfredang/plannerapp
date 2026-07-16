@@ -138,12 +138,18 @@ struct MacPlannerPane: View {
             } onEdit: {
                 editingItem = item
             }
-            if item.isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.orange)
-                    .accessibilityLabel("Pinned")
+            // Click the pin to pin/unpin — solid orange when pinned, faint outline when not.
+            Button {
+                withAnimation { item.isPinned.toggle() }
+            } label: {
+                Image(systemName: item.isPinned ? "pin.fill" : "pin")
+                    .font(.system(size: 11))
+                    .foregroundStyle(item.isPinned ? AnyShapeStyle(.orange)
+                                                   : AnyShapeStyle(.secondary.opacity(0.5)))
             }
+            .buttonStyle(.plain)
+            .help(item.isPinned ? "Unpin" : "Pin to top")
+            .accessibilityLabel(item.isPinned ? "Unpin" : "Pin to top")
             // Drag affordance — the whole row drags, the grip just signals it.
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 12, weight: .semibold))

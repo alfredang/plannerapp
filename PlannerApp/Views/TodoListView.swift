@@ -255,12 +255,18 @@ struct TodoListView: View {
             } onEdit: {
                 editingItem = item
             }
-            if item.isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.orange)
-                    .accessibilityLabel("Pinned")
+            // Tap the pin to pin/unpin — solid orange when pinned, faint outline when not.
+            Button {
+                withAnimation { item.isPinned.toggle() }
+            } label: {
+                Image(systemName: item.isPinned ? "pin.fill" : "pin")
+                    .font(.system(size: 15))
+                    .foregroundStyle(item.isPinned ? AnyShapeStyle(.orange)
+                                                   : AnyShapeStyle(.secondary.opacity(0.5)))
+                    .frame(width: 28, height: 28)   // comfortable tap target
             }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(item.isPinned ? "Unpin" : "Pin to top")
             // Drag affordance — hold and drag anywhere on the row to rearrange.
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 12, weight: .semibold))
