@@ -23,24 +23,18 @@ struct ItemRow: View {
                     .strikethrough(item.isDone, color: .secondary)
                     .foregroundStyle(item.isDone ? .secondary : .primary)
 
-                HStack(spacing: 6) {
-                    Label(item.kind.title, systemImage: item.kind.symbol)
-                        .labelStyle(.titleAndIcon)
-                    if let date = item.date {
-                        Text("•")
-                        Text(date, format: dateFormat(for: item))
-                    }
-                    if let list = item.list {
-                        Text("•")
-                        Label(list.name, systemImage: "folder")
-                    }
-                    if !item.assignedTo.isEmpty {
-                        Text("•")
-                        Label(item.assignedTo, systemImage: "person.fill")
-                    }
+                // One wrapping Text (not an HStack): on narrow rows it flows like prose
+                // instead of squeezing each label into a one-character-wide column.
+                caption
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                // Own line so it never gets squeezed out of the caption row.
+                if !item.assignedTo.isEmpty {
+                    Label(item.assignedTo, systemImage: "person.fill")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Theme.accent)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
 
                 if !item.notes.isEmpty {
                     Text(item.notes)
@@ -56,6 +50,17 @@ struct ItemRow: View {
         .onTapGesture { onEdit?() }
         .accessibilityElement(children: .combine)
         .accessibilityHint(onEdit != nil ? "Double tap to edit" : "")
+    }
+
+    private var caption: Text {
+        var text = Text("\(Image(systemName: item.kind.symbol)) \(item.kind.title)")
+        if let date = item.date {
+            text = text + Text("  •  ") + Text(date, format: dateFormat(for: item))
+        }
+        if let list = item.list {
+            text = text + Text("  •  ") + Text("\(Image(systemName: "folder")) \(list.name)")
+        }
+        return text
     }
 
     private func dateFormat(for item: PlannerItem) -> Date.FormatStyle {

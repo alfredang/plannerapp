@@ -68,6 +68,19 @@ struct AddItemView: View {
                     }
                 }
 
+                // Escape hatch for existing dated to-dos (created before the automatic
+                // conversion): one flick moves it into Appointments.
+                if kind == .task && includeDate {
+                    Section {
+                        Toggle("Add to Appointments", isOn: Binding(
+                            get: { false },
+                            set: { if $0 { withAnimation { kind = .appointment } } }
+                        ))
+                    } footer: {
+                        Text("A dated to-do stays under To-Do. Turn this on to make it an appointment.")
+                    }
+                }
+
                 if !lists.isEmpty {
                     Section {
                         Picker("List", selection: $selectedListID) {
