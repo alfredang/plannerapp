@@ -45,18 +45,27 @@ struct MacPlannerPane: View {
 
     private var items: [PlannerItem] {
         switch selection {
-        case .category(let c):    return activeItems.filter { c.contains($0) }
-        case .userList(let id):   return activeItems.filter { $0.list?.id == id }
+        case .category(let c):
+            return activeItems.filter { c.contains($0) }
+        case .userList:
+            // A parent list shows its own items plus everything in its sub-lists.
+            let ids = currentList?.subtreeIDs ?? []
+            return activeItems.filter { item in
+                guard let listID = item.list?.id else { return false }
+                return ids.contains(listID)
+            }
         }
     }
 
-    /// Rows in manual drag order (synced via CloudKit through `PlannerItem.sortOrder`);
-    /// never-placed rows keep their date order, after the placed ones.
+    /// Rows in manual drag order (synced via CloudKit through `PlannerItem.sortOrder`),
+    /// pinned rows first; never-placed rows keep their date order, after the placed ones.
     private var tasks: [PlannerItem] {
-        ManualOrder.sorted(items.filter { $0.kind == .task }) { $0.sortOrder }
+        ManualOrder.sortedPinnedFirst(items.filter { $0.kind == .task },
+                                      pinned: { $0.isPinned }, position: { $0.sortOrder })
     }
     private var appointments: [PlannerItem] {
-        ManualOrder.sorted(items.filter { $0.kind == .appointment }) { $0.sortOrder }
+        ManualOrder.sortedPinnedFirst(items.filter { $0.kind == .appointment },
+                                      pinned: { $0.isPinned }, position: { $0.sortOrder })
     }
 
     private func moveItems(_ ordered: [PlannerItem], from source: IndexSet, to destination: Int) {
@@ -129,6 +138,12 @@ struct MacPlannerPane: View {
             } onEdit: {
                 editingItem = item
             }
+            if item.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                    .accessibilityLabel("Pinned")
+            }
             // Drag affordance — the whole row drags, the grip just signals it.
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 12, weight: .semibold))
@@ -137,6 +152,9 @@ struct MacPlannerPane: View {
                 .accessibilityHidden(true)
         }
         .contextMenu {
+            Button(item.isPinned ? "Unpin" : "Pin to Top") {
+                withAnimation { item.isPinned.toggle() }
+            }
             Button("Edit…") { editingItem = item }
             Divider()
             Button("Delete", role: .destructive) { context.delete(item) }

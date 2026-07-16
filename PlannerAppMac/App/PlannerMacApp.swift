@@ -80,6 +80,7 @@ struct PlannerMacApp: App {
         WindowGroup {
             MacRootView()
                 .tint(Theme.accent)
+                .modelUndoSupport()
                 .frame(minWidth: 860, minHeight: 560)
                 // Route planner:// URL events (the Hermes bridge) into THIS window.
                 // Without this, every external URL spawns a brand-new window.

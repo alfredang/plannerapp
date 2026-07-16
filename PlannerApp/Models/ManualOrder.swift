@@ -15,6 +15,14 @@ enum ManualOrder {
         }.map(\.element)
     }
 
+    /// Manual sort with pinned rows floated to the front — each partition keeps its own
+    /// manual order.
+    static func sortedPinnedFirst<T>(_ rows: [T], pinned: (T) -> Bool,
+                                     position: (T) -> Int) -> [T] {
+        sorted(rows.filter(pinned), position: position)
+            + sorted(rows.filter { !pinned($0) }, position: position)
+    }
+
     /// Applies a List `onMove` to the displayed rows and hands every row its new 1-based
     /// position for persisting.
     static func applyMove<T>(_ rows: [T], from source: IndexSet, to destination: Int,

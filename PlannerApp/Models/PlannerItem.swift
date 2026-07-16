@@ -44,6 +44,9 @@ final class PlannerItem {
     /// themselves. Reordering a view writes 1-based positions for every visible row.
     var sortOrder: Int = 0
 
+    /// Pinned rows float above the rest of their section (synced via CloudKit).
+    var isPinned: Bool = false
+
     init(
         title: String,
         notes: String = "",

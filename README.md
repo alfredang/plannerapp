@@ -44,6 +44,14 @@ through your personal iCloud.
   the Planner tab (tap to filter, long-press to rename/delete). Lists sync like everything else.
 - ↕️ **Drag to rearrange** — hold and drag to-dos, appointments, and your lists into any order,
   on iPhone and Mac alike; your custom order syncs across devices via iCloud.
+- 🗂️ **Sub-lists** — nest lists under a parent (e.g. each client under "Clients"): create one
+  from a list's context menu, or drag a list into a group to nest it. A parent list shows its
+  own items plus everything in its sub-lists, and collapses in the Mac sidebar. Synced like
+  everything else.
+- 📌 **Pin to top** — pin important to-dos (swipe right on iPhone, right-click on Mac) and
+  lists; pinned entries float above the rest and sync across devices.
+- ↩️ **Undo everywhere** — take back deletes, check-offs, edits, and drags: ⌘Z / Edit ▸ Undo
+  on the Mac, the Undo toolbar button on iPhone.
 - ☁️ **iCloud sync** — SwiftData + CloudKit mirrors your data to your private iCloud database
   across all your devices, iPhone and Mac alike.
 - 🖥 **macOS desktop edition** — a two-column Mac app: smart categories and your lists in the
@@ -87,9 +95,11 @@ PlannerApp/                             — iOS app + code shared with the Mac t
 │               PlannerList.swift       — user-created list (items kept on delete)
 │               ChatMessage.swift       — assistant conversation turn (shared)
 │               ManualOrder.swift       — synced drag-rearrange ordering helper
+│               ListHierarchy.swift     — nested sub-list outline + drag-to-nest logic
 ├── Services/   IntentAssistant.swift   — on-device Apple Intelligence drafting (iOS/macOS 26+)
 │               SmartParser.swift       — deterministic date/time + intent parsing
 │               SpeechRecognizer.swift  — native speech-to-text (cross-platform)
+│               ModelUndoSupport.swift  — system undo/redo for all SwiftData changes
 ├── Theme/      Theme.swift             — central color tokens (auto dark mode)
 └── Views/      MainTabView, AssistantChatView, TodoListView, CalendarView,
                 ArchiveView, AddItemView, ListsManagerView, VoiceCaptureView,

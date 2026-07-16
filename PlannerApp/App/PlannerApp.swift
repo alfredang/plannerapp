@@ -38,6 +38,7 @@ struct PlannerApp: App {
         WindowGroup {
             MainTabView()
                 .tint(Theme.accent)
+                .modelUndoSupport()
                 .task { seedSampleDataIfRequested() }
         }
         .modelContainer(container)

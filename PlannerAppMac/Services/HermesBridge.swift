@@ -52,6 +52,8 @@ enum HermesBridge {
     private struct ListSnapshot: Codable {
         let name: String
         let activeCount: Int
+        /// Name of the list this one nests under, when it is a sub-list.
+        let parent: String?
     }
 
     private struct StateSnapshot: Codable {
@@ -76,7 +78,8 @@ enum HermesBridge {
 
         let snapshot = StateSnapshot(
             generatedAt: dateFormatter.string(from: Date()),
-            lists: lists.map { ListSnapshot(name: $0.name, activeCount: $0.activeCount) },
+            lists: lists.map { ListSnapshot(name: $0.name, activeCount: $0.activeCount,
+                                            parent: $0.parent?.name) },
             items: items.map { item in
                 ItemSnapshot(
                     id: shortID(item.id),
@@ -184,7 +187,15 @@ enum HermesBridge {
 
         case "newlist":
             guard let name = params["name"], !name.isEmpty else { return "ERROR: missing name" }
-            _ = findOrCreateList(named: name, context: context)
+            let list = findOrCreateList(named: name, context: context)
+            // Optional parent=<name>: nest the list as a sub-list (parent created if needed).
+            if let parentName = params["parent"], !parentName.isEmpty {
+                let parent = findOrCreateList(named: parentName, context: context)
+                if parent.id != list.id, !parent.isDescendant(of: list) {
+                    list.parent = parent
+                }
+                return "OK: list “\(name)” exists under “\(parentName)”"
+            }
             return "OK: list “\(name)” exists"
 
         case "deletelist":
@@ -292,7 +303,7 @@ enum HermesBridge {
     | Reschedule | `planner://reschedule?id=ab12cd34&date=2026-07-16%2009:00` (omit date to clear) |
     | Change kind | `planner://setkind?id=ab12cd34&kind=appointment` (`task` or `appointment`) |
     | Set notes | `planner://note?id=ab12cd34&notes=…` |
-    | New list | `planner://newlist?name=Errands` |
+    | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
     | Delete list | `planner://deletelist?name=Errands` (items are kept) |
 
     Notes:

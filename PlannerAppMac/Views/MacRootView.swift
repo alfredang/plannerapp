@@ -81,6 +81,22 @@ struct MacRootView: View {
     @State private var selection: SidebarSelection = .category(.all)
     @State private var showingNewList = false
     @State private var newListName = ""
+    /// When set, the New List alert creates a sub-list under this parent.
+    @State private var newListParent: PlannerList?
+
+    /// Collapsed parent lists (chevron toggled shut), stored locally as comma-joined UUIDs —
+    /// per-device UI state, not synced data.
+    @AppStorage("collapsedLists") private var collapsedListsRaw = ""
+
+    private var collapsedLists: Set<UUID> {
+        Set(collapsedListsRaw.split(separator: ",").compactMap { UUID(uuidString: String($0)) })
+    }
+
+    private func toggleCollapsed(_ id: UUID) {
+        var set = collapsedLists
+        if !set.insert(id).inserted { set.remove(id) }
+        collapsedListsRaw = set.map(\.uuidString).joined(separator: ",")
+    }
     @State private var renamingList: PlannerList?
     @State private var renameText = ""
 
@@ -263,12 +279,13 @@ struct MacRootView: View {
                 }
             }
             Section("My Lists") {
-                ForEach(orderedLists) { list in
-                    userListRow(list)
+                ForEach(ListHierarchy.rows(lists, collapsed: collapsedLists)) { row in
+                    userListRow(row.list, depth: row.depth)
                 }
                 .onMove(perform: moveLists)
                 Button {
                     newListName = ""
+                    newListParent = nil
                     showingNewList = true
                 } label: {
                     Label("New List…", systemImage: "plus.circle")
@@ -288,12 +305,16 @@ struct MacRootView: View {
         .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 300)
         .navigationTitle("Planner")
         .safeAreaInset(edge: .bottom, spacing: 0) { syncStatusRow }
-        .alert("New List", isPresented: $showingNewList) {
+        .alert(newListParent == nil ? "New List" : "New Sub-list", isPresented: $showingNewList) {
             TextField("Name", text: $newListName)
             Button("Create") { createList() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Give your list a name.")
+            if let parent = newListParent {
+                Text("Give the sub-list under “\(parent.name)” a name.")
+            } else {
+                Text("Give your list a name.")
+            }
         }
         .alert("Rename List", isPresented: renameBinding, presenting: renamingList) { _ in
             TextField("Name", text: $renameText)
@@ -327,19 +348,69 @@ struct MacRootView: View {
             .tag(SidebarSelection.category(item))
     }
 
-    private func userListRow(_ list: PlannerList) -> some View {
-        Label(list.name, systemImage: "folder")
-            .badge(list.activeCount)
+    private func userListRow(_ list: PlannerList, depth: Int = 0) -> some View {
+        HStack(spacing: 4) {
+            if !(list.children ?? []).isEmpty {
+                let isCollapsed = collapsedLists.contains(list.id)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { toggleCollapsed(list.id) }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                        .frame(width: 12)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isCollapsed ? "Expand \(list.name)" : "Collapse \(list.name)")
+            }
+            Label(list.name, systemImage: "folder")
+            if list.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+                    .accessibilityLabel("Pinned")
+            }
+        }
+            .padding(.leading, CGFloat(depth) * 16)
+            .badge(list.subtreeActiveCount)
             .tag(SidebarSelection.userList(list.id))
             .contextMenu {
+                Button(list.isPinned ? "Unpin" : "Pin to Top") {
+                    withAnimation { list.isPinned.toggle() }
+                }
+                Button("New Sub-list…") {
+                    newListName = ""
+                    newListParent = list
+                    showingNewList = true
+                }
+                Menu("Move to") {
+                    if list.parent != nil {
+                        Button("Top Level") { reparent(list, under: nil) }
+                    }
+                    ForEach(ListHierarchy.rows(lists).filter {
+                        $0.list.id != list.id && $0.list.id != list.parent?.id
+                            && !$0.list.isDescendant(of: list)
+                    }) { row in
+                        Button(String(repeating: "  ", count: row.depth) + row.list.name) {
+                            reparent(list, under: row.list)
+                        }
+                    }
+                }
                 Button("Rename…") {
                     renameText = list.name
                     renamingList = list
                 }
+                Divider()
                 Button("Delete", role: .destructive) {
-                    context.delete(list)   // items are kept — the relationship nullifies
+                    context.delete(list)   // items + sub-lists are kept — relationships nullify
                 }
             }
+    }
+
+    private func reparent(_ list: PlannerList, under parent: PlannerList?) {
+        list.parent = parent
+        list.sortOrder = 0   // never-placed → joins the end of its new sibling group
     }
 
     private func count(for category: SidebarItem) -> Int {
@@ -348,16 +419,12 @@ struct MacRootView: View {
 
     // MARK: - List management
 
-    /// The user's lists in their manually chosen sidebar order (synced via CloudKit).
-    /// Never-placed lists go to the end, oldest first.
-    private var orderedLists: [PlannerList] {
-        ManualOrder.sorted(lists) { $0.sortOrder }
-    }
-
+    /// Drag over the flattened outline: reorders siblings, and dropping into a group's
+    /// children nests the dragged list there (see ListHierarchy.applyMove).
     private func moveLists(from source: IndexSet, to destination: Int) {
-        ManualOrder.applyMove(orderedLists, from: source, to: destination) { list, position in
-            list.sortOrder = position
-        }
+        // Same collapsed set as the ForEach above — onMove indices refer to visible rows.
+        ListHierarchy.applyMove(ListHierarchy.rows(lists, collapsed: collapsedLists),
+                                from: source, to: destination)
     }
 
     private var renameBinding: Binding<Bool> {
@@ -367,8 +434,13 @@ struct MacRootView: View {
     private func createList() {
         let name = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
-        let list = PlannerList(name: name)
+        let list = PlannerList(name: name, parent: newListParent)
         context.insert(list)
+        // Reveal the new sub-list if its parent was collapsed.
+        if let parent = newListParent, collapsedLists.contains(parent.id) {
+            toggleCollapsed(parent.id)
+        }
+        newListParent = nil
         selection = .userList(list.id)
     }
 

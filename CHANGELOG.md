@@ -1,10 +1,17 @@
 # Changelog
 
-## [1.4] — 2026-07-16
+## [1.4] — 2026-07-17
 
 - Rearrange everything by hand: hold and drag to-dos, appointments, and your lists into
   the order you want
-- Your custom order syncs across iPhone and Mac via iCloud
+- Sub-lists: nest lists under a parent (e.g. clients under "Clients") — create one from
+  a list's menu, or drag a list into a group; a parent shows its own and its sub-lists' items,
+  and can be collapsed in the Mac sidebar
+- Pin to top: pin your most important to-dos (swipe right, or right-click on Mac) and
+  lists — pinned entries float above the rest
+- Undo: take back any change — deletes, check-offs, edits, and drags (⌘Z on Mac, the
+  Undo button on iPhone)
+- Your custom order, sub-lists, and pins sync across iPhone and Mac via iCloud
 - Bug fixes and performance improvements
 
 ## [1.3] — 2026-07-15
