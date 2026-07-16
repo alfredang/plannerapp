@@ -3,16 +3,16 @@ import SwiftUI
 /// Root navigation. House-style bottom tabs: the app's content first, then Feedback + About.
 struct MainTabView: View {
     private enum Tab: Hashable {
-        case assistant, planner, calendar, archive, feedback, about
+        case assistant, appointments, todos, calendar, archive, feedback, about
     }
 
-    @State private var selection: Tab = .planner
+    @State private var selection: Tab = .appointments
 
     init() {
         #if DEBUG
         // Screenshot/test helper: `-openPlanner` (etc.) jumps straight to a tab at launch.
         if CommandLine.arguments.contains("-openPlanner") {
-            _selection = State(initialValue: .planner)
+            _selection = State(initialValue: .todos)
         } else if CommandLine.arguments.contains("-openCalendar") {
             _selection = State(initialValue: .calendar)
         }
@@ -21,11 +21,15 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            // Planner opens first: appointments on top, then the to-dos, with the
-            // chatbot capture bar pinned at the bottom. Chat keeps its own tab.
-            TodoListView()
-                .tabItem { Label("Planner", systemImage: "checklist") }
-                .tag(Tab.planner)
+            // Appointments and To-Dos are separate tabs — never both on one page.
+            // Each keeps the list chips and the bottom chatbot capture bar.
+            TodoListView(mode: .appointment)
+                .tabItem { Label("Appointments", systemImage: "calendar") }
+                .tag(Tab.appointments)
+
+            TodoListView(mode: .task)
+                .tabItem { Label("To-Dos", systemImage: "checklist") }
+                .tag(Tab.todos)
 
             AssistantChatView()
                 .tabItem { Label("Chat", systemImage: "sparkles") }

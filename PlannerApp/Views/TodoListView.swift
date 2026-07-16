@@ -6,6 +6,10 @@ import SwiftData
 /// visible chip bar. Tap a chip to filter; long-press a list chip to rename or delete it;
 /// "＋ New List" creates one. Includes the **voice add** mic button and a manual add button.
 struct TodoListView: View {
+    /// Which kind this tab shows — Appointments and To-Dos are separate tabs, so a page
+    /// never mixes both sections.
+    var mode: PlannerKind = .task
+
     @Environment(\.modelContext) private var context
 
     // Active items only; checked items auto-archive and disappear from here.
@@ -46,21 +50,24 @@ struct TodoListView: View {
         return lists.first { $0.id == id }
     }
 
+    private var modeTitle: String { mode == .task ? "To-Dos" : "Appointments" }
+
     private var navigationTitle: String {
-        switch filter {
-        case .category(let c): return c == .all ? "Planner" : c.title
-        case .list:            return currentList?.name ?? "Planner"
-        }
+        if case .list = filter, let list = currentList { return list.name }
+        return modeTitle
     }
+
+    /// Everything of this tab's kind (the tab never mixes to-dos and appointments).
+    private var kindItems: [PlannerItem] { items.filter { $0.kind == mode } }
 
     private var visibleItems: [PlannerItem] {
         switch filter {
         case .category(let c):
-            return items.filter { c.contains($0) }
+            return kindItems.filter { c.contains($0) }
         case .list:
             // A parent list shows its own items plus everything in its sub-lists.
             let ids = currentList?.subtreeIDs ?? []
-            return items.filter { item in
+            return kindItems.filter { item in
                 guard let listID = item.list?.id else { return false }
                 return ids.contains(listID)
             }
@@ -70,12 +77,9 @@ struct TodoListView: View {
     /// Rows in manual drag order (synced via CloudKit through `sortOrder`, so the Mac app
     /// shows the same arrangement); never-placed rows keep their date order, after the
     /// placed ones. Same for the list chips below.
-    private var tasks: [PlannerItem] {
-        ManualOrder.sortedPinnedFirst(visibleItems.filter { $0.kind == .task },
-                                      pinned: { $0.isPinned }, position: { $0.sortOrder })
-    }
-    private var appointments: [PlannerItem] {
-        ManualOrder.sortedPinnedFirst(visibleItems.filter { $0.kind == .appointment },
+    /// Visible rows in manual drag order, pinned first.
+    private var rows: [PlannerItem] {
+        ManualOrder.sortedPinnedFirst(visibleItems,
                                       pinned: { $0.isPinned }, position: { $0.sortOrder })
     }
     private func moveItems(_ ordered: [PlannerItem], from source: IndexSet, to destination: Int) {
@@ -119,7 +123,11 @@ struct TodoListView: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { captureBar }
-            .sheet(isPresented: $showingAdd) { AddItemView(defaultList: currentList) }
+            .sheet(isPresented: $showingAdd) {
+                // Default the form to this tab's kind.
+                AddItemView(prefill: ParsedEntry(title: "", kind: mode, date: nil),
+                            defaultList: currentList)
+            }
             .sheet(isPresented: $showingLists) { ListsManagerView() }
             .sheet(item: $editingItem) { AddItemView(item: $0) }
             .alert(newListParent == nil ? "New List" : "New Sub-list", isPresented: $showingNewList) {
@@ -152,10 +160,11 @@ struct TodoListView: View {
     private var chipBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(PlannerCategory.allCases) { category in
+                // The kind chips are redundant here — each kind has its own tab now.
+                ForEach([PlannerCategory.all, .today, .scheduled]) { category in
                     chip(title: category.title,
                          symbol: category.symbol,
-                         count: items.filter { category.contains($0) }.count,
+                         count: kindItems.filter { category.contains($0) }.count,
                          isSelected: filter == .category(category)) {
                         withAnimation { filter = .category(category) }
                     }
@@ -166,9 +175,12 @@ struct TodoListView: View {
                 }
 
                 ForEach(ListHierarchy.rows(lists)) { row in
+                    let subtree = row.list.subtreeIDs
                     chip(title: row.depth > 0 ? "↳ \(row.list.name)" : row.list.name,
                          symbol: row.list.isPinned ? "pin.fill" : "folder",
-                         count: row.list.subtreeActiveCount,
+                         count: kindItems.filter { item in
+                             item.list.map { subtree.contains($0.id) } ?? false
+                         }.count,
                          isSelected: filter == .list(row.list.id)) {
                         withAnimation { filter = .list(row.list.id) }
                     }
@@ -237,22 +249,10 @@ struct TodoListView: View {
 
     private var itemList: some View {
         List {
-            if !appointments.isEmpty {
-                let ordered = appointments
-                Section("Appointments") {
-                    ForEach(ordered) { row($0) }
-                        .onDelete { delete(ordered, at: $0) }
-                        .onMove { moveItems(ordered, from: $0, to: $1) }
-                }
-            }
-            if !tasks.isEmpty {
-                let ordered = tasks
-                Section("To-Do") {
-                    ForEach(ordered) { row($0) }
-                        .onDelete { delete(ordered, at: $0) }
-                        .onMove { moveItems(ordered, from: $0, to: $1) }
-                }
-            }
+            let ordered = rows
+            ForEach(ordered) { row($0) }
+                .onDelete { delete(ordered, at: $0) }
+                .onMove { moveItems(ordered, from: $0, to: $1) }
         }
     }
 
@@ -433,15 +433,17 @@ struct TodoListView: View {
         ContentUnavailableView {
             Label(emptyTitle, systemImage: "sparkles")
         } description: {
-            Text("Tap + to add a to-do or appointment, or use the mic to add one by voice.")
+            Text(mode == .task
+                 ? "Tap + to add a to-do, or tell the assistant below what you need to do."
+                 : "Tap + to add an appointment, or tell the assistant below — e.g. “Lunch with Sam tomorrow 1pm”.")
         }
         .frame(maxHeight: .infinity)
     }
 
     private var emptyTitle: String {
-        if let list = currentList { return "“\(list.name)” is empty" }
+        if let list = currentList { return "No \(modeTitle.lowercased()) in “\(list.name)”" }
         if case .category(let c) = filter, c != .all { return "Nothing in \(c.title)" }
-        return "Nothing planned yet"
+        return mode == .task ? "No to-dos yet" : "No appointments yet"
     }
 
     // MARK: - List management
