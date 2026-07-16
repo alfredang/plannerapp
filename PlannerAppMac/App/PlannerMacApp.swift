@@ -98,5 +98,32 @@ struct PlannerMacApp: App {
                 .keyboardShortcut("t", modifiers: [.command, .option])
             }
         }
+
+        Settings {
+            MacSettingsView()
+        }
+    }
+}
+
+/// App Settings (⌘,): what the terminal panel boots — a plain shell, Hermes, or OpenClaw.
+/// The same setting is switchable from the terminal panel's title menu.
+private struct MacSettingsView: View {
+    @AppStorage("terminalAgent") private var terminalAgentRaw = TerminalAgent.hermes.rawValue
+
+    var body: some View {
+        Form {
+            Picker("Terminal starts with", selection: $terminalAgentRaw) {
+                ForEach(TerminalAgent.allCases) { agent in
+                    Text(agent.title).tag(agent.rawValue)
+                }
+            }
+            .pickerStyle(.inline)
+            Text("The agent CLI must be on your PATH (e.g. ~/.local/bin). Changing this restarts the terminal panel.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .formStyle(.grouped)
+        .frame(width: 400)
+        .navigationTitle("Planner Settings")
     }
 }

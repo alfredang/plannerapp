@@ -47,6 +47,9 @@ final class PlannerItem {
     /// Pinned rows float above the rest of their section (synced via CloudKit).
     var isPinned: Bool = false
 
+    /// Who this item is assigned to (free text, e.g. an intern's name). Empty = unassigned.
+    var assignedTo: String = ""
+
     init(
         title: String,
         notes: String = "",

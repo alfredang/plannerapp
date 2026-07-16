@@ -23,6 +23,7 @@ struct AddItemView: View {
     @State private var includeDate = false
     @State private var date = Date()
     @State private var selectedListID: UUID?
+    @State private var assignedTo = ""
 
     init(prefill: ParsedEntry? = nil, defaultList: PlannerList? = nil) {
         self.prefill = prefill
@@ -74,6 +75,13 @@ struct AddItemView: View {
                         }
                     }
                 }
+
+                Section {
+                    TextField("Assign to (optional)", text: $assignedTo)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.words)
+                        #endif
+                }
             }
             .navigationTitle(navigationTitle)
             #if os(iOS)
@@ -112,6 +120,7 @@ struct AddItemView: View {
             notes = itemToEdit.notes
             kind = itemToEdit.kind
             selectedListID = itemToEdit.list?.id
+            assignedTo = itemToEdit.assignedTo
             if let d = itemToEdit.date {
                 date = d
                 includeDate = true
@@ -133,12 +142,15 @@ struct AddItemView: View {
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let list = lists.first { $0.id == selectedListID }
 
+        let trimmedAssignee = assignedTo.trimmingCharacters(in: .whitespacesAndNewlines)
+
         if let itemToEdit {
             itemToEdit.title = trimmedTitle
             itemToEdit.notes = trimmedNotes
             itemToEdit.kind = kind
             itemToEdit.date = includeDate ? date : nil
             itemToEdit.list = list
+            itemToEdit.assignedTo = trimmedAssignee
         } else {
             let item = PlannerItem(
                 title: trimmedTitle,
@@ -147,6 +159,7 @@ struct AddItemView: View {
                 date: includeDate ? date : nil
             )
             item.list = list
+            item.assignedTo = trimmedAssignee
             context.insert(item)
         }
         dismiss()

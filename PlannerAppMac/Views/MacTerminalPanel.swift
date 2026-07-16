@@ -2,12 +2,57 @@ import SwiftUI
 import AppKit
 import SwiftTerm
 
+/// What the terminal panel auto-starts. User-selectable in Settings (⌘,) and from the
+/// panel header; persisted via AppStorage and synced between both places.
+enum TerminalAgent: String, CaseIterable, Identifiable {
+    case hermes, openclaw, blank
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .hermes:   return "Hermes"
+        case .openclaw: return "OpenClaw"
+        case .blank:    return "Blank terminal"
+        }
+    }
+
+    /// Panel header title.
+    var panelTitle: String {
+        switch self {
+        case .hermes:   return "Hermes Agent"
+        case .openclaw: return "OpenClaw Agent"
+        case .blank:    return "Terminal"
+        }
+    }
+
+    /// The CLI to exec, or nil for a plain shell.
+    var executable: String? {
+        switch self {
+        case .hermes:   return "hermes"
+        case .openclaw: return "openclaw"
+        case .blank:    return nil
+        }
+    }
+
+    /// Arguments after the executable (e.g. `hermes chat`).
+    var arguments: String {
+        self == .hermes ? " chat" : ""
+    }
+}
+
 /// The collapsible right-hand terminal panel: a real pty-backed terminal (SwiftTerm) that
-/// auto-starts the user's `hermes` CLI agent in the app's Hermes workspace. From there the
-/// agent reads `planner-state.json` and edits the todo list through the `planner://` command
-/// scheme (see `HermesBridge`). Falls back to a plain zsh if hermes isn't installed.
+/// auto-starts the user's chosen agent (Hermes, OpenClaw, or a plain shell — see
+/// `TerminalAgent`) in the app's Hermes workspace. Agents read `planner-state.json` and edit
+/// the todo list through the `planner://` command scheme (see `HermesBridge`). Falls back to
+/// a plain zsh if the chosen CLI isn't installed.
 struct MacTerminalPanel: View {
     @Binding var isVisible: Bool
+
+    /// Which agent the terminal boots. Shared with the Settings pane via UserDefaults.
+    @AppStorage("terminalAgent") private var terminalAgentRaw = TerminalAgent.hermes.rawValue
+
+    private var agent: TerminalAgent { TerminalAgent(rawValue: terminalAgentRaw) ?? .hermes }
 
     /// Bumping this recreates the terminal view, restarting the agent process.
     @State private var runID = UUID()
@@ -28,7 +73,7 @@ struct MacTerminalPanel: View {
                 // computed on width − scrollerWidth) and we hide that scroller — so push the
                 // dead strip past the panel edge (clipped below) to keep the visible left and
                 // right margins symmetric at 8pt.
-                HermesTerminalView {
+                HermesTerminalView(agent: agent) {
                     processExited = true
                 }
                 .padding(.leading, 8)
@@ -45,6 +90,7 @@ struct MacTerminalPanel: View {
             footer
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .onChange(of: terminalAgentRaw) { restart() }   // switching agents reboots the terminal
     }
 
     private var header: some View {
@@ -52,10 +98,24 @@ struct MacTerminalPanel: View {
             Image(systemName: "terminal.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.accent)
-            Text("Hermes Agent")
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            // Quick agent switcher — the same setting lives in Settings (⌘,).
+            Menu {
+                Picker("Terminal starts with", selection: $terminalAgentRaw) {
+                    ForEach(TerminalAgent.allCases) { agent in
+                        Text(agent.title).tag(agent.rawValue)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                Text(agent.panelTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Choose what the terminal starts with")
             Circle()
                 .fill(processExited ? Color.red : Color.green)
                 .frame(width: 7, height: 7)
@@ -113,6 +173,7 @@ struct MacTerminalPanel: View {
 /// AppKit bridge to SwiftTerm's `LocalProcessTerminalView`, launching the Hermes agent
 /// (or a plain shell as fallback) inside the Hermes workspace directory.
 private struct HermesTerminalView: NSViewRepresentable {
+    var agent: TerminalAgent
     var onProcessExit: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onProcessExit: onProcessExit) }
@@ -136,18 +197,27 @@ private struct HermesTerminalView: NSViewRepresentable {
         env["PATH"] = "\(home)/.local/bin:" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
 
         let workspace = HermesBridge.workspaceURL.path
-        // Login shell so the user's own PATH additions apply too; exec hermes when present.
-        let bootstrap = """
-        cd '\(workspace)' 2>/dev/null || cd ~
-        if command -v hermes >/dev/null 2>&1; then
-          exec hermes chat
-        else
-          echo 'hermes CLI not found (expected on PATH, e.g. ~/.local/bin/hermes).'
-          echo 'Install Hermes Agent, then click the restart button above.'
-          echo 'Dropping into a plain shell:'
-          exec /bin/zsh -i
-        fi
-        """
+        // Login shell so the user's own PATH additions apply too; exec the chosen agent
+        // when present, else drop to a plain shell.
+        let bootstrap: String
+        if let cli = agent.executable {
+            bootstrap = """
+            cd '\(workspace)' 2>/dev/null || cd ~
+            if command -v \(cli) >/dev/null 2>&1; then
+              exec \(cli)\(agent.arguments)
+            else
+              echo '\(cli) CLI not found (expected on PATH, e.g. ~/.local/bin/\(cli)).'
+              echo 'Install it, or pick another agent from the panel title / Settings (⌘,).'
+              echo 'Dropping into a plain shell:'
+              exec /bin/zsh -i
+            fi
+            """
+        } else {
+            bootstrap = """
+            cd '\(workspace)' 2>/dev/null || cd ~
+            exec /bin/zsh -i
+            """
+        }
         terminal.startProcess(
             executable: "/bin/zsh",
             args: ["-l", "-c", bootstrap],

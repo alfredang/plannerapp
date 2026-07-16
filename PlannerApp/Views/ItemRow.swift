@@ -34,6 +34,10 @@ struct ItemRow: View {
                         Text("•")
                         Label(list.name, systemImage: "folder")
                     }
+                    if !item.assignedTo.isEmpty {
+                        Text("•")
+                        Label(item.assignedTo, systemImage: "person.fill")
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

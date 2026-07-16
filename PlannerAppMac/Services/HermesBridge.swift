@@ -45,6 +45,7 @@ enum HermesBridge {
         let date: String?
         let list: String?
         let notes: String?
+        let assignedTo: String?
         let done: Bool
         let archived: Bool
     }
@@ -88,6 +89,7 @@ enum HermesBridge {
                     date: item.date.map(dateFormatter.string(from:)),
                     list: item.list?.name,
                     notes: item.notes.isEmpty ? nil : item.notes,
+                    assignedTo: item.assignedTo.isEmpty ? nil : item.assignedTo,
                     done: item.isDone,
                     archived: item.isArchived
                 )
@@ -184,6 +186,13 @@ enum HermesBridge {
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
             item.notes = params["notes"] ?? ""
             return "OK: notes of “\(item.title)” updated"
+
+        case "assign":
+            guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
+            let assignee = params["to"] ?? ""
+            item.assignedTo = assignee
+            return assignee.isEmpty ? "OK: “\(item.title)” unassigned"
+                                    : "OK: “\(item.title)” assigned to \(assignee)"
 
         case "newlist":
             guard let name = params["name"], !name.isEmpty else { return "ERROR: missing name" }
@@ -303,6 +312,7 @@ enum HermesBridge {
     | Reschedule | `planner://reschedule?id=ab12cd34&date=2026-07-16%2009:00` (omit date to clear) |
     | Change kind | `planner://setkind?id=ab12cd34&kind=appointment` (`task` or `appointment`) |
     | Set notes | `planner://note?id=ab12cd34&notes=…` |
+    | Assign | `planner://assign?title=Setup%20exams&to=Ngooi` (empty `to` unassigns) |
     | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
     | Delete list | `planner://deletelist?name=Errands` (items are kept) |
 
