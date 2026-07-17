@@ -3,7 +3,7 @@ import Foundation
 /// The smart list categories shared by the iPhone Planner tab and the Mac sidebar, so both
 /// platforms present the same structure: smart categories first, then the user's own lists.
 enum PlannerCategory: String, CaseIterable, Identifiable, Hashable {
-    case all, today, scheduled, todos, appointments
+    case all, today, scheduled, pinned, todos, appointments
 
     var id: String { rawValue }
 
@@ -12,6 +12,7 @@ enum PlannerCategory: String, CaseIterable, Identifiable, Hashable {
         case .all:          return "All Items"
         case .today:        return "Today"
         case .scheduled:    return "Scheduled"
+        case .pinned:       return "Pinned"
         case .todos:        return "To-Dos"
         case .appointments: return "Appointments"
         }
@@ -22,6 +23,7 @@ enum PlannerCategory: String, CaseIterable, Identifiable, Hashable {
         case .all:          return "tray.full.fill"
         case .today:        return "star.fill"
         case .scheduled:    return "clock.fill"
+        case .pinned:       return "pin.fill"
         case .todos:        return "checklist"
         case .appointments: return "calendar"
         }
@@ -37,6 +39,8 @@ enum PlannerCategory: String, CaseIterable, Identifiable, Hashable {
             return Calendar.current.isDateInToday(date)
         case .scheduled:
             return item.date != nil
+        case .pinned:
+            return item.isPinned
         case .todos:
             return item.kind == .task
         case .appointments:

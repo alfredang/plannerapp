@@ -10,6 +10,8 @@
   the order you want
 - Tap the pin on any row to pin it to the top; assign items to people with the new
   "Assign to" field
+- New Pinned view: see everything you've pinned in one place (sidebar on Mac, chip on
+  iPhone)
 - Setting a date & time on a to-do turns it into an appointment automatically
 - Sub-lists: nest lists under a parent (e.g. clients under "Clients") — create one from
   a list's menu, or drag a list into a group; a parent shows its own and its sub-lists' items,

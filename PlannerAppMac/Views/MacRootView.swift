@@ -7,7 +7,7 @@ import AppKit
 /// separately via `SidebarSelection.userList`.
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     // Smart lists
-    case all, today, scheduled, todos, appointments
+    case all, today, scheduled, pinned, todos, appointments
     // Browse
     case calendar, archive
     // Support
@@ -20,6 +20,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .all:          return "All Items"
         case .today:        return "Today"
         case .scheduled:    return "Scheduled"
+        case .pinned:       return "Pinned"
         case .todos:        return "To-Dos"
         case .appointments: return "Appointments"
         case .calendar:     return "Calendar"
@@ -34,6 +35,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .all:          return "tray.full.fill"
         case .today:        return "star.fill"
         case .scheduled:    return "clock.fill"
+        case .pinned:       return "pin.fill"
         case .todos:        return "checklist"
         case .appointments: return "calendar"
         case .calendar:     return "calendar.badge.clock"
@@ -43,7 +45,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    static let smartLists: [SidebarItem] = [.all, .today, .scheduled, .todos, .appointments]
+    static let smartLists: [SidebarItem] = [.all, .today, .scheduled, .pinned, .todos, .appointments]
     static let support: [SidebarItem] = [.feedback, .about]
 
     /// Whether an active (non-archived) item belongs to this smart category.
@@ -56,6 +58,8 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
             return Calendar.current.isDateInToday(date)
         case .scheduled:
             return item.date != nil
+        case .pinned:
+            return item.isPinned
         case .todos:
             return item.kind == .task
         case .appointments:
