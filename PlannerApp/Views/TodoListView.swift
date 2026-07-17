@@ -161,7 +161,7 @@ struct TodoListView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 // The kind chips are redundant here — each kind has its own tab now.
-                ForEach([PlannerCategory.all, .today, .scheduled, .pinned]) { category in
+                ForEach([PlannerCategory.all, .pinned, .today, .scheduled]) { category in
                     chip(title: category.title,
                          symbol: category.symbol,
                          count: kindItems.filter { category.contains($0) }.count,

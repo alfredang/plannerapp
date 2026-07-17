@@ -45,7 +45,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    static let smartLists: [SidebarItem] = [.all, .today, .scheduled, .pinned, .todos, .appointments]
+    static let smartLists: [SidebarItem] = [.all, .pinned, .today, .scheduled, .todos, .appointments]
     static let support: [SidebarItem] = [.feedback, .about]
 
     /// Whether an active (non-archived) item belongs to this smart category.
