@@ -376,7 +376,7 @@ struct MacRootView: View {
                     .accessibilityLabel("Pinned")
             }
         }
-            .padding(.leading, CGFloat(depth) * 16)
+            .padding(.leading, CGFloat(depth) * 28)
             .badge(list.subtreeActiveCount)
             .tag(SidebarSelection.userList(list.id))
             .contextMenu {

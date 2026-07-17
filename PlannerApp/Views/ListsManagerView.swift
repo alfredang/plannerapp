@@ -31,7 +31,7 @@ struct ListsManagerView: View {
                         ForEach(ListHierarchy.rows(lists)) { row in
                             HStack {
                                 Label(row.list.name, systemImage: "folder")
-                                    .padding(.leading, CGFloat(row.depth) * 20)
+                                    .padding(.leading, CGFloat(row.depth) * 28)
                                 if row.list.isPinned {
                                     Image(systemName: "pin.fill")
                                         .font(.system(size: 10))
