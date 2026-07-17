@@ -11,7 +11,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     // Browse
     case calendar, archive
     // Support
-    case feedback, about
+    case settings, feedback, about
 
     var id: String { rawValue }
 
@@ -25,6 +25,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .appointments: return "Appointments"
         case .calendar:     return "Calendar"
         case .archive:      return "Archive"
+        case .settings:     return "Settings"
         case .feedback:     return "Feedback"
         case .about:        return "About"
         }
@@ -40,13 +41,14 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .appointments: return "calendar"
         case .calendar:     return "calendar.badge.clock"
         case .archive:      return "archivebox.fill"
+        case .settings:     return "gearshape.fill"
         case .feedback:     return "bubble.left.and.bubble.right.fill"
         case .about:        return "info.circle.fill"
         }
     }
 
     static let smartLists: [SidebarItem] = [.all, .pinned, .today, .scheduled, .todos, .appointments]
-    static let support: [SidebarItem] = [.feedback, .about]
+    static let support: [SidebarItem] = [.settings, .feedback, .about]
 
     /// Whether an active (non-archived) item belongs to this smart category.
     func contains(_ item: PlannerItem) -> Bool {
@@ -463,6 +465,8 @@ struct MacRootView: View {
             CalendarView()
         case .category(.archive):
             ArchiveView()
+        case .category(.settings):
+            MacSettingsPane()
         case .category(.feedback):
             FeedbackView()
         case .category(.about):
