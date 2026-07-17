@@ -53,8 +53,9 @@ with full undo.
   from a list's context menu, or drag a list into a group to nest it. A parent list shows its
   own items plus everything in its sub-lists, and collapses in the Mac sidebar. Synced like
   everything else.
-- 📌 **Pin to top** — pin important to-dos (swipe right on iPhone, right-click on Mac) and
-  lists; pinned entries float above the rest and sync across devices.
+- 📌 **Pin to top** — tap the pin on any row (or swipe right on iPhone, right-click on Mac) to
+  pin it; pinned entries float above the rest and sync across devices. A dedicated **Pinned**
+  view right next to All Items collects everything you've pinned.
 - ↩️ **Undo everywhere** — take back deletes, check-offs, edits, and drags: ⌘Z / Edit ▸ Undo
   on the Mac, the Undo toolbar button on iPhone.
 - ☁️ **iCloud sync** — SwiftData + CloudKit mirrors your data to your private iCloud database
