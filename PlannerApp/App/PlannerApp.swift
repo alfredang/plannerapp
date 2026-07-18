@@ -1,11 +1,16 @@
 import SwiftUI
 import SwiftData
+import UserNotifications
 #if DEBUG
 import CoreData
 #endif
 
 @main
 struct PlannerApp: App {
+
+    /// Re-arm the advance reminders whenever the app comes back to the foreground, so
+    /// edits made on another device (via iCloud) are reflected in the pending alerts.
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         #if DEBUG
@@ -40,8 +45,20 @@ struct PlannerApp: App {
                 .tint(Theme.accent)
                 .modelUndoSupport()
                 .task { seedSampleDataIfRequested() }
+                .task {
+                    // Ask once, then arm the advance alerts for everything already due.
+                    await ReminderScheduler.requestAuthorization()
+                    await ReminderScheduler.rescheduleAll(context: container.mainContext)
+                    #if DEBUG
+                    await dumpPendingRemindersIfRequested()
+                    #endif
+                }
         }
         .modelContainer(container)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await ReminderScheduler.rescheduleAll(context: container.mainContext) }
+        }
     }
 
     #if DEBUG
@@ -82,6 +99,29 @@ struct PlannerApp: App {
     }
     #endif
 
+    #if DEBUG
+    /// DEBUG-only: write the pending reminder requests to Documents so a headless simulator
+    /// run can verify that the advance alerts were actually scheduled. `-dumpReminders`.
+    private func dumpPendingRemindersIfRequested() async {
+        guard CommandLine.arguments.contains("-dumpReminders") else { return }
+        let pending = await UNUserNotificationCenter.current().pendingNotificationRequests()
+        let df = ISO8601DateFormatter()
+        var lines = ["pending=\(pending.count)"]
+        for r in pending.sorted(by: { $0.identifier < $1.identifier }) {
+            var when = "?"
+            if let t = r.trigger as? UNCalendarNotificationTrigger,
+               let next = t.nextTriggerDate() {
+                when = df.string(from: next)
+            }
+            lines.append("\(r.identifier) | fires=\(when) | \(r.content.title) | \(r.content.body)")
+        }
+        let text = lines.joined(separator: "\n")
+        print(text)
+        let url = URL.documentsDirectory.appending(path: "pending-reminders.txt")
+        try? text.write(to: url, atomically: true, encoding: .utf8)
+    }
+    #endif
+
     /// DEBUG-only: seed demo data for App Store screenshots when launched with `-seedSampleData`.
     /// Never compiled into Release/App Store builds.
     private func seedSampleDataIfRequested() {
@@ -99,12 +139,26 @@ struct PlannerApp: App {
         let items: [PlannerItem] = [
             PlannerItem(title: "Lunch with Sam", kind: .appointment, date: at(13, 0)),
             PlannerItem(title: "Team standup", kind: .appointment, date: at(9, 30, addDays: 1)),
-            PlannerItem(title: "Dentist appointment", kind: .appointment, date: at(15, 30, addDays: 2)),
+            // Far enough out to sit beyond the reminder lead window, so the advance
+            // alerts have something to schedule in demo/screenshot runs.
+            PlannerItem(title: "Quarterly review", kind: .appointment, date: at(11, 0, addDays: 14)),
             PlannerItem(title: "Buy groceries", kind: .task),
             PlannerItem(title: "Renew gym membership", kind: .task),
             PlannerItem(title: "Reply to client email", kind: .task)
         ]
         items.forEach { ctx.insert($0) }
+
+        // A small nested list tree so the collapse/expand controls have something to act on.
+        if ((try? ctx.fetch(FetchDescriptor<PlannerList>())) ?? []).isEmpty {
+            let clients = PlannerList(name: "Clients")
+            ctx.insert(clients)
+            for name in ["Bizchamp", "Skills Union", "Innohat"] {
+                ctx.insert(PlannerList(name: name, parent: clients))
+            }
+            let projects = PlannerList(name: "Projects")
+            ctx.insert(projects)
+            ctx.insert(PlannerList(name: "AI-MMS", parent: projects))
+        }
         try? ctx.save()
         #endif
     }

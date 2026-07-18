@@ -17,6 +17,31 @@ struct ListsManagerView: View {
     @State private var renamingList: PlannerList?
     @State private var renameText = ""
 
+    /// Collapsed parent lists, stored locally as comma-joined UUIDs — per-device UI state,
+    /// not synced data. Shares the `collapsedLists` key with the Mac sidebar.
+    @AppStorage("collapsedLists") private var collapsedListsRaw = ""
+
+    private var collapsedLists: Set<UUID> {
+        Set(collapsedListsRaw.split(separator: ",").compactMap { UUID(uuidString: String($0)) })
+    }
+
+    private func toggleCollapsed(_ id: UUID) {
+        var set = collapsedLists
+        if !set.insert(id).inserted { set.remove(id) }
+        collapsedListsRaw = set.map(\.uuidString).joined(separator: ",")
+    }
+
+    /// Only lists with sub-lists can collapse.
+    private var collapsibleListIDs: [UUID] {
+        lists.filter { !($0.children ?? []).isEmpty }.map(\.id)
+    }
+
+    /// True when at least one parent list is still expanded (so "Collapse All" has work).
+    private var hasExpandedLists: Bool {
+        let collapsed = collapsedLists
+        return collapsibleListIDs.contains { !collapsed.contains($0) }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -28,15 +53,34 @@ struct ListsManagerView: View {
                     }
                 } else {
                     List {
-                        ForEach(ListHierarchy.rows(lists)) { row in
+                        ForEach(ListHierarchy.rows(lists, collapsed: collapsedLists)) { row in
                             // Tapping a folder opens it to reveal its to-dos & appointments.
                             // Rename/pin/delete live in the context menu (long-press).
                             NavigationLink {
                                 ListDetailView(list: row.list)
                             } label: {
-                                HStack {
+                                HStack(spacing: 6) {
+                                    // Chevron only for lists that actually have sub-lists;
+                                    // tapping it collapses/expands without opening the folder.
+                                    if !(row.list.children ?? []).isEmpty {
+                                        let isCollapsed = collapsedLists.contains(row.list.id)
+                                        Button {
+                                            withAnimation(.easeInOut(duration: 0.15)) {
+                                                toggleCollapsed(row.list.id)
+                                            }
+                                        } label: {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 11, weight: .semibold))
+                                                .foregroundStyle(.secondary)
+                                                .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                                                .frame(width: 22, height: 30)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel(isCollapsed
+                                                            ? "Expand \(row.list.name)"
+                                                            : "Collapse \(row.list.name)")
+                                    }
                                     Label(row.list.name, systemImage: "folder")
-                                        .padding(.leading, CGFloat(row.depth) * 28)
                                     if row.list.isPinned {
                                         Image(systemName: "pin.fill")
                                             .font(.system(size: 10))
@@ -48,6 +92,7 @@ struct ListsManagerView: View {
                                         .foregroundStyle(.secondary)
                                         .monospacedDigit()
                                 }
+                                .padding(.leading, CGFloat(row.depth) * 28)
                             }
                             .contextMenu {
                                 Button(row.list.isPinned ? "Unpin" : "Pin to Top") {
@@ -79,6 +124,26 @@ struct ListsManagerView: View {
                 // Shows the reorder grips; long-press-drag also works without it.
                 ToolbarItem(placement: .topBarTrailing) { EditButton() }
                 #endif
+                if !collapsibleListIDs.isEmpty {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                if hasExpandedLists {
+                                    collapsedListsRaw = collapsibleListIDs
+                                        .map(\.uuidString).joined(separator: ",")
+                                } else {
+                                    collapsedListsRaw = ""
+                                }
+                            }
+                        } label: {
+                            Label(hasExpandedLists ? "Collapse All" : "Expand All",
+                                  systemImage: hasExpandedLists
+                                  ? "arrow.down.right.and.arrow.up.left"
+                                  : "arrow.up.left.and.arrow.down.right")
+                        }
+                        .accessibilityLabel(hasExpandedLists ? "Collapse all lists" : "Expand all lists")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         newName = ""
@@ -131,18 +196,24 @@ struct ListsManagerView: View {
         let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         context.insert(PlannerList(name: name, parent: newParent))
+        // Reveal the new sub-list if its parent was collapsed.
+        if let parent = newParent, collapsedLists.contains(parent.id) {
+            toggleCollapsed(parent.id)
+        }
         newParent = nil
     }
 
     private func delete(at offsets: IndexSet) {
-        let rows = ListHierarchy.rows(lists)
+        // Must match the rows the ForEach renders, or the offsets point at the wrong lists.
+        let rows = ListHierarchy.rows(lists, collapsed: collapsedLists)
         for index in offsets { context.delete(rows[index].list) }
     }
 
     /// Drag over the flattened outline: reorders siblings, and dropping into a group's
     /// children nests the dragged list there (see ListHierarchy.applyMove).
     private func move(from source: IndexSet, to destination: Int) {
-        ListHierarchy.applyMove(ListHierarchy.rows(lists), from: source, to: destination)
+        ListHierarchy.applyMove(ListHierarchy.rows(lists, collapsed: collapsedLists),
+                                from: source, to: destination)
     }
 }
 

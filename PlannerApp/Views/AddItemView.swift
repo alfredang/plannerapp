@@ -193,6 +193,9 @@ struct AddItemView: View {
             item.assignedTo = trimmedAssignee
             context.insert(item)
         }
+        // Re-arm the advance alerts so a new/changed date takes effect immediately.
+        let ctx = context
+        Task { await ReminderScheduler.rescheduleAll(context: ctx) }
         dismiss()
     }
 }
