@@ -62,6 +62,10 @@ with full undo.
 - 📌 **Pin to top** — tap the pin on any row (or swipe right on iPhone, right-click on Mac) to
   pin it; pinned entries float above the rest and sync across devices. A dedicated **Pinned**
   view right next to All Items collects everything you've pinned.
+- 👤 **Delegate with Assign to** — put someone's name on an item and it moves out of your
+  way: **All Items, Pinned and Today show only your own work** (unassigned, or assigned to
+  you). Their items still show in full when you open their list. Set who "you" are in
+  Settings ▸ Me on the Mac.
 - ↩️ **Undo everywhere** — take back deletes, check-offs, edits, and drags: ⌘Z / Edit ▸ Undo
   on the Mac, the Undo toolbar button on iPhone.
 - ☁️ **iCloud sync** — SwiftData + CloudKit mirrors your data to your private iCloud database
@@ -78,6 +82,9 @@ with full undo.
   and it edits your planner through a local `planner://` command bridge, reading live state
   from an auto-maintained JSON snapshot. The panel docks beside the list (drag the divider to
   resize) and becomes a slide-over sheet on narrow windows.
+  **The agent cannot delete your data by default:** `delete` archives the item instead
+  (restorable from Archive) and deleting a list is refused outright, since that would orphan
+  every item inside it. Opt in via Settings ▸ Agent safety ▸ "Allow agent to delete".
 - 💬 **Feedback & About** — house-style tabs (WhatsApp feedback, developer info, version).
 
 ## Tech Stack
@@ -127,6 +134,7 @@ PlannerAppMac/                          — macOS desktop edition (DMG)
 └── Views/      MacRootView.swift       — sidebar: smart categories + user lists + sync badge
                 MacPlannerPane.swift    — item list + chatbot capture bar (text/voice)
                 MacTerminalPanel.swift  — collapsible SwiftTerm panel auto-running hermes
+                MacSettingsPane.swift   — settings: owner name, agent safety, terminal panel
 
 scripts/build-macos-dmg.sh              — Release build → DMG (+ notarization when a
                                           Developer ID certificate is present)
