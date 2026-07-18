@@ -33,6 +33,20 @@ with full undo.
 - 🍎 **Apple Intelligence on-device** — on iOS 26+ devices with the system model available, the
   assistant uses Apple's FoundationModels framework to classify and word entries; everywhere
   else it falls back to the deterministic parser. Both paths are fully local.
+- 🤖 **Ask the assistant to change things, not just add them** — the Chat tab understands
+  fifteen commands: *"mark Submit ATO done"*, *"move standup to Friday 9am"*, *"assign the
+  Ghana site to Ryan"*, *"pin the ATO task"*, *"move it to the top"*, *"make it an
+  appointment"*, *"create a list called Vendors under Clients"*, *"rename X to Y"*. Apple
+  Intelligence classifies the request on-device; **every change is then made by ordinary
+  code**, so the model can't invent a date or edit a field it wasn't given. There is no
+  hard-delete: *"delete X"* archives it, recoverable from the Archive.
+- ✍️ **Typo-tolerant titles** — the assistant fixes spelling and grammar as it writes an item
+  ("sumit ato" → "Submit ATO"), but never adds words you didn't type.
+- 🔎 **Search** — find anything active by keyword across titles, notes, assignee and list
+  name; words match in any order. Archived items are never searched.
+- 👯 **Duplicate check** — spots the same title on the same day and offers to archive the
+  extra copies, keeping the original. Multi-day courses (same title, different days) are
+  correctly left alone.
 - ✅ **To-dos & appointments in one list** — add either from a single, smart form.
 - ✏️ **Tap to edit** — tap any item in the Planner or Calendar to fix a typo or change its
   title, notes, type, or date in the same form used to create it.
@@ -124,6 +138,8 @@ PlannerApp/                             — iOS app + code shared with the Mac t
 │               SpeechRecognizer.swift  — native speech-to-text (cross-platform)
 │               ReminderScheduler.swift — local "N days before" alerts for dated items
 │               CalendarSync.swift      — mirrors appointments into the system Calendar
+│               PlannerCommand.swift    — assistant command router (15 verbs, on-device)
+│               DuplicateAudit.swift    — same-title-same-day duplicate detection
 │               ModelUndoSupport.swift  — system undo/redo for all SwiftData changes
 ├── Theme/      Theme.swift             — central color tokens (auto dark mode)
 └── Views/      MainTabView, AssistantChatView, TodoListView, CalendarView,

@@ -131,10 +131,49 @@ struct MacPlannerPane: View {
         .background(.bar)
     }
 
+    /// Same-title-same-day clusters among the rows on screen (multi-day courses are not
+    /// duplicates and are never flagged — see DuplicateAudit).
+    private var duplicateGroups: [DuplicateAudit.Group] {
+        DuplicateAudit.findDuplicates(in: items)
+    }
+
+    /// Quiet banner offering to archive redundant copies. Only appears when there are any.
+    @ViewBuilder
+    private var duplicateBanner: some View {
+        let groups = duplicateGroups
+        if !groups.isEmpty {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(groups.count == 1
+                         ? "1 possible duplicate"
+                         : "\(groups.count) possible duplicates")
+                        .font(.callout.weight(.medium))
+                    Text(groups.map { "“\($0.title)” (\($0.dayLabel))" }
+                            .joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Button("Archive extras") {
+                    withAnimation { groups.forEach(DuplicateAudit.resolve) }
+                }
+                .help("Keeps the original of each and archives the later copies — nothing is deleted")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color.orange.opacity(0.12))
+            Divider()
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             searchBar
             Divider()
+            duplicateBanner
             if items.isEmpty {
                 emptyState
             } else {
