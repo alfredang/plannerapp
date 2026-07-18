@@ -43,16 +43,22 @@ with full undo.
   upcoming lists.
 - 📥 **Auto-archive** — checking off an item moves it to the Archive automatically; uncheck to
   restore.
+- 🔔 **Reminders** — a heads-up notification before anything with a date is due: **3 days
+  ahead by default**, switchable to 1 day or 1 week (or off) in the Reminders tab. Alerts are
+  local to your device, re-armed whenever items change so iCloud edits from another device
+  stay in sync, and never fire for something already past.
 - 🗂 **Your own lists** — create, rename, and delete lists ("Work", "Groceries", …), file items
-  into them, and filter by list. On iPhone your lists live in a chip bar at the top of the
-  Appointments and To-Dos tabs (tap to filter, long-press to rename/delete). Lists sync like
-  everything else.
+  into them, and browse them from the folder button. Tapping a folder opens it to show its
+  to-dos and appointments (rename, pin and delete live in its context menu); the filter bar
+  at the top of each tab keeps just the smart views — **All Items, Pinned, Today**. Lists
+  sync like everything else.
 - ↕️ **Drag to rearrange** — hold and drag to-dos, appointments, and your lists into any order,
   on iPhone and Mac alike; your custom order syncs across devices via iCloud.
 - 🗂️ **Sub-lists** — nest lists under a parent (e.g. each client under "Clients"): create one
   from a list's context menu, or drag a list into a group to nest it. A parent list shows its
-  own items plus everything in its sub-lists, and collapses in the Mac sidebar. Synced like
-  everything else.
+  own items plus everything in its sub-lists. Synced like everything else.
+- 🔽 **Collapse & expand** — fold a group shut with its chevron, or collapse/expand **every**
+  list at once from the Mac sidebar's "My Lists" header or the Manage Lists toolbar on iPhone.
 - 📌 **Pin to top** — tap the pin on any row (or swipe right on iPhone, right-click on Mac) to
   pin it; pinned entries float above the rest and sync across devices. A dedicated **Pinned**
   view right next to All Items collects everything you've pinned.
@@ -105,11 +111,13 @@ PlannerApp/                             — iOS app + code shared with the Mac t
 ├── Services/   IntentAssistant.swift   — on-device Apple Intelligence drafting (iOS/macOS 26+)
 │               SmartParser.swift       — deterministic date/time + intent parsing
 │               SpeechRecognizer.swift  — native speech-to-text (cross-platform)
+│               ReminderScheduler.swift — local "N days before" alerts for dated items
 │               ModelUndoSupport.swift  — system undo/redo for all SwiftData changes
 ├── Theme/      Theme.swift             — central color tokens (auto dark mode)
 └── Views/      MainTabView, AssistantChatView, TodoListView, CalendarView,
-                ArchiveView, AddItemView, ListsManagerView, VoiceCaptureView,
-                ItemRow, FeedbackView, AboutView
+                ArchiveView, AddItemView, ListsManagerView (+ ListDetailView),
+                RemindersSettingsView, VoiceCaptureView, ItemRow, FeedbackView,
+                AboutView
 
 PlannerAppMac/                          — macOS desktop edition (DMG)
 ├── App/        PlannerMacApp.swift     — @main, same schema + iCloud container
