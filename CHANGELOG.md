@@ -8,6 +8,12 @@
 - The filter bar is simpler: just All, Pinned, and Today; your lists live behind the
   folder button
 - Turning off "Set date & time" on an appointment now works — it moves back to a to-do
+- Reminders: get a heads-up notification before anything with a date is due — 3 days
+  ahead by default, or choose 1 day or 1 week in the new Reminders settings
+- "Scheduled" is now called "Reminders"
+- Collapse or expand all your lists at once, on both iPhone and Mac; sub-lists now have
+  a chevron on iPhone too
+- Fixed: with lists collapsed, deleting or dragging a list could affect the wrong one
 
 ## [1.4] — 2026-07-17
 
