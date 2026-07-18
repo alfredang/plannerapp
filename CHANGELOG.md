@@ -19,6 +19,10 @@
 - Fixed: items with no date are no longer turned into appointments
 - Fixed: the assistant no longer adds words you didn't type to an item's title
 - The assistant's Undo now asks before removing the entry it just saved
+- "All Items" is now called "To-Do", and the duplicate To-Dos row is gone from the Mac
+  sidebar
+- New Settings tab on iPhone: set your name (used by the smart views) alongside the
+  reminder controls
 
 ## [1.4] — 2026-07-17
 

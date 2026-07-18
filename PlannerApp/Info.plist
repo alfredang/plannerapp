@@ -24,6 +24,10 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Planner adds your appointments to the calendar you choose, so they appear alongside the rest of your schedule.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Planner adds your appointments to the calendar you choose, so they appear alongside the rest of your schedule.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Planner uses the microphone so you can add tasks and appointments by voice.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

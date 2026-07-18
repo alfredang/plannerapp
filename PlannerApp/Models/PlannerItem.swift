@@ -50,6 +50,11 @@ final class PlannerItem {
     /// Who this item is assigned to (free text, e.g. an intern's name). Empty = unassigned.
     var assignedTo: String = ""
 
+    /// Identifier of the mirrored event in the system Calendar (see `CalendarSync`), so an
+    /// edit updates that event instead of creating a duplicate. Optional (CloudKit
+    /// requirement); `nil` until the appointment has been mirrored.
+    var calendarEventID: String?
+
     init(
         title: String,
         notes: String = "",

@@ -175,6 +175,7 @@ struct AddItemView: View {
 
         let trimmedAssignee = assignedTo.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let saved: PlannerItem
         if let itemToEdit {
             itemToEdit.title = trimmedTitle
             itemToEdit.notes = trimmedNotes
@@ -182,6 +183,7 @@ struct AddItemView: View {
             itemToEdit.date = includeDate ? date : nil
             itemToEdit.list = list
             itemToEdit.assignedTo = trimmedAssignee
+            saved = itemToEdit
         } else {
             let item = PlannerItem(
                 title: trimmedTitle,
@@ -192,7 +194,12 @@ struct AddItemView: View {
             item.list = list
             item.assignedTo = trimmedAssignee
             context.insert(item)
+            saved = item
         }
+        // Mirror the appointment into the system Calendar (and onward to Google, if that
+        // account is set up there). No-op unless the user enabled calendar sync.
+        if let eventID = CalendarSync.sync(saved) { saved.calendarEventID = eventID }
+
         // Re-arm the advance alerts so a new/changed date takes effect immediately.
         let ctx = context
         Task { await ReminderScheduler.rescheduleAll(context: ctx) }

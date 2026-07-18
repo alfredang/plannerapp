@@ -18,7 +18,6 @@
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
-	<!-- planner:// command scheme — the embedded Hermes agent edits the todo list through it. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -38,6 +37,10 @@
 	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Planner adds your appointments to the calendar you choose, so they appear alongside the rest of your schedule.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Planner adds your appointments to the calendar you choose, so they appear alongside the rest of your schedule.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Tertiary Infotech Academy Pte Ltd</string>
 	<key>NSMicrophoneUsageDescription</key>
