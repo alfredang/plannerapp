@@ -19,6 +19,9 @@ struct MacPlannerPane: View {
     @Query(sort: \PlannerList.createdAt)
     private var lists: [PlannerList]
 
+    /// Who "I" am, for the assigned-to filter (shared with the iPhone app's key).
+    @AppStorage("ownerName") private var ownerName = "Alfred"
+
     // Created lazily on first mic click so the permission prompt is contextual, never at launch.
     @State private var speech: SpeechRecognizer?
     @State private var input = ""
@@ -46,7 +49,10 @@ struct MacPlannerPane: View {
     private var items: [PlannerItem] {
         switch selection {
         case .category(let c):
-            return activeItems.filter { c.contains($0) }
+            // Smart views are *your* queue: your own items (unassigned, or assigned to
+            // you) only. Work delegated to someone else is hidden here — open that
+            // person's list to see theirs. Matches the iPhone app.
+            return activeItems.filter { c.contains($0) && $0.isMine(ownerName: ownerName) }
         case .userList:
             // A parent list shows its own items plus everything in its sub-lists.
             let ids = currentList?.subtreeIDs ?? []

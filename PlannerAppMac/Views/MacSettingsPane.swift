@@ -7,9 +7,18 @@ struct MacSettingsPane: View {
     @AppStorage("hermesPanelVisible") private var hermesVisible = true
     /// Off by default — the agent archives instead of deleting, and cannot delete lists.
     @AppStorage(HermesBridge.allowsAgentDeletionKey) private var allowsAgentDeletion = false
+    /// Whose queue the smart views show (shared with the iPhone app's key).
+    @AppStorage("ownerName") private var ownerName = "Alfred"
 
     var body: some View {
         Form {
+            Section("Me") {
+                TextField("My name", text: $ownerName)
+                Text("Used by the smart views (All Items, Pinned, Today): they show only your own work — items assigned to this name, plus anything unassigned. Items assigned to someone else appear in their list instead.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Agent safety") {
                 Toggle("Allow agent to delete", isOn: $allowsAgentDeletion)
                 Text(allowsAgentDeletion

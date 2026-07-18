@@ -74,6 +74,18 @@ final class PlannerItem {
 
     var isAppointment: Bool { kind == .appointment }
 
+    /// True when this item belongs in the owner's own queue: either nobody is assigned, or
+    /// it is assigned to the owner themselves. Work delegated to someone else is excluded,
+    /// so the smart views (All / Pinned / Today) stay the owner's personal list.
+    /// Matching is case- and whitespace-insensitive so "alfred" and "Alfred " both count.
+    func isMine(ownerName: String) -> Bool {
+        let assignee = assignedTo.trimmingCharacters(in: .whitespacesAndNewlines)
+        if assignee.isEmpty { return true }
+        let owner = ownerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !owner.isEmpty else { return false }
+        return assignee.caseInsensitiveCompare(owner) == .orderedSame
+    }
+
     /// Toggle completion. Checking an item auto-archives it (per app spec); unchecking restores it.
     func toggleDone() {
         isDone.toggle()

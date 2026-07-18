@@ -40,6 +40,10 @@ struct TodoListView: View {
     /// Item the user tapped "Undo" on — held until they confirm the delete.
     @State private var pendingUndo: UUID?
 
+    /// Who "I" am, for the assigned-to filter. Items assigned to this name (or to nobody)
+    /// stay in the smart views; anything delegated to someone else is filtered out.
+    @AppStorage("ownerName") private var ownerName = "Alfred"
+
     /// The open user list, when the filter is one.
     private var currentList: PlannerList? {
         guard case .list(let id) = filter else { return nil }
@@ -59,9 +63,13 @@ struct TodoListView: View {
     private var visibleItems: [PlannerItem] {
         switch filter {
         case .category(let c):
-            return kindItems.filter { c.contains($0) }
+            // Smart views are *your* queue: your own items (unassigned, or assigned to
+            // you) only. Work delegated to someone else is hidden here so it doesn't
+            // drown out yours — open that person's list to see theirs.
+            return kindItems.filter { c.contains($0) && $0.isMine(ownerName: ownerName) }
         case .list:
-            // A parent list shows its own items plus everything in its sub-lists.
+            // A parent list shows its own items plus everything in its sub-lists —
+            // including assigned ones, since that's the point of opening someone's list.
             let ids = currentList?.subtreeIDs ?? []
             return kindItems.filter { item in
                 guard let listID = item.list?.id else { return false }
@@ -157,7 +165,8 @@ struct TodoListView: View {
                 ForEach([PlannerCategory.all, .pinned, .today]) { category in
                     chip(title: category.title,
                          symbol: category.symbol,
-                         count: kindItems.filter { category.contains($0) }.count,
+                         // Same rule as `visibleItems`, so the badge matches the rows.
+                         count: kindItems.filter { category.contains($0) && $0.isMine(ownerName: ownerName) }.count,
                          isSelected: filter == .category(category)) {
                         withAnimation { filter = .category(category) }
                     }
