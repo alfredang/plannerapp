@@ -29,6 +29,8 @@ struct MacPlannerPane: View {
     @State private var lastReply: ChatMessage?
     @State private var showingAdd = false
     @State private var editingItem: PlannerItem?
+    /// Keyword filter over active items (archived items are never searched).
+    @State private var searchText = ""
     @FocusState private var inputFocused: Bool
 
     private var isListening: Bool { speech?.isListening ?? false }
@@ -47,20 +49,35 @@ struct MacPlannerPane: View {
     }
 
     private var items: [PlannerItem] {
+        // A search looks across every active list, not just the current view — otherwise
+        // you'd have to know which list something is in before you could find it.
+        // Archived items are never included (`activeItems` already excludes them).
+        if isSearching { return searchResults }
+
+        let scoped: [PlannerItem]
         switch selection {
         case .category(let c):
             // Smart views are *your* queue: your own items (unassigned, or assigned to
             // you) only. Work delegated to someone else is hidden here — open that
             // person's list to see theirs. Matches the iPhone app.
-            return activeItems.filter { c.contains($0) && $0.isMine(ownerName: ownerName) }
+            scoped = activeItems.filter { c.contains($0) && $0.isMine(ownerName: ownerName) }
         case .userList:
             // A parent list shows its own items plus everything in its sub-lists.
             let ids = currentList?.subtreeIDs ?? []
-            return activeItems.filter { item in
+            scoped = activeItems.filter { item in
                 guard let listID = item.list?.id else { return false }
                 return ids.contains(listID)
             }
         }
+        return scoped
+    }
+
+    private var searchResults: [PlannerItem] {
+        activeItems.filter { $0.matches(searchText) }
+    }
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Rows in manual drag order (synced via CloudKit through `PlannerItem.sortOrder`),
@@ -80,8 +97,44 @@ struct MacPlannerPane: View {
         }
     }
 
+    private var subtitle: String {
+        let n = items.count
+        let noun = "item\(n == 1 ? "" : "s")"
+        return isSearching ? "\(n) \(noun) matching “\(searchText)”" : "\(n) \(noun)"
+    }
+
+    /// Keyword search over every active item — titles, notes, assignee and list name.
+    private var searchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
+            TextField("Search to-dos and appointments", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .onSubmit { }
+            if isSearching {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .help("Clear search")
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            searchBar
+            Divider()
             if items.isEmpty {
                 emptyState
             } else {
@@ -90,8 +143,8 @@ struct MacPlannerPane: View {
             Divider()
             captureBar
         }
-        .navigationTitle(title)
-        .navigationSubtitle("\(items.count) item\(items.count == 1 ? "" : "s")")
+        .navigationTitle(isSearching ? "Search" : title)
+        .navigationSubtitle(subtitle)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { showingAdd = true } label: {
@@ -174,10 +227,20 @@ struct MacPlannerPane: View {
     }
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("Nothing planned yet", systemImage: "sparkles")
-        } description: {
-            Text("Tell the assistant below what you need to do — type it or click the mic.")
+        Group {
+            if isSearching {
+                ContentUnavailableView {
+                    Label("No matches", systemImage: "magnifyingglass")
+                } description: {
+                    Text("Nothing active matches “\(searchText)”. Archived items aren't searched.")
+                }
+            } else {
+                ContentUnavailableView {
+                    Label("Nothing planned yet", systemImage: "sparkles")
+                } description: {
+                    Text("Tell the assistant below what you need to do — type it or click the mic.")
+                }
+            }
         }
         .frame(maxHeight: .infinity)
     }

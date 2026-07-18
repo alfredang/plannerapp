@@ -91,6 +91,20 @@ final class PlannerItem {
         return assignee.caseInsensitiveCompare(owner) == .orderedSame
     }
 
+    /// Whether this item matches a search query. Every whitespace-separated word must appear
+    /// somewhere in the title, notes, assignee or list name, so "ryan n8n" finds Ryan's n8n
+    /// task regardless of word order. An empty query matches everything.
+    func matches(_ query: String) -> Bool {
+        let terms = query.lowercased()
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        guard !terms.isEmpty else { return true }
+        let haystack = [title, notes, assignedTo, list?.name ?? ""]
+            .joined(separator: " ")
+            .lowercased()
+        return terms.allSatisfy { haystack.contains($0) }
+    }
+
     /// Toggle completion. Checking an item auto-archives it (per app spec); unchecking restores it.
     func toggleDone() {
         isDone.toggle()
