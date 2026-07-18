@@ -57,7 +57,9 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     func contains(_ item: PlannerItem) -> Bool {
         switch self {
         case .all:
-            return true
+            // Labelled "To-Do": to-dos only. Appointments have their own row, so mixing
+            // them in here just duplicated that list.
+            return item.kind == .task
         case .today:
             guard let date = item.date else { return false }
             return Calendar.current.isDateInToday(date)

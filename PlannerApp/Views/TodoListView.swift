@@ -164,7 +164,7 @@ struct TodoListView: View {
                 // behind the folder button in the toolbar (tap a folder to open it).
                 // Same smart views as the Mac sidebar (Appointments/To-Dos are tabs here).
                 ForEach([PlannerCategory.all, .pinned, .today, .scheduled]) { category in
-                    chip(title: category.title,
+                    chip(title: category.title(for: mode),
                          symbol: category.symbol,
                          // Same rule as `visibleItems`, so the badge matches the rows.
                          count: kindItems.filter { category.contains($0) && $0.isMine(ownerName: ownerName) }.count,

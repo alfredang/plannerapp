@@ -19,6 +19,14 @@ enum PlannerCategory: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
+    /// Title for the chip bar on iOS, where each tab is already scoped to one kind — so the
+    /// "everything" chip reads "To-Do" on the To-Dos tab and "All" on the Appointments tab
+    /// (calling it "To-Do" there would be plainly wrong).
+    func title(for kind: PlannerKind) -> String {
+        if self == .all { return kind == .task ? "To-Do" : "All" }
+        return title
+    }
+
     var symbol: String {
         switch self {
         case .all:          return "tray.full.fill"
