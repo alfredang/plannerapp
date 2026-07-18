@@ -3,7 +3,7 @@ import SwiftUI
 /// Root navigation. House-style bottom tabs: the app's content first, then Feedback + About.
 struct MainTabView: View {
     private enum Tab: Hashable {
-        case assistant, appointments, todos, calendar, archive, reminders, feedback, about
+        case assistant, appointments, todos, calendar, archive, settings, feedback, about
     }
 
     @State private var selection: Tab = .appointments
@@ -44,8 +44,8 @@ struct MainTabView: View {
                 .tag(Tab.archive)
 
             NavigationStack { RemindersSettingsView() }
-                .tabItem { Label("Reminders", systemImage: "bell.fill") }
-                .tag(Tab.reminders)
+                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+                .tag(Tab.settings)
 
             FeedbackView()
                 .tabItem { Label("Feedback", systemImage: "bubble.left.and.bubble.right.fill") }

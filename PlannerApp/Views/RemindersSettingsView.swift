@@ -10,6 +10,8 @@ struct RemindersSettingsView: View {
     @State private var isEnabled = ReminderScheduler.isEnabled
     @State private var leadTime = ReminderScheduler.leadTime
     @State private var status: UNAuthorizationStatus = .notDetermined
+    /// Whose queue the smart views show (same key as the Mac app's Settings ▸ Me).
+    @AppStorage("ownerName") private var ownerName = "Alfred"
 
     /// True when the user has denied notifications in iOS Settings — the in-app toggle
     /// can't do anything until they re-enable it there.
@@ -19,6 +21,17 @@ struct RemindersSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                TextField("My name", text: $ownerName)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.words)
+                    #endif
+            } header: {
+                Text("Me")
+            } footer: {
+                Text("Used by To-Do, Pinned and Today: they show only your own work — items assigned to this name, plus anything unassigned. Items assigned to someone else appear in their list instead.")
+            }
+
             Section {
                 Toggle("Remind me before", isOn: $isEnabled)
                     .disabled(isBlockedBySystem)
@@ -51,7 +64,7 @@ struct RemindersSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Reminders")
+        .navigationTitle("Settings")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

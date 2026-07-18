@@ -162,7 +162,8 @@ struct TodoListView: View {
             HStack(spacing: 8) {
                 // Just the three smart views — All, Pinned, Today. The user's lists live
                 // behind the folder button in the toolbar (tap a folder to open it).
-                ForEach([PlannerCategory.all, .pinned, .today]) { category in
+                // Same smart views as the Mac sidebar (Appointments/To-Dos are tabs here).
+                ForEach([PlannerCategory.all, .pinned, .today, .scheduled]) { category in
                     chip(title: category.title,
                          symbol: category.symbol,
                          // Same rule as `visibleItems`, so the badge matches the rows.
