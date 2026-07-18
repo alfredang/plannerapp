@@ -62,9 +62,11 @@ enum IntentAssistant {
             Only call it an "appointment" when the request names an actual time, date, \
             or a meeting with someone. A bare name, title, or course with no time is a \
             "task" — when in doubt, choose "task". \
-            For the title, reuse the user's own words verbatim; only strip leading filler \
-            such as "add" or "remind me to". Never introduce words the user did not write \
-            (do not prepend verbs like "Attend"). Do not invent details.
+            For the title, reuse the user's own words, but DO fix spelling, capitalisation \
+            and obvious grammar mistakes ("sumit ato" becomes "Submit ATO", "googel" \
+            becomes "Google"). Strip leading filler such as "add" or "remind me to". \
+            Never introduce words the user did not write — do not prepend verbs like \
+            "Attend" — and do not invent details.
             """)
         do {
             let response = try await session.respond(
@@ -105,12 +107,14 @@ enum IntentAssistant {
     }
     #endif
 
-    /// True when every significant word in `title` also appears in the user's original text.
+    /// True when `title` says the same thing the user did — allowing spelling and grammar
+    /// fixes, but not invented content.
     ///
-    /// The on-device model is asked to reword, but it occasionally *adds* content — most
-    /// visibly prefixing an invented verb ("Attend WSQ – …") onto a title the user typed in
-    /// full. Rewording that only drops or reorders words is fine; anything that introduces a
-    /// new word is rejected so the user's own phrasing survives.
+    /// The model is asked to tidy wording, and *should* fix typos ("Googel" → "Google",
+    /// "Sumit" → "Submit"). What it must not do is add meaning the user never wrote — most
+    /// visibly prefixing a verb ("Attend WSQ – …") onto a title typed out in full. So a new
+    /// word is accepted only when it is a close spelling variant of a word the user typed;
+    /// anything else is rejected and the user's own phrasing survives.
     static func isFaithful(title: String, to original: String) -> Bool {
         func words(_ s: String) -> [String] {
             s.lowercased()
@@ -121,7 +125,40 @@ enum IntentAssistant {
         let source = Set(words(original))
         guard !source.isEmpty else { return true }
         let introduced = words(title).filter { !source.contains($0) }
-        return introduced.isEmpty
+        // Every introduced word must plausibly be a correction of something the user typed.
+        return introduced.allSatisfy { candidate in
+            source.contains { isLikelyCorrection(of: $0, to: candidate) }
+        }
+    }
+
+    /// Whether `corrected` reads as a typo-fix of `typed` — same rough shape, small edit
+    /// distance. Deliberately tight: "googel"→"google" passes, "wsq"→"attend" does not.
+    static func isLikelyCorrection(of typed: String, to corrected: String) -> Bool {
+        if typed == corrected { return true }
+        // Length must be close; a correction doesn't change a word's size much.
+        guard abs(typed.count - corrected.count) <= 2 else { return false }
+        let budget = max(typed.count, corrected.count) <= 4 ? 1 : 2
+        return editDistance(typed, corrected) <= budget
+    }
+
+    /// Standard Levenshtein distance, iterative single-row.
+    private static func editDistance(_ a: String, _ b: String) -> Int {
+        let x = Array(a), y = Array(b)
+        if x.isEmpty { return y.count }
+        if y.isEmpty { return x.count }
+        var previous = Array(0...y.count)
+        var current = [Int](repeating: 0, count: y.count + 1)
+        for i in 1...x.count {
+            current[0] = i
+            for j in 1...y.count {
+                let cost = x[i - 1] == y[j - 1] ? 0 : 1
+                current[j] = min(previous[j] + 1,        // deletion
+                                 current[j - 1] + 1,     // insertion
+                                 previous[j - 1] + cost) // substitution
+            }
+            swap(&previous, &current)
+        }
+        return previous[y.count]
     }
 
     private static func confirmation(for entry: ParsedEntry, polished: Bool) -> String {

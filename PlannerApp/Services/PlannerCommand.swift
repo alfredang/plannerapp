@@ -13,10 +13,19 @@ import FoundationModels
 enum PlannerAction: String, CaseIterable {
     case add            // "buy milk tomorrow"
     case complete       // "mark the dentist appointment done"
+    case uncomplete     // "un-check the ATO task"
     case reschedule     // "move standup to Friday 9am"
+    case clearDate      // "remove the date from X"
     case move           // "put the n8n task in Ryan's list"
     case assign         // "assign the VPS task to Ryan"
     case rename         // "rename X to Y"
+    case note           // "add a note to X: ..."
+    case setKind        // "make X an appointment"
+    case delete         // "delete X" — ARCHIVES, never destroys (see run)
+    case pin            // "pin X" / "unpin X"
+    case reorder        // "move X to the top"
+    case newList        // "create a list called Errands"
+    case renameList     // "rename the Clients list to Accounts"
     case unknown        // anything else — answered conversationally, nothing changes
 }
 
@@ -110,7 +119,116 @@ enum PlannerCommand {
             item.title = newTitle
             return CommandResult(reply: "Renamed “\(old)” to “\(newTitle)”.",
                                  item: item, didMutate: true)
+
+        case .uncomplete:
+            guard let item = matchItem(parsed.target, in: allItems(context)) else {
+                return miss(parsed.target)
+            }
+            if item.isDone { item.toggleDone() }
+            return CommandResult(reply: "Restored “\(item.title)” — it's back in your list.",
+                                 item: item, didMutate: true)
+
+        case .clearDate:
+            guard let item = matchItem(parsed.target, in: active) else { return miss(parsed.target) }
+            item.date = nil
+            // An appointment with no date is meaningless; it becomes a to-do.
+            if item.kind == .appointment { item.kind = .task }
+            return CommandResult(reply: "Cleared the date on “\(item.title)” — it's a to-do now.",
+                                 item: item, didMutate: true)
+
+        case .note:
+            guard let item = matchItem(parsed.target, in: active) else { return miss(parsed.target) }
+            item.notes = parsed.notes
+            return CommandResult(reply: parsed.notes.isEmpty
+                                 ? "Cleared the notes on “\(item.title)”."
+                                 : "Added a note to “\(item.title)”.",
+                                 item: item, didMutate: true)
+
+        case .setKind:
+            guard let item = matchItem(parsed.target, in: active) else { return miss(parsed.target) }
+            let wantsAppointment = parsed.kind.lowercased().contains("appointment")
+            item.kind = wantsAppointment ? .appointment : .task
+            if wantsAppointment, item.date == nil, let d = SmartParser.parse(text).date {
+                item.date = d
+            }
+            return CommandResult(reply: "“\(item.title)” is now a \(item.kind.title).",
+                                 item: item, didMutate: true)
+
+        case .delete:
+            guard let item = matchItem(parsed.target, in: active) else { return miss(parsed.target) }
+            // NEVER destroys: archiving keeps the item fully recoverable from the Archive
+            // view. An assistant must not be able to lose your data on a mis-parse.
+            item.isArchived = true
+            return CommandResult(
+                reply: "Archived “\(item.title)”. It's out of your lists but still in the Archive if you need it back.",
+                item: item, didMutate: true)
+
+        case .pin:
+            guard let item = matchItem(parsed.target, in: active) else { return miss(parsed.target) }
+            // "unpin" is explicit; anything else pins.
+            let wantsUnpin = text.lowercased().contains("unpin")
+                || text.lowercased().contains("un-pin")
+            item.isPinned = !wantsUnpin
+            return CommandResult(reply: item.isPinned
+                                 ? "Pinned “\(item.title)” to the top."
+                                 : "Unpinned “\(item.title)”.",
+                                 item: item, didMutate: true)
+
+        case .reorder:
+            guard let item = matchItem(parsed.target, in: active) else { return miss(parsed.target) }
+            let toBottom = text.lowercased().contains("bottom")
+                || text.lowercased().contains("end")
+                || text.lowercased().contains("last")
+            // Peers are the rows this item actually sits among, so the new position is
+            // meaningful in the view the user is looking at.
+            let peers = active.filter { $0.kind == item.kind && $0.list?.id == item.list?.id }
+            let positions = peers.map(\.sortOrder)
+            if toBottom {
+                item.sortOrder = (positions.max() ?? 0) + 1
+            } else {
+                item.sortOrder = (positions.min() ?? 1) - 1
+            }
+            return CommandResult(reply: toBottom
+                                 ? "Moved “\(item.title)” to the bottom."
+                                 : "Moved “\(item.title)” to the top.",
+                                 item: item, didMutate: true)
+
+        case .newList:
+            let name = parsed.listName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
+                return CommandResult(reply: "What should the list be called?", item: nil, didMutate: false)
+            }
+            if let existing = matchList(name, in: lists) {
+                return CommandResult(reply: "“\(existing.name)” already exists.",
+                                     item: nil, didMutate: false)
+            }
+            let parent = matchList(parsed.parentList, in: lists)
+            context.insert(PlannerList(name: name, parent: parent))
+            return CommandResult(reply: parent == nil
+                                 ? "Created the list “\(name)”."
+                                 : "Created “\(name)” under “\(parent!.name)”.",
+                                 item: nil, didMutate: true)
+
+        case .renameList:
+            guard let list = matchList(parsed.listName, in: lists) else {
+                return CommandResult(reply: "I couldn't find a list called “\(parsed.listName)”.",
+                                     item: nil, didMutate: false)
+            }
+            let newName = parsed.newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !newName.isEmpty else {
+                return CommandResult(reply: "What should I rename the list to?", item: nil, didMutate: false)
+            }
+            let old = list.name
+            list.name = newName          // non-destructive: items and sub-lists are kept
+            return CommandResult(reply: "Renamed the list “\(old)” to “\(newName)”.",
+                                 item: nil, didMutate: true)
         }
+    }
+
+    /// Every item including archived ones — needed to restore something already checked off.
+    @MainActor
+    private static func allItems(_ context: ModelContext) -> [PlannerItem] {
+        (try? context.fetch(FetchDescriptor<PlannerItem>())) ?? []
     }
 
     private static func miss(_ target: String) -> CommandResult {
@@ -155,26 +273,38 @@ enum PlannerCommand {
         var listName: String = ""
         var assignee: String = ""
         var newTitle: String = ""
+        var notes: String = ""
+        var kind: String = ""
+        var parentList: String = ""
     }
 
     #if canImport(FoundationModels)
     @available(iOS 26.0, macOS 26.0, *)
     @Generable
     fileprivate struct CommandDraft {
-        @Guide(description: "One of: add, complete, reschedule, move, assign, rename. Use \"add\" when the user is describing something new to do.")
+        @Guide(description: "One of: add, complete, uncomplete, reschedule, clearDate, move, assign, rename, note, setKind, delete, pin, reorder, newList, renameList. Use \"add\" when the user is describing something new to do.")
         var action: String
 
-        @Guide(description: "For anything other than add: the existing item's title, copied from the user's words. Empty for add.")
+        @Guide(description: "For anything other than add/newList: the existing item's title, copied from the user's words. Empty for add.")
         var target: String
 
-        @Guide(description: "The list name, if the user named one. Otherwise empty.")
+        @Guide(description: "The list name, if the user named one (also the new list's name for newList, and the list being renamed for renameList). Otherwise empty.")
         var listName: String
 
         @Guide(description: "The person's name, if the user is assigning to someone. Otherwise empty.")
         var assignee: String
 
-        @Guide(description: "The new title, only for a rename. Otherwise empty.")
+        @Guide(description: "The new title, for a rename or renameList. Otherwise empty.")
         var newTitle: String
+
+        @Guide(description: "The note text, only when the user is setting notes on an item. Otherwise empty.")
+        var notes: String
+
+        @Guide(description: "\"task\" or \"appointment\", only when the user is changing an item's type. Otherwise empty.")
+        var kind: String
+
+        @Guide(description: "The parent list, only when creating a sub-list under another list. Otherwise empty.")
+        var parentList: String
     }
     #endif
 
@@ -196,10 +326,16 @@ enum PlannerCommand {
             if let response = try? await session.respond(to: "Request: \"\(text)\"",
                                                          generating: CommandDraft.self) {
                 let d = response.content
+                // Match the raw value case-insensitively ("setkind" → .setKind).
+                let action = PlannerAction.allCases.first {
+                    $0.rawValue.lowercased() == d.action.lowercased()
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                } ?? .add
                 return ParsedCommand(
-                    action: PlannerAction(rawValue: d.action.lowercased()) ?? .add,
+                    action: action,
                     target: d.target, listName: d.listName,
-                    assignee: d.assignee, newTitle: d.newTitle)
+                    assignee: d.assignee, newTitle: d.newTitle,
+                    notes: d.notes, kind: d.kind, parentList: d.parentList)
             }
         }
         #endif
@@ -253,6 +389,47 @@ enum PlannerCommand {
         }
         if lower.hasPrefix("reschedule ") {
             return ParsedCommand(action: .reschedule, target: after(["reschedule "]))
+        }
+        if lower.hasPrefix("delete ") || lower.hasPrefix("remove ") || lower.hasPrefix("archive ") {
+            return ParsedCommand(action: .delete, target: after(["delete ", "remove ", "archive "]))
+        }
+        if lower.hasPrefix("pin ") || lower.hasPrefix("unpin ") || lower.hasPrefix("un-pin ") {
+            return ParsedCommand(action: .pin, target: after(["unpin ", "un-pin ", "pin "]))
+        }
+        if lower.contains("to the top") || lower.contains("to the bottom") {
+            var t = after(["move ", "put ", "reorder "])
+            for suffix in [" to the top", " to the bottom"] {
+                if let r = t.lowercased().range(of: suffix) { t = String(t[..<r.lowerBound]) }
+            }
+            return ParsedCommand(action: .reorder,
+                                 target: t.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        if lower.hasPrefix("restore ") || lower.hasPrefix("uncheck ") || lower.hasPrefix("un-check ") {
+            return ParsedCommand(action: .uncomplete,
+                                 target: after(["restore ", "uncheck ", "un-check "]))
+        }
+        if lower.hasPrefix("create a list") || lower.hasPrefix("new list")
+            || lower.hasPrefix("create list") || lower.hasPrefix("add a list") {
+            var name = after(["create a list called ", "create a list ", "new list called ",
+                              "new list ", "create list ", "add a list called ", "add a list "])
+            var parent = ""
+            if let r = name.lowercased().range(of: " under ") {
+                parent = String(name[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                name = String(name[..<r.lowerBound])
+            }
+            return ParsedCommand(action: .newList,
+                                 listName: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                 parentList: parent)
+        }
+        if lower.contains("make ") && (lower.contains("an appointment") || lower.contains("a to-do")
+                                       || lower.contains("a task")) {
+            var t = after(["make "])
+            for suffix in [" an appointment", " a to-do", " a todo", " a task"] {
+                if let r = t.lowercased().range(of: suffix) { t = String(t[..<r.lowerBound]) }
+            }
+            return ParsedCommand(action: .setKind,
+                                 target: t.trimmingCharacters(in: .whitespacesAndNewlines),
+                                 kind: lower.contains("appointment") ? "appointment" : "task")
         }
         return ParsedCommand(action: .add)
     }
