@@ -41,6 +41,10 @@ with full undo.
   cleans up the title automatically (no network, fully private).
 - 📅 **Built-in calendar** — appointments show on a graphical month calendar with per-day and
   upcoming lists.
+- 📆 **Mirror to your system Calendar** — optionally copy dated appointments into any calendar
+  you pick, including a Google account added in Settings ▸ Calendar; that account's own sync
+  carries them to Google. EventKit only — no OAuth, no network calls, no stored credentials.
+  Off until you enable it; to-dos are never written.
 - 📥 **Auto-archive** — checking off an item moves it to the Archive automatically; uncheck to
   restore.
 - 🔔 **Reminders** — a heads-up notification before anything with a date is due: **3 days
@@ -50,8 +54,8 @@ with full undo.
 - 🗂 **Your own lists** — create, rename, and delete lists ("Work", "Groceries", …), file items
   into them, and browse them from the folder button. Tapping a folder opens it to show its
   to-dos and appointments (rename, pin and delete live in its context menu); the filter bar
-  at the top of each tab keeps just the smart views — **To-Do, Pinned, Today**. Lists
-  sync like everything else.
+  at the top of each tab keeps just the smart views — **To-Do, Pinned, Today, Reminders**.
+  Lists sync like everything else.
 - ↕️ **Drag to rearrange** — hold and drag to-dos, appointments, and your lists into any order,
   on iPhone and Mac alike; your custom order syncs across devices via iCloud.
 - 🗂️ **Sub-lists** — nest lists under a parent (e.g. each client under "Clients"): create one
@@ -119,6 +123,7 @@ PlannerApp/                             — iOS app + code shared with the Mac t
 │               SmartParser.swift       — deterministic date/time + intent parsing
 │               SpeechRecognizer.swift  — native speech-to-text (cross-platform)
 │               ReminderScheduler.swift — local "N days before" alerts for dated items
+│               CalendarSync.swift      — mirrors appointments into the system Calendar
 │               ModelUndoSupport.swift  — system undo/redo for all SwiftData changes
 ├── Theme/      Theme.swift             — central color tokens (auto dark mode)
 └── Views/      MainTabView, AssistantChatView, TodoListView, CalendarView,
