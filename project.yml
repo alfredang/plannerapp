@@ -16,8 +16,8 @@ packages:
 
 settings:
   base:
-    MARKETING_VERSION: "1.4"
-    CURRENT_PROJECT_VERSION: "11"
+    MARKETING_VERSION: "1.5"
+    CURRENT_PROJECT_VERSION: "13"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: GU9WTSTX9M
     CODE_SIGN_STYLE: Automatic
@@ -62,6 +62,7 @@ targets:
       - path: PlannerApp/Views/ArchiveView.swift
       - path: PlannerApp/Views/FeedbackView.swift
       - path: PlannerApp/Views/AboutView.swift
+      - path: PlannerApp/Views/RemindersSettingsView.swift
     dependencies:
       - package: SwiftTerm
     settings:

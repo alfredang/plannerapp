@@ -19,7 +19,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .all:          return "All Items"
         case .today:        return "Today"
-        case .scheduled:    return "Scheduled"
+        case .scheduled:    return "Reminders"
         case .pinned:       return "Pinned"
         case .todos:        return "To-Dos"
         case .appointments: return "Appointments"
@@ -35,7 +35,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .all:          return "tray.full.fill"
         case .today:        return "star.fill"
-        case .scheduled:    return "clock.fill"
+        case .scheduled:    return "bell.fill"
         case .pinned:       return "pin.fill"
         case .todos:        return "checklist"
         case .appointments: return "calendar"
@@ -102,6 +102,25 @@ struct MacRootView: View {
         var set = collapsedLists
         if !set.insert(id).inserted { set.remove(id) }
         collapsedListsRaw = set.map(\.uuidString).joined(separator: ",")
+    }
+
+    /// Lists that can actually collapse — only those with sub-lists.
+    private var collapsibleListIDs: [UUID] {
+        lists.filter { !($0.children ?? []).isEmpty }.map(\.id)
+    }
+
+    /// True when at least one parent list is still expanded (so "Collapse All" has work).
+    private var hasExpandedLists: Bool {
+        let collapsed = collapsedLists
+        return collapsibleListIDs.contains { !collapsed.contains($0) }
+    }
+
+    private func collapseAllLists() {
+        collapsedListsRaw = collapsibleListIDs.map(\.uuidString).joined(separator: ",")
+    }
+
+    private func expandAllLists() {
+        collapsedListsRaw = ""
     }
     @State private var renamingList: PlannerList?
     @State private var renameText = ""
@@ -284,7 +303,7 @@ struct MacRootView: View {
                     categoryRow(item, count: count(for: item))
                 }
             }
-            Section("My Lists") {
+            Section {
                 ForEach(ListHierarchy.rows(lists, collapsed: collapsedLists)) { row in
                     userListRow(row.list, depth: row.depth)
                 }
@@ -298,6 +317,28 @@ struct MacRootView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+            } header: {
+                HStack(spacing: 4) {
+                    Text("My Lists")
+                    Spacer(minLength: 0)
+                    // One control that flips between collapsing and expanding every group.
+                    if !collapsibleListIDs.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                if hasExpandedLists { collapseAllLists() } else { expandAllLists() }
+                            }
+                        } label: {
+                            Image(systemName: hasExpandedLists
+                                  ? "arrow.down.right.and.arrow.up.left"
+                                  : "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(hasExpandedLists ? "Collapse all lists" : "Expand all lists")
+                        .accessibilityLabel(hasExpandedLists ? "Collapse all lists" : "Expand all lists")
+                    }
+                }
             }
             Section("Browse") {
                 categoryRow(.calendar, count: 0)
