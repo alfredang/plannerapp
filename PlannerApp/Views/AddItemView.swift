@@ -57,7 +57,36 @@ struct AddItemView: View {
 
                 Section("Details") {
                     TextField("Title", text: $title, axis: .vertical)
-                    TextField("Notes (optional)", text: $notes, axis: .vertical)
+                        .lineLimit(1...4)
+
+                    // A real multi-line box that grows as you type. `TextField` with a
+                    // placeholder renders that placeholder as a leading *label* on macOS,
+                    // squeezing long notes into a narrow right-hand column — so use a
+                    // TextEditor with our own placeholder overlay instead.
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Notes (optional)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, 4)
+                        ZStack(alignment: .topLeading) {
+                            TextEditor(text: $notes)
+                                .frame(minHeight: 90, maxHeight: 260)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .multilineTextAlignment(.leading)
+                                .scrollContentBackground(.hidden)
+                                .font(.body)
+                            if notes.isEmpty {
+                                // Placeholder — hit-testing off so taps reach the editor.
+                                Text("Add any details…")
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.top, 8)
+                                    .padding(.leading, 5)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
                 }
 
                 Section {
@@ -116,6 +145,18 @@ struct AddItemView: View {
                 // Appointments need a time; default it on when switching.
                 if newKind == .appointment && !includeDate { includeDate = true }
             }
+            .onChange(of: selectedListID) { oldID, newID in
+                // Moving the item into someone's list assigns it to them. Only fills a
+                // blank field, or replaces the previous list's owner — never a name the
+                // user typed themselves.
+                guard autoKindEnabled else { return }   // ignore the prefill pass
+                let previousOwner = lists.first { $0.id == oldID }?.derivedAssignee
+                let newOwner = lists.first { $0.id == newID }?.derivedAssignee
+                let current = assignedTo.trimmingCharacters(in: .whitespacesAndNewlines)
+                if current.isEmpty || current == previousOwner {
+                    assignedTo = newOwner ?? ""
+                }
+            }
             .onChange(of: includeDate) { _, isOn in
                 // Setting a date & time makes it an appointment automatically
                 // (tap To-Do again afterwards if you want a dated to-do). Only for
@@ -159,6 +200,9 @@ struct AddItemView: View {
             return
         }
         selectedListID = defaultList?.id
+        // Adding inside someone's list assigns it to them ("Ryan Ngau (NUS)" → "Ryan"), so
+        // it lands in their queue and out of yours. Editable — this is only a default.
+        if let assignee = defaultList?.derivedAssignee { assignedTo = assignee }
         guard let prefill else { return }
         title = prefill.title
         kind = prefill.kind
