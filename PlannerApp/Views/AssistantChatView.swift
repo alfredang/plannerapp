@@ -5,6 +5,8 @@ import SwiftData
 /// or voice, and it drafts a nicely worded to-do or appointment and saves it instantly.
 struct AssistantChatView: View {
     @Environment(\.modelContext) private var context
+    /// Who "I" am — used when the assistant files an item into someone's list.
+    @AppStorage("ownerName") private var ownerName = "Alfred"
 
     // Created only when the user first taps the mic. Constructing a SpeechRecognizer touches the
     // speech/audio stack and triggers the microphone permission prompt, so it must NOT exist at
@@ -135,17 +137,19 @@ struct AssistantChatView: View {
         isThinking = true
 
         Task {
-            let draft = await IntentAssistant.draft(from: text)
-            var saved: PlannerItem?
-            if !draft.entry.title.isEmpty {
-                let item = draft.entry.makeItem()
-                context.insert(item)
-                saved = item
-            }
+            // Full command routing (add / complete / reschedule / move / assign / rename),
+            // classified on-device by Apple Intelligence and executed in plain code.
+            let result = await PlannerCommand.handle(text, context: context, ownerName: ownerName)
             messages.append(ChatMessage(role: .assistant,
-                                        text: draft.reply,
-                                        item: saved.map(ChatMessage.ItemSummary.init)))
+                                        text: result.reply,
+                                        item: result.item.map(ChatMessage.ItemSummary.init)))
             isThinking = false
+            if result.didMutate {
+                if let item = result.item, let id = CalendarSync.sync(item) {
+                    item.calendarEventID = id
+                }
+                await ReminderScheduler.rescheduleAll(context: context)
+            }
         }
     }
 
