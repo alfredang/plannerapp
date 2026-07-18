@@ -227,6 +227,15 @@ enum HermesBridge {
             }
             return "OK: list “\(name)” exists"
 
+        case "renamelist":
+            guard let name = params["name"], !name.isEmpty else { return "ERROR: missing name" }
+            guard let newName = params["to"], !newName.isEmpty else { return "ERROR: missing to" }
+            let lists = (try? context.fetch(FetchDescriptor<PlannerList>())) ?? []
+            guard let list = lists.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
+            else { return "ERROR: list not found" }
+            list.name = newName   // non-destructive: items and sub-lists are untouched
+            return "OK: renamed list “\(name)” to “\(newName)”"
+
         case "deletelist":
             guard let name = params["name"], !name.isEmpty else { return "ERROR: missing name" }
             let lists = (try? context.fetch(FetchDescriptor<PlannerList>())) ?? []
@@ -342,6 +351,7 @@ enum HermesBridge {
     | Set notes | `planner://note?id=ab12cd34&notes=…` |
     | Assign | `planner://assign?title=Setup%20exams&to=Ngooi` (empty `to` unassigns) |
     | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
+    | Rename list | `planner://renamelist?name=Errands&to=Chores` (items and sub-lists are kept) |
     | Delete list | `planner://deletelist?name=Errands` — **disabled by default, see below** |
 
     Notes:
