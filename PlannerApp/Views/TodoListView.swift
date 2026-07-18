@@ -37,6 +37,8 @@ struct TodoListView: View {
 
     private var isListening: Bool { speech?.isListening ?? false }
     @State private var editingItem: PlannerItem?
+    /// Item the user tapped "Undo" on — held until they confirm the delete.
+    @State private var pendingUndo: UUID?
 
     /// The open user list, when the filter is one.
     private var currentList: PlannerList? {
@@ -124,6 +126,18 @@ struct TodoListView: View {
             }
             .sheet(isPresented: $showingLists) { ListsManagerView() }
             .sheet(item: $editingItem) { AddItemView(item: $0) }
+            .confirmationDialog("Remove this entry?",
+                                isPresented: Binding(get: { pendingUndo != nil },
+                                                     set: { if !$0 { pendingUndo = nil } }),
+                                titleVisibility: .visible) {
+                Button("Remove", role: .destructive) {
+                    if let id = pendingUndo { undoCapture(id) }
+                    pendingUndo = nil
+                }
+                Button("Keep", role: .cancel) { pendingUndo = nil }
+            } message: {
+                Text("This deletes the entry the assistant just saved.")
+            }
             .onChange(of: lists.count) {
                 // If the selected list was deleted (locally or via sync), fall back to All.
                 if case .list(let id) = filter, !lists.contains(where: { $0.id == id }) {
@@ -311,8 +325,12 @@ struct TodoListView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        Button("Undo") { undoCapture(item.id) }
+                        // Destructive: confirm first. This button sits right above the
+                        // capture bar, so an accidental tap used to delete the entry
+                        // silently.
+                        Button("Undo", role: .destructive) { pendingUndo = item.id }
                             .font(.caption.weight(.semibold))
+                            .buttonStyle(.borderless)
                     }
                 }
             }

@@ -26,6 +26,18 @@ enum HermesBridge {
             .appendingPathComponent("Planner/Hermes", isDirectory: true)
     }
 
+    /// Whether the agent may **permanently delete** items and lists.
+    ///
+    /// Defaults to **false**: an agent must never destroy data the user did not explicitly
+    /// ask it to. With this off, `delete` archives instead (recoverable from the Archive
+    /// view) and `deletelist` is refused outright — deleting a list orphans its items, which
+    /// reads to the user as data loss. Toggle it in Settings.
+    static let allowsAgentDeletionKey = "hermes.allowsAgentDeletion"
+
+    static var allowsAgentDeletion: Bool {
+        UserDefaults.standard.bool(forKey: allowsAgentDeletionKey)   // absent => false
+    }
+
     private static var stateURL: URL { workspaceURL.appendingPathComponent("planner-state.json") }
     private static var logURL: URL { workspaceURL.appendingPathComponent("planner-log.txt") }
     private static var agentsURL: URL { workspaceURL.appendingPathComponent("AGENTS.md") }
@@ -147,6 +159,14 @@ enum HermesBridge {
         case "delete":
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
             let title = item.title
+            // Destructive commands are OFF by default: an agent must never destroy data the
+            // user did not explicitly ask it to. Archive instead — recoverable from the
+            // Archive view. Enable real deletion in Settings ▸ "Allow agent to delete".
+            guard allowsAgentDeletion else {
+                if !item.isArchived { item.isArchived = true }
+                return "OK: archived “\(title)” (agent deletion is disabled — restore it from Archive, "
+                     + "or enable “Allow agent to delete” in Settings)"
+            }
             context.delete(item)
             return "OK: deleted “\(title)”"
 
@@ -212,6 +232,14 @@ enum HermesBridge {
             let lists = (try? context.fetch(FetchDescriptor<PlannerList>())) ?? []
             guard let list = lists.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
             else { return "ERROR: list not found" }
+            // Deleting a list orphans every item in it (the relationship nullifies), which
+            // reads to the user as "my items vanished". Refuse unless explicitly allowed.
+            guard allowsAgentDeletion else {
+                let n = list.subtreeActiveCount
+                return "REFUSED: agent deletion is disabled, so list “\(name)” was kept"
+                     + (n > 0 ? " (it holds \(n) item\(n == 1 ? "" : "s") that would have been orphaned)." : ".")
+                     + " Enable “Allow agent to delete” in Settings, or delete the list yourself."
+            }
             context.delete(list)   // items are kept — the relationship nullifies
             return "OK: deleted list “\(name)” (its items were kept)"
 
@@ -314,7 +342,7 @@ enum HermesBridge {
     | Set notes | `planner://note?id=ab12cd34&notes=…` |
     | Assign | `planner://assign?title=Setup%20exams&to=Ngooi` (empty `to` unassigns) |
     | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
-    | Delete list | `planner://deletelist?name=Errands` (items are kept) |
+    | Delete list | `planner://deletelist?name=Errands` — **disabled by default, see below** |
 
     Notes:
     * `kind` is `task` (a to-do) or `appointment` (anything at a specific time/place).
@@ -342,6 +370,14 @@ enum HermesBridge {
 
     ## Ground rules
 
+    * **NEVER delete anything the user did not explicitly ask you to delete.** Deletion is
+      disabled by default: `delete` archives the item instead, and `deletelist` is refused.
+      This is deliberate — do not try to work around it.
+    * **Never delete-and-recreate a list to reorganise it.** Deleting a list orphans every
+      item inside it, and the user experiences that as "my items disappeared". To restructure,
+      use `newlist` (with `parent=`) and `move` only — both are non-destructive.
+    * When a request would remove data ("clean up", "reset", "start fresh", "tidy the lists"),
+      do NOT infer permission to delete. Say what you would remove and ask the user first.
     * Only manage the planner from here — don't edit `planner-state.json` directly (it is
       overwritten by the app) and don't modify other files on the system unless asked.
     * Resolve relative dates ("tomorrow 3pm") yourself using `date` before building the URL.

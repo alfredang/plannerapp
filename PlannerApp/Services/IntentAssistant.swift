@@ -45,7 +45,7 @@ enum IntentAssistant {
         @Guide(description: "\"task\" for a simple to-do, \"appointment\" for anything scheduled at a time or place")
         var kind: String
 
-        @Guide(description: "A short, nicely worded title for the item, at most 8 words, no trailing punctuation")
+        @Guide(description: "The item's title. Copy the user's own wording verbatim, only trimming filler like \"add\" or \"remind me to\". Never add words the user did not write — no \"Attend\", no \"Meeting\", no invented verbs. No trailing punctuation")
         var title: String
 
         @Guide(description: "A one-sentence friendly confirmation to show the user")
@@ -58,9 +58,13 @@ enum IntentAssistant {
     private static func polish(text: String, fallback: ParsedEntry) async -> AssistantDraft? {
         let session = LanguageModelSession(instructions: """
             You turn short natural-language requests into planner entries. \
-            Classify each request as a "task" (simple to-do) or an "appointment" \
-            (anything happening at a specific time, place, or with a person). \
-            Rewrite the request as a clean, nicely worded title. Do not invent details.
+            Classify each request as a "task" (simple to-do) or an "appointment". \
+            Only call it an "appointment" when the request names an actual time, date, \
+            or a meeting with someone. A bare name, title, or course with no time is a \
+            "task" — when in doubt, choose "task". \
+            For the title, reuse the user's own words verbatim; only strip leading filler \
+            such as "add" or "remind me to". Never introduce words the user did not write \
+            (do not prepend verbs like "Attend"). Do not invent details.
             """)
         do {
             let response = try await session.respond(
@@ -68,19 +72,28 @@ enum IntentAssistant {
                 generating: ItemDraft.self
             )
             let d = response.content
-            let kind: PlannerKind = d.kind.lowercased().contains("appointment") ? .appointment : .task
-            let title = d.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            var kind: PlannerKind = d.kind.lowercased().contains("appointment") ? .appointment : .task
+            var title = d.title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty else { return nil }
+
+            // Guard 1: the model sometimes prepends a verb the user never typed
+            // ("Attend WSQ — …"). Trust the model's wording only when it stays within
+            // the user's own words; otherwise keep what they actually wrote.
+            if !isFaithful(title: title, to: text) {
+                title = fallback.title.isEmpty ? text : fallback.title
+            }
+
+            // Guard 2: an appointment with no date is meaningless, and the model likes to
+            // label bare course/product names as appointments. Only honour "appointment"
+            // when a real date was actually detected in the text.
+            if kind == .appointment, fallback.date == nil {
+                kind = .task
+            }
 
             var entry = fallback                       // keeps the detected date
             entry.title = title
             entry.kind = kind
-            if kind == .appointment, entry.date == nil {
-                entry.date = fallback.date
-            }
-            if kind == .task, fallback.kind == .task {
-                entry.date = fallback.date             // optional due date stays as detected
-            }
+            entry.date = fallback.date                 // dates only ever come from the parser
 
             let reply = d.confirmation.isEmpty
                 ? confirmation(for: entry, polished: true)
@@ -91,6 +104,25 @@ enum IntentAssistant {
         }
     }
     #endif
+
+    /// True when every significant word in `title` also appears in the user's original text.
+    ///
+    /// The on-device model is asked to reword, but it occasionally *adds* content — most
+    /// visibly prefixing an invented verb ("Attend WSQ – …") onto a title the user typed in
+    /// full. Rewording that only drops or reorders words is fine; anything that introduces a
+    /// new word is rejected so the user's own phrasing survives.
+    static func isFaithful(title: String, to original: String) -> Bool {
+        func words(_ s: String) -> [String] {
+            s.lowercased()
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+                .filter { $0.count > 2 }          // ignore "a", "to", "of", "in" …
+        }
+        let source = Set(words(original))
+        guard !source.isEmpty else { return true }
+        let introduced = words(title).filter { !source.contains($0) }
+        return introduced.isEmpty
+    }
 
     private static func confirmation(for entry: ParsedEntry, polished: Bool) -> String {
         guard !entry.title.isEmpty else {
