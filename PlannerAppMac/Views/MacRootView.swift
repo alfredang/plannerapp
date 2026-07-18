@@ -47,7 +47,10 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    static let smartLists: [SidebarItem] = [.all, .pinned, .today, .scheduled, .todos, .appointments]
+    /// `.todos` is deliberately absent: with Appointments broken out separately, "To-Dos"
+    /// listed the same rows as All Items, so the two read as duplicates. The case remains
+    /// (persisted selections may still reference it) — it just isn't offered in the sidebar.
+    static let smartLists: [SidebarItem] = [.all, .pinned, .today, .scheduled, .appointments]
     static let support: [SidebarItem] = [.settings, .feedback, .about]
 
     /// Whether an active (non-archived) item belongs to this smart category.
@@ -93,6 +96,9 @@ struct MacRootView: View {
     /// Collapsed parent lists (chevron toggled shut), stored locally as comma-joined UUIDs —
     /// per-device UI state, not synced data.
     @AppStorage("collapsedLists") private var collapsedListsRaw = ""
+
+    /// Who "I" am, for the assigned-to filter (shared with the planner pane and iPhone app).
+    @AppStorage("ownerName") private var ownerName = "Alfred"
 
     private var collapsedLists: Set<UUID> {
         Set(collapsedListsRaw.split(separator: ",").compactMap { UUID(uuidString: String($0)) })
@@ -460,8 +466,10 @@ struct MacRootView: View {
         list.sortOrder = 0   // never-placed → joins the end of its new sibling group
     }
 
+    /// Badge count for a smart category. Must apply the SAME owner filter the planner pane
+    /// uses, or the badge advertises rows the pane won't show (delegated items).
     private func count(for category: SidebarItem) -> Int {
-        activeItems.filter { category.contains($0) }.count
+        activeItems.filter { category.contains($0) && $0.isMine(ownerName: ownerName) }.count
     }
 
     // MARK: - List management
