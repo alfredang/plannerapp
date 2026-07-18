@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5] — 2026-07-18
+
+- Tap a folder in Manage Lists to open it and see its to-dos and appointments — no more
+  jumping straight to Rename (rename, pin and delete now live in the folder's menu)
+- Add items right inside a folder with the ＋ button
+- The filter bar is simpler: just All, Pinned, and Today; your lists live behind the
+  folder button
+- Turning off "Set date & time" on an appointment now works — it moves back to a to-do
+
 ## [1.4] — 2026-07-17
 
 - Appointments and To-Dos now live on their own tabs — cleaner, faster to scan; each is

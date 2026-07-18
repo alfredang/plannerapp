@@ -123,6 +123,11 @@ struct AddItemView: View {
                 if isOn && kind == .task && autoKindEnabled {
                     withAnimation { kind = .appointment }
                 }
+                // An appointment with no date is meaningless: clearing the date
+                // moves it back to To-Do so the toggle can actually be turned off.
+                if !isOn && kind == .appointment && autoKindEnabled {
+                    withAnimation { kind = .task }
+                }
             }
         }
         #if os(macOS)

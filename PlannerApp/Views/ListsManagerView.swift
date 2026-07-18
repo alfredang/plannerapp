@@ -29,22 +29,26 @@ struct ListsManagerView: View {
                 } else {
                     List {
                         ForEach(ListHierarchy.rows(lists)) { row in
-                            HStack {
-                                Label(row.list.name, systemImage: "folder")
-                                    .padding(.leading, CGFloat(row.depth) * 28)
-                                if row.list.isPinned {
-                                    Image(systemName: "pin.fill")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.orange)
-                                        .accessibilityLabel("Pinned")
+                            // Tapping a folder opens it to reveal its to-dos & appointments.
+                            // Rename/pin/delete live in the context menu (long-press).
+                            NavigationLink {
+                                ListDetailView(list: row.list)
+                            } label: {
+                                HStack {
+                                    Label(row.list.name, systemImage: "folder")
+                                        .padding(.leading, CGFloat(row.depth) * 28)
+                                    if row.list.isPinned {
+                                        Image(systemName: "pin.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.orange)
+                                            .accessibilityLabel("Pinned")
+                                    }
+                                    Spacer()
+                                    Text("\(row.list.subtreeActiveCount)")
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
                                 }
-                                Spacer()
-                                Text("\(row.list.subtreeActiveCount)")
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
                             }
-                            .contentShape(Rectangle())
-                            .onTapGesture { beginRename(row.list) }
                             .contextMenu {
                                 Button(row.list.isPinned ? "Unpin" : "Pin to Top") {
                                     withAnimation { row.list.isPinned.toggle() }
@@ -139,6 +143,73 @@ struct ListsManagerView: View {
     /// children nests the dragged list there (see ListHierarchy.applyMove).
     private func move(from source: IndexSet, to destination: Int) {
         ListHierarchy.applyMove(ListHierarchy.rows(lists), from: source, to: destination)
+    }
+}
+
+/// The to-dos & appointments inside a folder (and its sub-lists), reached by tapping the
+/// folder in Manage Lists. Check items off, tap to edit, or add a new one into this folder.
+struct ListDetailView: View {
+    @Environment(\.modelContext) private var context
+    let list: PlannerList
+
+    @Query(
+        filter: #Predicate<PlannerItem> { !$0.isArchived },
+        sort: [SortDescriptor(\PlannerItem.date), SortDescriptor(\PlannerItem.createdAt, order: .reverse)]
+    )
+    private var allItems: [PlannerItem]
+
+    @State private var showingAdd = false
+    @State private var editingItem: PlannerItem?
+
+    /// This folder's items plus everything in its sub-lists.
+    private var items: [PlannerItem] {
+        let ids = list.subtreeIDs
+        return allItems.filter { item in
+            guard let listID = item.list?.id else { return false }
+            return ids.contains(listID)
+        }
+    }
+
+    var body: some View {
+        Group {
+            if items.isEmpty {
+                ContentUnavailableView {
+                    Label("Nothing here yet", systemImage: "tray")
+                } description: {
+                    Text("Tap ＋ to add a to-do or appointment to “\(list.name)”.")
+                }
+            } else {
+                List {
+                    ForEach(items) { item in
+                        ItemRow(item: item) {
+                            withAnimation { item.toggleDone() }
+                        } onEdit: {
+                            editingItem = item
+                        }
+                    }
+                    .onDelete { offsets in
+                        for index in offsets { context.delete(items[index]) }
+                    }
+                }
+            }
+        }
+        .navigationTitle(list.name)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { showingAdd = true } label: {
+                    Label("Add item", systemImage: "plus")
+                }
+                .accessibilityLabel("Add item")
+            }
+        }
+        .sheet(isPresented: $showingAdd) {
+            AddItemView(prefill: ParsedEntry(title: "", kind: .task, date: nil),
+                        defaultList: list)
+        }
+        .sheet(item: $editingItem) { AddItemView(item: $0) }
     }
 }
 

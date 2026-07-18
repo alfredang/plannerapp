@@ -36,12 +36,6 @@ struct TodoListView: View {
     @FocusState private var inputFocused: Bool
 
     private var isListening: Bool { speech?.isListening ?? false }
-    @State private var showingNewList = false
-    @State private var newListName = ""
-    /// When set, the New List alert creates a sub-list under this parent.
-    @State private var newListParent: PlannerList?
-    @State private var renamingList: PlannerList?
-    @State private var renameText = ""
     @State private var editingItem: PlannerItem?
 
     /// The open user list, when the filter is one.
@@ -130,22 +124,6 @@ struct TodoListView: View {
             }
             .sheet(isPresented: $showingLists) { ListsManagerView() }
             .sheet(item: $editingItem) { AddItemView(item: $0) }
-            .alert(newListParent == nil ? "New List" : "New Sub-list", isPresented: $showingNewList) {
-                TextField("Name", text: $newListName)
-                Button("Create") { createList() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                if let parent = newListParent {
-                    Text("Give the sub-list under “\(parent.name)” a name.")
-                } else {
-                    Text("Give your list a name.")
-                }
-            }
-            .alert("Rename List", isPresented: renameBinding, presenting: renamingList) { _ in
-                TextField("Name", text: $renameText)
-                Button("Rename") { commitRename() }
-                Button("Cancel", role: .cancel) {}
-            }
             .onChange(of: lists.count) {
                 // If the selected list was deleted (locally or via sync), fall back to All.
                 if case .list(let id) = filter, !lists.contains(where: { $0.id == id }) {
@@ -160,8 +138,9 @@ struct TodoListView: View {
     private var chipBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                // The kind chips are redundant here — each kind has its own tab now.
-                ForEach([PlannerCategory.all, .pinned, .today, .scheduled]) { category in
+                // Just the three smart views — All, Pinned, Today. The user's lists live
+                // behind the folder button in the toolbar (tap a folder to open it).
+                ForEach([PlannerCategory.all, .pinned, .today]) { category in
                     chip(title: category.title,
                          symbol: category.symbol,
                          count: kindItems.filter { category.contains($0) }.count,
@@ -169,53 +148,6 @@ struct TodoListView: View {
                         withAnimation { filter = .category(category) }
                     }
                 }
-
-                if !lists.isEmpty {
-                    Divider().frame(height: 22)
-                }
-
-                ForEach(ListHierarchy.rows(lists)) { row in
-                    let subtree = row.list.subtreeIDs
-                    chip(title: row.depth > 0 ? "↳ \(row.list.name)" : row.list.name,
-                         symbol: row.list.isPinned ? "pin.fill" : "folder",
-                         count: kindItems.filter { item in
-                             item.list.map { subtree.contains($0.id) } ?? false
-                         }.count,
-                         isSelected: filter == .list(row.list.id)) {
-                        withAnimation { filter = .list(row.list.id) }
-                    }
-                    .contextMenu {
-                        Button(row.list.isPinned ? "Unpin" : "Pin to Top") {
-                            withAnimation { row.list.isPinned.toggle() }
-                        }
-                        Button("New Sub-list…") {
-                            newListName = ""
-                            newListParent = row.list
-                            showingNewList = true
-                        }
-                        Button("Rename…") {
-                            renameText = row.list.name
-                            renamingList = row.list
-                        }
-                        Button("Delete", role: .destructive) {
-                            context.delete(row.list)   // items + sub-lists are kept
-                        }
-                    }
-                }
-
-                Button {
-                    newListName = ""
-                    newListParent = nil
-                    showingNewList = true
-                } label: {
-                    Label("New List", systemImage: "plus")
-                        .font(.subheadline.weight(.medium))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Theme.card, in: Capsule())
-                        .foregroundStyle(Theme.accent)
-                }
-                .accessibilityLabel("New list")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -447,25 +379,6 @@ struct TodoListView: View {
     }
 
     // MARK: - List management
-
-    private var renameBinding: Binding<Bool> {
-        Binding(get: { renamingList != nil }, set: { if !$0 { renamingList = nil } })
-    }
-
-    private func createList() {
-        let name = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        let list = PlannerList(name: name, parent: newListParent)
-        context.insert(list)
-        newListParent = nil
-        withAnimation { filter = .list(list.id) }
-    }
-
-    private func commitRename() {
-        let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let list = renamingList, !name.isEmpty { list.name = name }
-        renamingList = nil
-    }
 
     private func delete(_ source: [PlannerItem], at offsets: IndexSet) {
         for index in offsets { context.delete(source[index]) }
