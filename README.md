@@ -50,7 +50,7 @@ with full undo.
 - 🗂 **Your own lists** — create, rename, and delete lists ("Work", "Groceries", …), file items
   into them, and browse them from the folder button. Tapping a folder opens it to show its
   to-dos and appointments (rename, pin and delete live in its context menu); the filter bar
-  at the top of each tab keeps just the smart views — **All Items, Pinned, Today**. Lists
+  at the top of each tab keeps just the smart views — **To-Do, Pinned, Today**. Lists
   sync like everything else.
 - ↕️ **Drag to rearrange** — hold and drag to-dos, appointments, and your lists into any order,
   on iPhone and Mac alike; your custom order syncs across devices via iCloud.
@@ -61,9 +61,9 @@ with full undo.
   list at once from the Mac sidebar's "My Lists" header or the Manage Lists toolbar on iPhone.
 - 📌 **Pin to top** — tap the pin on any row (or swipe right on iPhone, right-click on Mac) to
   pin it; pinned entries float above the rest and sync across devices. A dedicated **Pinned**
-  view right next to All Items collects everything you've pinned.
+  view right next to To-Do collects everything you've pinned.
 - 👤 **Delegate with Assign to** — put someone's name on an item and it moves out of your
-  way: **All Items, Pinned and Today show only your own work** (unassigned, or assigned to
+  way: **To-Do, Pinned and Today show only your own work** (unassigned, or assigned to
   you). Their items still show in full when you open their list. Set who "you" are in
   Settings ▸ Me on the Mac.
 - ↩️ **Undo everywhere** — take back deletes, check-offs, edits, and drags: ⌘Z / Edit ▸ Undo

@@ -14,7 +14,7 @@ struct MacSettingsPane: View {
         Form {
             Section("Me") {
                 TextField("My name", text: $ownerName)
-                Text("Used by the smart views (All Items, Pinned, Today): they show only your own work — items assigned to this name, plus anything unassigned. Items assigned to someone else appear in their list instead.")
+                Text("Used by the smart views (To-Do, Pinned, Today): they show only your own work — items assigned to this name, plus anything unassigned. Items assigned to someone else appear in their list instead.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

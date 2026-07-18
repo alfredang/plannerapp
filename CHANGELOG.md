@@ -14,7 +14,7 @@
 - Collapse or expand all your lists at once, on both iPhone and Mac; sub-lists now have
   a chevron on iPhone too
 - Fixed: with lists collapsed, deleting or dragging a list could affect the wrong one
-- Your lists stay yours: All Items, Pinned and Today now show only your own work —
+- Your lists stay yours: To-Do, Pinned and Today now show only your own work —
   anything you've assigned to someone else appears in their list instead
 - Fixed: items with no date are no longer turned into appointments
 - Fixed: the assistant no longer adds words you didn't type to an item's title

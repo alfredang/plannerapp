@@ -17,7 +17,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .all:          return "All Items"
+        case .all:          return "To-Do"
         case .today:        return "Today"
         case .scheduled:    return "Reminders"
         case .pinned:       return "Pinned"
