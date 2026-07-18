@@ -39,6 +39,8 @@ struct TodoListView: View {
     @State private var editingItem: PlannerItem?
     /// Item the user tapped "Undo" on — held until they confirm the delete.
     @State private var pendingUndo: UUID?
+    /// Keyword filter over active items (archived items are never searched).
+    @State private var searchText = ""
 
     /// Who "I" am, for the assigned-to filter. Items assigned to this name (or to nobody)
     /// stay in the smart views; anything delegated to someone else is filtered out.
@@ -60,7 +62,16 @@ struct TodoListView: View {
     /// Everything of this tab's kind (the tab never mixes to-dos and appointments).
     private var kindItems: [PlannerItem] { items.filter { $0.kind == mode } }
 
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var visibleItems: [PlannerItem] {
+        // A search looks across every active item of this tab's kind, not just the current
+        // filter — otherwise you'd have to know which list something is in to find it.
+        // Archived items are never searched (the query excludes them already).
+        if isSearching { return kindItems.filter { $0.matches(searchText) } }
+
         switch filter {
         case .category(let c):
             // Smart views are *your* queue: your own items (unassigned, or assigned to
@@ -105,6 +116,9 @@ struct TodoListView: View {
             }
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText,
+                        placement: .navigationBarDrawer(displayMode: .always),
+                        prompt: mode == .task ? "Search to-dos" : "Search appointments")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showingLists = true } label: {
@@ -390,12 +404,22 @@ struct TodoListView: View {
     }
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label(emptyTitle, systemImage: "sparkles")
-        } description: {
-            Text(mode == .task
-                 ? "Tap + to add a to-do, or tell the assistant below what you need to do."
-                 : "Tap + to add an appointment, or tell the assistant below — e.g. “Lunch with Sam tomorrow 1pm”.")
+        Group {
+            if isSearching {
+                ContentUnavailableView {
+                    Label("No matches", systemImage: "magnifyingglass")
+                } description: {
+                    Text("Nothing active matches “\(searchText)”. Archived items aren't searched.")
+                }
+            } else {
+                ContentUnavailableView {
+                    Label(emptyTitle, systemImage: "sparkles")
+                } description: {
+                    Text(mode == .task
+                         ? "Tap + to add a to-do, or tell the assistant below what you need to do."
+                         : "Tap + to add an appointment, or tell the assistant below — e.g. “Lunch with Sam tomorrow 1pm”.")
+                }
+            }
         }
         .frame(maxHeight: .infinity)
     }
