@@ -105,14 +105,59 @@ final class PlannerList {
 /// Only fills **blank** assignees: a name someone typed by hand is never overwritten, and
 /// items in category folders ("Interns", "Staff") are left alone since those name no one.
 enum AssigneeBackfill {
+    /// Only lists under these top-level groups name a real person. "Project" and "Clients"
+    /// hold projects and companies (AI-MMS, Innohat, TapCard) whose names are NOT people —
+    /// assigning those would push the items out of the owner's own smart views.
+    static let peopleGroups = ["Interns", "Staff"]
+
+    /// True when `list` sits under one of the people groups, so its name is someone's name.
+    private static func namesAPerson(_ list: PlannerList) -> Bool {
+        var node: PlannerList? = list
+        while let current = node {
+            if peopleGroups.contains(where: { $0.caseInsensitiveCompare(current.name) == .orderedSame }) {
+                return true
+            }
+            node = current.parent
+        }
+        return false
+    }
+
     /// Returns the items it would change, without mutating anything.
     static func candidates(in items: [PlannerItem]) -> [(item: PlannerItem, owner: String)] {
         items.compactMap { item in
             guard item.assignedTo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  let owner = item.list?.derivedAssignee
+                  let list = item.list,
+                  namesAPerson(list),
+                  let owner = list.derivedAssignee
             else { return nil }
             return (item, owner)
         }
+    }
+
+    /// Key marking that the one-time repair has already run on this device. Bumped to v2:
+    /// the v1 pass mutated the items but never saved, so it must run again.
+    static let hasRunKey = "assigneeBackfill.hasRun.v2"
+
+    /// Runs the repair once per device, at launch. Fetching from the context directly (and
+    /// not a @Query) keeps it independent of which view or scene is on screen.
+    static func runOnce(context: ModelContext) {
+        guard !UserDefaults.standard.bool(forKey: hasRunKey) else { return }
+        let items = (try? context.fetch(
+            FetchDescriptor<PlannerItem>(predicate: #Predicate { !$0.isArchived }))) ?? []
+        let changed = apply(to: items)
+        // Persist explicitly: without this the edits stay in memory and are lost on quit.
+        // Only mark the pass as done once the save actually succeeded, so a failure retries
+        // on the next launch instead of being silently skipped forever.
+        if changed > 0 {
+            do {
+                try context.save()
+                log("saved \(changed) assignee change\(changed == 1 ? "" : "s")")
+            } catch {
+                log("SAVE FAILED: \(error)")
+                return
+            }
+        }
+        UserDefaults.standard.set(true, forKey: hasRunKey)
     }
 
     /// Applies the fill and returns how many items changed.
@@ -120,6 +165,43 @@ enum AssigneeBackfill {
     static func apply(to items: [PlannerItem]) -> Int {
         let work = candidates(in: items)
         for (item, owner) in work { item.assignedTo = owner }
+        diagnose(items, work.count)
         return work.count
+    }
+
+    /// Appends one line to the Hermes log.
+    static func log(_ message: String) {
+        let url = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/Application Support/Planner/Hermes/planner-log.txt")
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(Data("\n\(Date()) [backfill] \(message)\n".utf8))
+            try? handle.close()
+        }
+    }
+
+    /// Writes what the run actually saw to the Hermes log, so a no-op can be explained
+    /// instead of guessed at.
+    private static func diagnose(_ items: [PlannerItem], _ changed: Int) {
+        let blank = items.filter {
+            $0.assignedTo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        let blankWithList = blank.filter { $0.list != nil }
+        let blankNoOwner = blankWithList.filter { $0.list?.derivedAssignee == nil }
+        var report = """
+        [backfill] items=\(items.count) blank=\(blank.count) \
+        blankWithList=\(blankWithList.count) blankButListNamesNoOne=\(blankNoOwner.count) \
+        changed=\(changed)
+        """
+        for item in blankNoOwner.prefix(10) {
+            report += "\n  no owner from list “\(item.list?.name ?? "")” — \(item.title.prefix(40))"
+        }
+        let url = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/Application Support/Planner/Hermes/planner-log.txt")
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(Data(("\n\(Date()) \(report)\n").utf8))
+            try? handle.close()
+        }
     }
 }

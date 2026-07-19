@@ -46,6 +46,11 @@ struct PlannerApp: App {
                 .modelUndoSupport()
                 .task { seedSampleDataIfRequested() }
                 .task {
+                    // One-time repair for items captured inside someone's list before the
+                    // capture bar filled in "Assign to" (see AssigneeBackfill).
+                    AssigneeBackfill.runOnce(context: container.mainContext)
+                }
+                .task {
                     // Ask once, then arm the advance alerts for everything already due.
                     await ReminderScheduler.requestAuthorization()
                     await ReminderScheduler.rescheduleAll(context: container.mainContext)

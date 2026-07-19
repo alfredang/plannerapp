@@ -4,8 +4,7 @@ import SwiftData
 /// App settings, reachable from BOTH the sidebar (Support ▸ Settings) and the standard
 /// macOS Settings window (Planner ▸ Settings…, ⌘,). One view so they never diverge.
 struct MacSettingsPane: View {
-    @Query(filter: #Predicate<PlannerItem> { !$0.isArchived })
-    private var activeItems: [PlannerItem]
+    @Environment(\.modelContext) private var context
     /// Count from the last backfill run, so the button reports what it did.
     @State private var backfilled: Int?
     @AppStorage("terminalAgent") private var terminalAgentRaw = TerminalAgent.hermes.rawValue
@@ -25,15 +24,17 @@ struct MacSettingsPane: View {
             }
 
             Section("Maintenance") {
-                let pending = AssigneeBackfill.candidates(in: activeItems).count
+                // Fetch straight from the context rather than trusting @Query: this pane is
+                // presented from two different scenes and a missing container would silently
+                // yield an empty list (and a permanently disabled button).
                 Button("Fix Assignees from Lists") {
-                    backfilled = AssigneeBackfill.apply(to: activeItems)
+                    let items = (try? context.fetch(
+                        FetchDescriptor<PlannerItem>(
+                            predicate: #Predicate { !$0.isArchived }))) ?? []
+                    backfilled = AssigneeBackfill.apply(to: items)
                 }
-                .disabled(pending == 0)
                 Text(backfilled.map { "Assigned \($0) item\($0 == 1 ? "" : "s") to their list owners." }
-                     ?? (pending == 0
-                         ? "Every item inside someone's list is already assigned to them."
-                         : "\(pending) item\(pending == 1 ? "" : "s") sit inside someone's list with no assignee — usually captured before the assistant filled it in. This fills the blank ones only; names you typed yourself are never overwritten."))
+                     ?? "Items captured inside someone's list before the assistant filled in “Assign to” have no assignee, so they never show up in that person's queue. This fills the blank ones from the list they're in; names you typed yourself are never overwritten.")
                     .font(.caption)
                     .foregroundStyle(backfilled != nil ? .green : .secondary)
             }

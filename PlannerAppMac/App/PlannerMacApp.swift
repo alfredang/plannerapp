@@ -102,6 +102,9 @@ struct PlannerMacApp: App {
         Settings {
             MacSettingsPane()
                 .frame(width: 420)
+                // The Settings scene is separate from the WindowGroup, so it needs the
+                // container too — without it any @Query here silently returns nothing.
+                .modelContainer(container)
         }
     }
 }

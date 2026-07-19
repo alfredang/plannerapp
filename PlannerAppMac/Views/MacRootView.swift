@@ -190,6 +190,10 @@ struct MacRootView: View {
         // planner:// commands the agent issues from the terminal panel (see HermesBridge).
         .task {
             HermesBridge.prepareWorkspace()
+            // One-time repair for items captured inside someone's list before the capture
+            // bar filled in "Assign to". Runs at launch rather than behind a button so it
+            // can't be missed; the flag keeps it to a single pass.
+            AssigneeBackfill.runOnce(context: context)
             HermesBridge.writeSnapshot(context: context)
         }
         .onChange(of: dataFingerprint) {

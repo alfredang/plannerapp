@@ -19,8 +19,6 @@ struct RemindersSettingsView: View {
     @AppStorage("calendar.targetCalendarID") private var targetCalendarID = ""
     @State private var calendars: [EKCalendar] = []
 
-    @Query(filter: #Predicate<PlannerItem> { !$0.isArchived })
-    private var activeItems: [PlannerItem]
     /// Count from the last backfill run, so the button reports what it did.
     @State private var backfilled: Int?
 
@@ -50,19 +48,17 @@ struct RemindersSettingsView: View {
             }
 
             Section {
-                let pending = AssigneeBackfill.candidates(in: activeItems).count
                 Button("Fix Assignees from Lists") {
-                    backfilled = AssigneeBackfill.apply(to: activeItems)
+                    let items = (try? context.fetch(
+                        FetchDescriptor<PlannerItem>(
+                            predicate: #Predicate { !$0.isArchived }))) ?? []
+                    backfilled = AssigneeBackfill.apply(to: items)
                 }
-                .disabled(pending == 0)
             } header: {
                 Text("Maintenance")
             } footer: {
-                let pending = AssigneeBackfill.candidates(in: activeItems).count
                 Text(backfilled.map { "Assigned \($0) item\($0 == 1 ? "" : "s") to their list owners." }
-                     ?? (pending == 0
-                         ? "Every item inside someone's list is already assigned to them."
-                         : "\(pending) item\(pending == 1 ? "" : "s") sit inside someone's list with no assignee — usually captured before the assistant filled it in. This fills the blank ones only; names you typed yourself are never overwritten."))
+                     ?? "Items captured inside someone's list before the assistant filled in “Assign to” have no assignee, so they never show up in that person's queue. This fills the blank ones from the list they're in; names you typed yourself are never overwritten.")
             }
 
             Section {
