@@ -26,9 +26,12 @@ struct MacPlannerPane: View {
     @State private var speech: SpeechRecognizer?
     @State private var input = ""
     @State private var isThinking = false
-    @State private var lastReply: ChatMessage?
+    /// The item the assistant just created — the sole anchor for Undo.
+    /// Not a chat log: it holds one item and clears as soon as it's undone or superseded.
+    @State private var lastCreated: (id: UUID, title: String)?
     @State private var showingAdd = false
     @State private var editingItem: PlannerItem?
+    @State private var deletingItem: PlannerItem?
     /// Keyword filter over active items (archived items are never searched).
     @State private var searchText = ""
     @FocusState private var inputFocused: Bool
@@ -195,6 +198,18 @@ struct MacPlannerPane: View {
         }
         .sheet(isPresented: $showingAdd) { AddItemView(defaultList: currentList) }
         .sheet(item: $editingItem) { AddItemView(item: $0) }
+        .confirmationDialog("Delete this item?", isPresented: .init(
+            get: { deletingItem != nil },
+            set: { if !$0 { deletingItem = nil } }
+        ), presenting: deletingItem) { item in
+            Button("Delete", role: .destructive) {
+                withAnimation { context.delete(item) }
+                deletingItem = nil
+            }
+            Button("Cancel", role: .cancel) { deletingItem = nil }
+        } message: { item in
+            Text("“\(item.title)” will be removed permanently.")
+        }
         .onChange(of: speech?.transcript) { _, text in
             if let text, !text.isEmpty { input = text }
         }
@@ -248,12 +263,32 @@ struct MacPlannerPane: View {
             .buttonStyle(.plain)
             .help(item.isPinned ? "Unpin" : "Pin to top")
             .accessibilityLabel(item.isPinned ? "Unpin" : "Pin to top")
+            // Deleting is permanent, so the click asks first.
+            Button {
+                deletingItem = item
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .help("Delete")
+            .accessibilityLabel("Delete")
             // Drag affordance — the whole row drags, the grip just signals it.
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .help("Hold and drag to rearrange")
                 .accessibilityHidden(true)
+        }
+        // Drag a row onto a sidebar list to move it there. Uses .onDrag with an
+        // NSItemProvider rather than .draggable: inside a List(selection:) the
+        // row is already a drag source for selection, which swallows .draggable.
+        .onDrag {
+            NSItemProvider(object: PlannerItemDragPayload(id: item.id))
+        } preview: {
+            Label(item.title, systemImage: item.kind.symbol)
+                .padding(6)
         }
         .contextMenu {
             Button(item.isPinned ? "Unpin" : "Pin to Top") {
@@ -293,9 +328,21 @@ struct MacPlannerPane: View {
                     ProgressView().controlSize(.small)
                     Text("Drafting…").font(.footnote).foregroundStyle(.secondary)
                 }
-            } else if let reply = lastReply {
-                assistantBubble(reply)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let created = lastCreated {
+                // The new item is already visible in the list above, so this is just
+                // the escape hatch — no echo of what the assistant understood.
+                HStack(spacing: 6) {
+                    Text("Added “\(created.title)”")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Button("Undo") { undo(created.id) }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.link)
+                    Spacer(minLength: 0)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
             HStack(spacing: 10) {
@@ -344,37 +391,6 @@ struct MacPlannerPane: View {
         .background(.bar)
     }
 
-    private func assistantBubble(_ message: ChatMessage) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(Theme.accent)
-                .padding(.top, 2)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(message.text)
-                if let item = message.item {
-                    HStack(spacing: 8) {
-                        Label(item.kind.title, systemImage: item.kind.symbol)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Theme.accent)
-                        if let date = item.date {
-                            Label(date.formatted(.dateTime.weekday().month().day().hour().minute()),
-                                  systemImage: "clock")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Button("Undo") { undo(item.id) }
-                            .font(.caption.weight(.semibold))
-                            .buttonStyle(.link)
-                    }
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
     private var canSend: Bool {
         !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isThinking
     }
@@ -398,9 +414,7 @@ struct MacPlannerPane: View {
                 saved = item
             }
             withAnimation {
-                lastReply = ChatMessage(role: .assistant,
-                                        text: draft.reply,
-                                        item: saved.map(ChatMessage.ItemSummary.init))
+                lastCreated = saved.map { ($0.id, $0.title) }
                 isThinking = false
             }
         }
@@ -408,11 +422,12 @@ struct MacPlannerPane: View {
 
     private func undo(_ itemID: UUID) {
         guard let item = try? context.fetch(FetchDescriptor<PlannerItem>()).first(where: { $0.id == itemID })
-        else { return }
-        context.delete(item)
-        withAnimation {
-            lastReply = ChatMessage(role: .assistant, text: "Removed “\(item.title)”.")
+        else {
+            withAnimation { lastCreated = nil }   // item's already gone; don't strand the bar
+            return
         }
+        context.delete(item)
+        withAnimation { lastCreated = nil }   // the row vanishing from the list is the feedback
     }
 }
 

@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AppKit
+import UniformTypeIdentifiers
 
 /// A fixed sidebar destination. The smart categories filter the planner pane; Calendar,
 /// Archive, Feedback and About swap in their own panes. User-created lists are handled
@@ -151,6 +152,9 @@ struct MacRootView: View {
     @AppStorage("hermesPanelWidth") private var hermesPanelWidth = 400.0
     @State private var panelDragStartWidth: CGFloat?
     @State private var dividerHovered = false
+
+    /// Sidebar list currently under a dragged item — drives the drop highlight.
+    @State private var dropTargetListID: UUID?
 
     @ObservedObject private var syncStatus = CloudSyncStatus.shared
 
@@ -430,6 +434,21 @@ struct MacRootView: View {
             .padding(.leading, CGFloat(depth) * 28)
             .badge(list.subtreeActiveCount)
             .tag(SidebarSelection.userList(list.id))
+            .onDrop(of: [UTType.plannerItem],
+                    isTargeted: Binding(
+                        get: { dropTargetListID == list.id },
+                        set: { targeted in
+                            if targeted { dropTargetListID = list.id }
+                            else if dropTargetListID == list.id { dropTargetListID = nil }
+                        })) { providers in
+                load(providers) { ids in move(ids, to: list) }
+                return true
+            }
+            .listRowBackground(
+                dropTargetListID == list.id
+                    ? RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.25))
+                    : nil
+            )
             .contextMenu {
                 Button(list.isPinned ? "Unpin" : "Pin to Top") {
                     withAnimation { list.isPinned.toggle() }
@@ -478,6 +497,53 @@ struct MacRootView: View {
 
     /// Drag over the flattened outline: reorders siblings, and dropping into a group's
     /// children nests the dragged list there (see ListHierarchy.applyMove).
+    /// Collects ids from concurrent `loadObject` callbacks.
+    private final class IDBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [UUID] = []
+        var ids: [UUID] { lock.withLock { storage } }
+        func append(_ id: UUID) { lock.withLock { storage.append(id) } }
+    }
+
+    /// Resolve dropped item providers into ids, then hand them back on the main actor —
+    /// `loadObject` calls back on a background queue, and SwiftData writes must be on main.
+    private func load(_ providers: [NSItemProvider],
+                      then handle: @escaping ([UUID]) -> Void) {
+        let group = DispatchGroup()
+        let box = IDBox()
+        for provider in providers
+        where provider.canLoadObject(ofClass: PlannerItemDragPayload.self) {
+            group.enter()
+            _ = provider.loadObject(ofClass: PlannerItemDragPayload.self) { payload, _ in
+                if let payload = payload as? PlannerItemDragPayload { box.append(payload.id) }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { handle(box.ids) }
+    }
+
+    /// Reassign dropped items to `list`.
+    private func move(_ ids: [UUID], to list: PlannerList) {
+        let ids = Set(ids)
+        guard !ids.isEmpty else { return }
+        // Don't filter out items already in this list: one may sit in the right list with a
+        // stale assignee (e.g. moved before this rule existed), and re-dropping it should
+        // still fix the owner.
+        let items = activeItems.filter { ids.contains($0.id) }
+        guard !items.isEmpty else { return }
+        // Moving into someone's list reassigns the work to them — same rule that auto-fills
+        // "Assign to" when adding an item inside that list. Lists that don't name a person
+        // (category folders like "Clients") leave the existing assignee alone.
+        let newAssignee = list.derivedAssignee
+        withAnimation {
+            for item in items {
+                item.list = list
+                if let newAssignee { item.assignedTo = newAssignee }
+            }
+            dropTargetListID = nil
+        }
+    }
+
     private func moveLists(from source: IndexSet, to destination: Int) {
         // Same collapsed set as the ForEach above — onMove indices refer to visible rows.
         ListHierarchy.applyMove(ListHierarchy.rows(lists, collapsed: collapsedLists),

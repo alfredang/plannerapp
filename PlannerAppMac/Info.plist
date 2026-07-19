@@ -47,5 +47,20 @@
 	<string>Planner uses the microphone so you can add tasks and appointments by voice.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Planner uses speech recognition to turn what you say into to-do items and appointments.</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Planner Item</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.tertiaryinfotech.plannerapp.item</string>
+			<key>UTTypeTagSpecification</key>
+			<dict/>
+		</dict>
+	</array>
 </dict>
 </plist>

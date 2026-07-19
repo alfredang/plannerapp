@@ -1,5 +1,7 @@
 import Foundation
 import SwiftData
+import CoreTransferable
+import UniformTypeIdentifiers
 
 /// The kind of entry. Backed by a raw `String` so it stays CloudKit-compatible.
 enum PlannerKind: String, CaseIterable, Identifiable {
@@ -116,4 +118,43 @@ final class PlannerItem {
             isArchived = false         // restore when unchecked from the archive
         }
     }
+}
+
+/// The payload for dragging a planner item onto a sidebar list.
+///
+/// Only the item's `id` travels — the receiving side re-fetches the live `PlannerItem`,
+/// since SwiftData objects can't cross a drag boundary. Lives here rather than in its
+/// own file so it's picked up by both app targets' existing source lists.
+///
+/// This is an `NSItemProvider`-based payload rather than a `Transferable` struct because
+/// SwiftUI's `.draggable` is swallowed by `List(selection:)`, whose rows are already
+/// drag sources for selection. `.onDrag` sits below that gesture layer and works.
+@objc(PlannerItemDragPayload)
+final class PlannerItemDragPayload: NSObject, NSItemProviderWriting, NSItemProviderReading {
+    let id: UUID
+
+    init(id: UUID) { self.id = id }
+
+    static var writableTypeIdentifiersForItemProvider: [String] { [UTType.plannerItem.identifier] }
+    static var readableTypeIdentifiersForItemProvider: [String] { [UTType.plannerItem.identifier] }
+
+    func loadData(withTypeIdentifier typeIdentifier: String,
+                  forItemProviderCompletionHandler completionHandler:
+                    @escaping @Sendable (Data?, Error?) -> Void) -> Progress? {
+        completionHandler(Data(id.uuidString.utf8), nil)
+        return nil
+    }
+
+    static func object(withItemProviderData data: Data,
+                       typeIdentifier: String) throws -> Self {
+        guard let uuid = UUID(uuidString: String(decoding: data, as: UTF8.self)) else {
+            throw CocoaError(.formatting)
+        }
+        return Self(id: uuid)
+    }
+}
+
+extension UTType {
+    /// Private in-process drag type, so planner rows only drop onto our own targets.
+    static let plannerItem = UTType(exportedAs: "com.tertiaryinfotech.plannerapp.item")
 }

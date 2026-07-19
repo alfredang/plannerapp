@@ -32,7 +32,10 @@ struct TodoListView: View {
     @State private var speech: SpeechRecognizer?
     @State private var input = ""
     @State private var isThinking = false
-    @State private var lastReply: ChatMessage?
+    /// The item the assistant just created — the sole anchor for Undo.
+    /// Not a chat log: it holds one item and clears as soon as it's undone or superseded.
+    @State private var lastCreated: (id: UUID, title: String)?
+    @State private var deletingItem: PlannerItem?
     @FocusState private var inputFocused: Bool
 
     private var isListening: Bool { speech?.isListening ?? false }
@@ -160,6 +163,18 @@ struct TodoListView: View {
             } message: {
                 Text("This deletes the entry the assistant just saved.")
             }
+            .confirmationDialog("Delete this item?", isPresented: Binding(
+                get: { deletingItem != nil },
+                set: { if !$0 { deletingItem = nil } }
+            ), titleVisibility: .visible, presenting: deletingItem) { item in
+                Button("Delete", role: .destructive) {
+                    withAnimation { context.delete(item) }
+                    deletingItem = nil
+                }
+                Button("Cancel", role: .cancel) { deletingItem = nil }
+            } message: { item in
+                Text("“\(item.title)” will be removed permanently.")
+            }
             .onChange(of: lists.count) {
                 // If the selected list was deleted (locally or via sync), fall back to All.
                 if case .list(let id) = filter, !lists.contains(where: { $0.id == id }) {
@@ -245,6 +260,17 @@ struct TodoListView: View {
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(item.isPinned ? "Unpin" : "Pin to top")
+            // Deleting is permanent, so the tap asks first.
+            Button {
+                deletingItem = item
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary.opacity(0.5))
+                    .frame(width: 28, height: 28)   // comfortable tap target
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Delete")
             // Drag affordance — hold and drag anywhere on the row to rearrange.
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 12, weight: .semibold))
@@ -260,6 +286,34 @@ struct TodoListView: View {
             }
             .tint(.orange)
         }
+        .contextMenu {
+            // iPhone equivalent of the Mac's drag-to-sidebar: same move, same
+            // auto-reassign, without a drag target to aim at.
+            Menu("Move to List") {
+                ForEach(ListHierarchy.rows(lists)) { row in
+                    Button(String(repeating: "  ", count: row.depth) + row.list.name) {
+                        move(item, to: row.list)
+                    }
+                    .disabled(item.list?.id == row.list.id)
+                }
+            }
+            Button(item.isPinned ? "Unpin" : "Pin to Top") {
+                withAnimation { item.isPinned.toggle() }
+            }
+            Button("Edit…") { editingItem = item }
+            Divider()
+            Button("Delete", role: .destructive) { deletingItem = item }
+        }
+    }
+
+    /// Move one item into `list`, reassigning it to that list's owner — mirrors the Mac
+    /// drop behaviour so both platforms agree on what a move means.
+    private func move(_ item: PlannerItem, to list: PlannerList) {
+        let newAssignee = list.derivedAssignee
+        withAnimation {
+            item.list = list
+            if let newAssignee { item.assignedTo = newAssignee }
+        }
     }
 
     // MARK: - Chatbot capture bar (mirrors the Mac pane, pinned to the bottom)
@@ -271,9 +325,23 @@ struct TodoListView: View {
                     ProgressView().controlSize(.small)
                     Text("Drafting…").font(.footnote).foregroundStyle(.secondary)
                 }
-            } else if let reply = lastReply {
-                assistantBubble(reply)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let created = lastCreated {
+                // The new item is already visible in the list above, so this is just
+                // the escape hatch — no echo of what the assistant understood.
+                HStack(spacing: 6) {
+                    Text("Added “\(created.title)”")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    // Still confirmed: this sits right above the capture bar, where an
+                    // accidental tap would otherwise delete the entry silently.
+                    Button("Undo", role: .destructive) { pendingUndo = created.id }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.borderless)
+                    Spacer(minLength: 0)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
             HStack(spacing: 10) {
@@ -330,41 +398,6 @@ struct TodoListView: View {
         }
     }
 
-    private func assistantBubble(_ message: ChatMessage) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(Theme.accent)
-                .padding(.top, 2)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(message.text)
-                    .font(.subheadline)
-                if let item = message.item {
-                    HStack(spacing: 8) {
-                        Label(item.kind.title, systemImage: item.kind.symbol)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Theme.accent)
-                        if let date = item.date {
-                            Label(date.formatted(.dateTime.weekday().month().day().hour().minute()),
-                                  systemImage: "clock")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        // Destructive: confirm first. This button sits right above the
-                        // capture bar, so an accidental tap used to delete the entry
-                        // silently.
-                        Button("Undo", role: .destructive) { pendingUndo = item.id }
-                            .font(.caption.weight(.semibold))
-                            .buttonStyle(.borderless)
-                    }
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
     private var canSend: Bool {
         !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isThinking
     }
@@ -386,9 +419,7 @@ struct TodoListView: View {
                 saved = item
             }
             withAnimation {
-                lastReply = ChatMessage(role: .assistant,
-                                        text: draft.reply,
-                                        item: saved.map(ChatMessage.ItemSummary.init))
+                lastCreated = saved.map { ($0.id, $0.title) }
                 isThinking = false
             }
         }
@@ -396,11 +427,12 @@ struct TodoListView: View {
 
     private func undoCapture(_ itemID: UUID) {
         guard let item = try? context.fetch(FetchDescriptor<PlannerItem>()).first(where: { $0.id == itemID })
-        else { return }
-        context.delete(item)
-        withAnimation {
-            lastReply = ChatMessage(role: .assistant, text: "Removed “\(item.title)”.")
+        else {
+            withAnimation { lastCreated = nil }   // item's already gone; don't strand the bar
+            return
         }
+        context.delete(item)
+        withAnimation { lastCreated = nil }   // the row vanishing from the list is the feedback
     }
 
     private var emptyState: some View {
