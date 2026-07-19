@@ -97,3 +97,29 @@ final class PlannerList {
         return false
     }
 }
+
+/// One-time repair for items that were captured inside someone's list before the capture
+/// bar auto-assigned them — they sit in the right list with an empty "Assign to", so they
+/// never show up in that person's queue.
+///
+/// Only fills **blank** assignees: a name someone typed by hand is never overwritten, and
+/// items in category folders ("Interns", "Staff") are left alone since those name no one.
+enum AssigneeBackfill {
+    /// Returns the items it would change, without mutating anything.
+    static func candidates(in items: [PlannerItem]) -> [(item: PlannerItem, owner: String)] {
+        items.compactMap { item in
+            guard item.assignedTo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let owner = item.list?.derivedAssignee
+            else { return nil }
+            return (item, owner)
+        }
+    }
+
+    /// Applies the fill and returns how many items changed.
+    @discardableResult
+    static func apply(to items: [PlannerItem]) -> Int {
+        let work = candidates(in: items)
+        for (item, owner) in work { item.assignedTo = owner }
+        return work.count
+    }
+}

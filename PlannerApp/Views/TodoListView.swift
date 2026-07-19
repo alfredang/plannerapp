@@ -415,6 +415,10 @@ struct TodoListView: View {
             if !draft.entry.title.isEmpty {
                 let item = draft.entry.makeItem()
                 item.list = currentList   // capture into the open list, if any
+                // ...and assign it to that list's owner, same as the add form and the
+                // assistant router do. Without this, items captured inside someone's
+                // list land unassigned and vanish from their queue.
+                if let owner = currentList?.derivedAssignee { item.assignedTo = owner }
                 context.insert(item)
                 saved = item
             }
