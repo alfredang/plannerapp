@@ -32,16 +32,11 @@ struct TodoListView: View {
     @State private var speech: SpeechRecognizer?
     @State private var input = ""
     @State private var isThinking = false
-    /// The item the assistant just created — the sole anchor for Undo.
-    /// Not a chat log: it holds one item and clears as soon as it's undone or superseded.
-    @State private var lastCreated: (id: UUID, title: String)?
     @State private var deletingItem: PlannerItem?
     @FocusState private var inputFocused: Bool
 
     private var isListening: Bool { speech?.isListening ?? false }
     @State private var editingItem: PlannerItem?
-    /// Item the user tapped "Undo" on — held until they confirm the delete.
-    @State private var pendingUndo: UUID?
     /// Keyword filter over active items (archived items are never searched).
     @State private var searchText = ""
 
@@ -151,18 +146,6 @@ struct TodoListView: View {
             }
             .sheet(isPresented: $showingLists) { ListsManagerView() }
             .sheet(item: $editingItem) { AddItemView(item: $0) }
-            .confirmationDialog("Remove this entry?",
-                                isPresented: Binding(get: { pendingUndo != nil },
-                                                     set: { if !$0 { pendingUndo = nil } }),
-                                titleVisibility: .visible) {
-                Button("Remove", role: .destructive) {
-                    if let id = pendingUndo { undoCapture(id) }
-                    pendingUndo = nil
-                }
-                Button("Keep", role: .cancel) { pendingUndo = nil }
-            } message: {
-                Text("This deletes the entry the assistant just saved.")
-            }
             .confirmationDialog("Delete this item?", isPresented: Binding(
                 get: { deletingItem != nil },
                 set: { if !$0 { deletingItem = nil } }
@@ -325,24 +308,9 @@ struct TodoListView: View {
                     ProgressView().controlSize(.small)
                     Text("Drafting…").font(.footnote).foregroundStyle(.secondary)
                 }
-            } else if let created = lastCreated {
-                // The new item is already visible in the list above, so this is just
-                // the escape hatch — no echo of what the assistant understood.
-                HStack(spacing: 6) {
-                    Text("Added “\(created.title)”")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    // Still confirmed: this sits right above the capture bar, where an
-                    // accidental tap would otherwise delete the entry silently.
-                    Button("Undo", role: .destructive) { pendingUndo = created.id }
-                        .font(.footnote.weight(.semibold))
-                        .buttonStyle(.borderless)
-                    Spacer(minLength: 0)
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            // No per-add confirmation: the new row appearing in the list above IS the
+            // feedback, and the toolbar's global Undo (↺) reverts it like any other change.
 
             HStack(spacing: 10) {
                 TextField(isListening ? "Listening…" : "e.g. “Lunch with Sam tomorrow 1pm”",
@@ -411,7 +379,8 @@ struct TodoListView: View {
 
         Task {
             let draft = await IntentAssistant.draft(from: text)
-            var saved: PlannerItem?
+            // Feedback is the new row itself appearing in the list;
+            // reverting it is the toolbar's global Undo (↺), like any other change.
             if !draft.entry.title.isEmpty {
                 let item = draft.entry.makeItem()
                 item.list = currentList   // capture into the open list, if any
@@ -420,23 +389,9 @@ struct TodoListView: View {
                 // list land unassigned and vanish from their queue.
                 if let owner = currentList?.derivedAssignee { item.assignedTo = owner }
                 context.insert(item)
-                saved = item
             }
-            withAnimation {
-                lastCreated = saved.map { ($0.id, $0.title) }
-                isThinking = false
-            }
+            withAnimation { isThinking = false }
         }
-    }
-
-    private func undoCapture(_ itemID: UUID) {
-        guard let item = try? context.fetch(FetchDescriptor<PlannerItem>()).first(where: { $0.id == itemID })
-        else {
-            withAnimation { lastCreated = nil }   // item's already gone; don't strand the bar
-            return
-        }
-        context.delete(item)
-        withAnimation { lastCreated = nil }   // the row vanishing from the list is the feedback
     }
 
     private var emptyState: some View {
