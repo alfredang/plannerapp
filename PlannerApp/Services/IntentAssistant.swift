@@ -42,27 +42,20 @@ enum IntentAssistant {
     @available(iOS 26.0, macOS 26.0, *)
     @Generable
     fileprivate struct ItemDraft {
-        @Guide(description: "\"task\" for a simple to-do, \"appointment\" for anything scheduled at a time or place")
-        var kind: String
-
         @Guide(description: "The item's title. Copy the user's own wording verbatim, only trimming filler like \"add\" or \"remind me to\". Never add words the user did not write — no \"Attend\", no \"Meeting\", no invented verbs. No trailing punctuation")
         var title: String
-
-        @Guide(description: "A one-sentence friendly confirmation to show the user")
-        var confirmation: String
     }
 
-    /// Ask the on-device model to classify + word the entry. Dates still come from the
-    /// deterministic `SmartParser` (NSDataDetector) because clock math must never hallucinate.
+    /// Ask the on-device model to word the title nicely. ONLY the title: the kind
+    /// (to-do vs appointment) and the date both come from the deterministic `SmartParser`,
+    /// so the same input always classifies the same way — the default is a to-do, and only
+    /// an explicit appointment date/time in the text makes an appointment. A model that
+    /// also voted on kind produced different answers for the same phrase on different runs.
     @available(iOS 26.0, macOS 26.0, *)
     private static func polish(text: String, fallback: ParsedEntry) async -> AssistantDraft? {
         let session = LanguageModelSession(instructions: """
-            You turn short natural-language requests into planner entries. \
-            Classify each request as a "task" (simple to-do) or an "appointment". \
-            Only call it an "appointment" when the request names an actual time, date, \
-            or a meeting with someone. A bare name, title, or course with no time is a \
-            "task" — when in doubt, choose "task". \
-            For the title, reuse the user's own words, but DO fix spelling, capitalisation \
+            You tidy the wording of short planner entries. \
+            Reuse the user's own words, but DO fix spelling, capitalisation \
             and obvious grammar mistakes ("sumit ato" becomes "Submit ATO", "googel" \
             becomes "Google"). Strip leading filler such as "add" or "remind me to". \
             Never introduce words the user did not write — do not prepend verbs like \
@@ -73,34 +66,22 @@ enum IntentAssistant {
                 to: "Request: \"\(text)\"",
                 generating: ItemDraft.self
             )
-            let d = response.content
-            var kind: PlannerKind = d.kind.lowercased().contains("appointment") ? .appointment : .task
-            var title = d.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            var title = response.content.title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty else { return nil }
 
-            // Guard 1: the model sometimes prepends a verb the user never typed
+            // Guard: the model sometimes prepends a verb the user never typed
             // ("Attend WSQ — …"). Trust the model's wording only when it stays within
             // the user's own words; otherwise keep what they actually wrote.
             if !isFaithful(title: title, to: text) {
                 title = fallback.title.isEmpty ? text : fallback.title
             }
 
-            // Guard 2: an appointment with no date is meaningless, and the model likes to
-            // label bare course/product names as appointments. Only honour "appointment"
-            // when a real date was actually detected in the text.
-            if kind == .appointment, fallback.date == nil {
-                kind = .task
-            }
-
-            var entry = fallback                       // keeps the detected date
+            var entry = fallback                       // parser's kind + date are final
             entry.title = title
-            entry.kind = kind
-            entry.date = fallback.date                 // dates only ever come from the parser
 
-            let reply = d.confirmation.isEmpty
-                ? confirmation(for: entry, polished: true)
-                : d.confirmation
-            return AssistantDraft(entry: entry, reply: reply, usedAppleIntelligence: true)
+            return AssistantDraft(entry: entry,
+                                  reply: confirmation(for: entry, polished: true),
+                                  usedAppleIntelligence: true)
         } catch {
             return nil                                  // any model hiccup -> deterministic path
         }

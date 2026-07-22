@@ -55,7 +55,9 @@ struct ItemRow: View {
     private var caption: Text {
         var text = Text("\(Image(systemName: item.kind.symbol)) \(item.kind.title)")
         if let date = item.date {
-            text = text + Text("  •  ") + Text(date, format: dateFormat(for: item))
+            // An appointment's date is its slot; a to-do's date is a deadline — say so.
+            let prefix = item.isAppointment ? "" : "Due "
+            text = text + Text("  •  \(prefix)") + Text(date, format: dateFormat(for: item))
         }
         if let list = item.list {
             text = text + Text("  •  ") + Text("\(Image(systemName: "folder")) \(list.name)")

@@ -20,20 +20,18 @@ struct ParsedEntry {
 /// a remote LLM (e.g. the Claude API) later without changing any call sites.
 enum SmartParser {
 
-    /// Words that strongly imply a scheduled event.
+    /// Words that strongly imply a scheduled event — only honoured when the phrase ALSO
+    /// contains a real date, so a bare "demo video" or "training" can never self-schedule.
     private static let appointmentCues: Set<String> = [
         "meeting", "meet", "appointment", "appt", "call", "lunch", "dinner", "breakfast",
         "interview", "flight", "doctor", "dentist", "visit", "session", "class", "event",
         "reservation", "booking", "conference", "standup", "sync", "demo", "presentation",
-        "party", "pickup", "drop", "deadline", "due"
+        "party", "pickup", "drop"
     ]
 
-    /// Words that imply a plain to-do.
-    private static let taskCues: Set<String> = [
-        "buy", "remember", "remind", "todo", "task", "finish", "complete", "email",
-        "text", "read", "write", "pay", "clean", "wash", "fix", "review", "send", "get",
-        "pick", "order", "renew", "check"
-    ]
+    /// Words that mark a date as a to-do DEADLINE, not an appointment slot:
+    /// "pay rent due Friday" / "submission deadline 30 Jun" stay to-dos with a due date.
+    private static let deadlineCues: Set<String> = ["due", "deadline"]
 
     /// Leading filler that dictation tends to produce ("add a reminder to …").
     private static let leadingFiller: [String] = [
@@ -57,32 +55,37 @@ enum SmartParser {
         }
         remainder = cleanTitle(remainder)
 
-        // 3. Classify.
+        // 3. Classify. The default is ALWAYS a to-do; only an explicit appointment
+        //    date can promote it:
+        //      - a clock time ("3pm", "at 12:30") -> appointment
+        //      - an appointment cue word + a date ("meet Sam Friday") -> appointment
+        //    A bare date is a to-do DEADLINE ("renew passport 30 Jun"), and the deadline
+        //    cues force that reading even when a time is present ("report due 5pm Friday").
         let lower = text.lowercased()
         let words = Set(lower.split { !$0.isLetter }.map(String.init))
         let hasAppointmentCue = !words.isDisjoint(with: appointmentCues)
-        let hasTaskCue = !words.isDisjoint(with: taskCues)
+        // "by <date>" is a deadline too: check the words just before the matched date.
+        let byDate: Bool = {
+            guard let range = detection?.range,
+                  let r = Range(range, in: text) else { return false }
+            return text[..<r.lowerBound].lowercased()
+                .trimmingCharacters(in: .whitespaces).hasSuffix("by")
+        }()
+        let hasDeadlineCue = !words.isDisjoint(with: deadlineCues) || byDate
 
         let kind: PlannerKind
-        if detection?.hasTime == true || hasAppointmentCue {
-            kind = .appointment
-        } else if hasTaskCue {
+        if detection == nil || hasDeadlineCue {
             kind = .task
-        } else if detection != nil {
-            // A bare date with no time still reads more like a scheduled item.
+        } else if detection?.hasTime == true || hasAppointmentCue {
             kind = .appointment
         } else {
-            kind = .task
+            kind = .task            // bare date, no time, no cue -> to-do with a deadline
         }
 
         let title = remainder.isEmpty ? text : remainder
-        // Tasks keep an optional due date; appointments require one (default to soon).
-        let date: Date? = {
-            if let d = detection?.date { return d }
-            return kind == .appointment ? defaultAppointmentDate() : nil
-        }()
-
-        return ParsedEntry(title: title.capitalizedFirst, kind: kind, date: date)
+        // The date is only ever what the user actually wrote — never invented. For a
+        // to-do it is the deadline; for an appointment it is the slot.
+        return ParsedEntry(title: title.capitalizedFirst, kind: kind, date: detection?.date)
     }
 
     // MARK: - Date detection
@@ -110,14 +113,6 @@ enum SmartParser {
                                                               options: .regularExpression) != nil
 
         return DateDetection(date: date, range: match.range, hasTime: hasTime)
-    }
-
-    private static func defaultAppointmentDate() -> Date {
-        // Next top of the hour, today.
-        let cal = Calendar.current
-        let now = Date()
-        let comps = cal.dateComponents([.year, .month, .day, .hour], from: now)
-        return cal.date(from: comps).flatMap { cal.date(byAdding: .hour, value: 1, to: $0) } ?? now
     }
 
     // MARK: - Title cleanup

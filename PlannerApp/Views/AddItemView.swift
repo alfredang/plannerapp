@@ -90,15 +90,17 @@ struct AddItemView: View {
                 }
 
                 Section {
-                    Toggle("Set date & time", isOn: $includeDate)
+                    Toggle(kind == .task ? "Set deadline" : "Set date & time", isOn: $includeDate)
                     if includeDate {
-                        DatePicker("When", selection: $date)
+                        // Same picker, different meaning: a to-do's date is its deadline,
+                        // an appointment's date is its slot.
+                        DatePicker(kind == .task ? "Due" : "When", selection: $date)
                             .datePickerStyle(.compact)
                     }
                 }
 
-                // Escape hatch for existing dated to-dos (created before the automatic
-                // conversion): one flick moves it into Appointments.
+                // A dated to-do is a to-do with a deadline; this is the one explicit
+                // way to turn it into an appointment instead.
                 if kind == .task && includeDate {
                     Section {
                         Toggle("Add to Appointments", isOn: Binding(
@@ -158,12 +160,9 @@ struct AddItemView: View {
                 }
             }
             .onChange(of: includeDate) { _, isOn in
-                // Setting a date & time makes it an appointment automatically
-                // (tap To-Do again afterwards if you want a dated to-do). Only for
-                // user toggles — prefilling an existing dated to-do must not convert it.
-                if isOn && kind == .task && autoKindEnabled {
-                    withAnimation { kind = .appointment }
-                }
+                // A date on a to-do is a DEADLINE, not a promotion to appointment —
+                // same rule as the capture bar. (The "Add to Appointments" toggle
+                // below is the explicit way to convert.)
                 // An appointment with no date is meaningless: clearing the date
                 // moves it back to To-Do so the toggle can actually be turned off.
                 if !isOn && kind == .appointment && autoKindEnabled {
