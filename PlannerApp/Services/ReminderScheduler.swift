@@ -61,6 +61,10 @@ enum ReminderScheduler {
     /// Ask for alert permission. Safe to call repeatedly — iOS only prompts once.
     @discardableResult
     static func requestAuthorization() async -> Bool {
+        #if DEBUG
+        // Screenshot/demo runs must stay free of permission dialogs.
+        if CommandLine.arguments.contains("-seedSampleData") { return false }
+        #endif
         do {
             return try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .sound, .badge])

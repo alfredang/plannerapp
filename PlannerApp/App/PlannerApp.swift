@@ -51,6 +51,10 @@ struct PlannerApp: App {
                     AssigneeBackfill.runOnce(context: container.mainContext)
                 }
                 .task {
+                    #if DEBUG
+                    // Screenshot/demo runs must stay free of permission dialogs.
+                    if CommandLine.arguments.contains("-seedSampleData") { return }
+                    #endif
                     // Ask once, then arm the advance alerts for everything already due.
                     await ReminderScheduler.requestAuthorization()
                     await ReminderScheduler.rescheduleAll(context: container.mainContext)
