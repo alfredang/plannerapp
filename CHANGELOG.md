@@ -1,29 +1,21 @@
 # Changelog
 
-## [1.5] — 2026-07-18
+## [1.5] — 2026-07-27
 
-- Tap a folder in Manage Lists to open it and see its to-dos and appointments — no more
-  jumping straight to Rename (rename, pin and delete now live in the folder's menu)
-- Add items right inside a folder with the ＋ button
-- The filter bar is simpler: just All, Pinned, and Today; your lists live behind the
-  folder button
-- Turning off "Set date & time" on an appointment now works — it moves back to a to-do
-- Reminders: get a heads-up notification before anything with a date is due — 3 days
-  ahead by default, or choose 1 day or 1 week in the new Reminders settings
-- "Scheduled" is now called "Reminders"
-- Collapse or expand all your lists at once, on both iPhone and Mac; sub-lists now have
-  a chevron on iPhone too
-- Fixed: with lists collapsed, deleting or dragging a list could affect the wrong one
-- Your lists stay yours: To-Do, Pinned and Today now show only your own work —
-  anything you've assigned to someone else appears in their list instead
+- Tap a folder in Manage Lists to open it and see its to-dos and appointments
+- Add items right inside a folder with the + button
+- A simpler filter bar: All, Pinned, Today and Reminders; your lists live behind the folder button
+- Reminders: get a notification before anything with a date is due — 3 days ahead by default, or 1 day or 1 week
+- Duplicate check: the app spots the same title on the same day and offers to archive the extras
+- Delete any row with its trash button, or move it to another list from its menu
+- Items added inside someone's list are automatically assigned to that person
+- Collapse or expand all your lists at once; sub-lists have a chevron on iPhone too
+- To-Do, Pinned and Today show only your own work — items assigned to others appear in their lists
+- New Settings tab: set your name and the reminder controls
+- The capture bar saves your entry straight into the list — the new row is the confirmation, and Undo reverts it
 - Fixed: items with no date are no longer turned into appointments
-- Fixed: the assistant no longer adds words you didn't type to an item's title
-- The assistant's Undo now asks before removing the entry it just saved
-- "All Items" is now called "To-Do", and the duplicate To-Dos row is gone from the Mac
-  sidebar
-- New Settings tab on iPhone: set your name (used by the smart views) alongside the
-  reminder controls
-
+- Fixed: turning off "Set date & time" on an appointment moves it back to a to-do
+- Fixed: with lists collapsed, deleting or dragging a list could affect the wrong one
 ## [1.4] — 2026-07-17
 
 - Appointments and To-Dos now live on their own tabs — cleaner, faster to scan; each is

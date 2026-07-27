@@ -106,6 +106,7 @@ struct TodoListView: View {
             VStack(spacing: 0) {
                 chipBar
                 Divider()
+                duplicateBanner
                 if visibleItems.isEmpty {
                     emptyState
                 } else {
@@ -211,6 +212,47 @@ struct TodoListView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    // MARK: - Duplicate audit (mirrors the Mac pane's banner)
+
+    /// Same-title-same-day clusters among this tab's active items (multi-day courses are
+    /// not duplicates and are never flagged — see DuplicateAudit).
+    private var duplicateGroups: [DuplicateAudit.Group] {
+        DuplicateAudit.findDuplicates(in: kindItems, kind: mode)
+    }
+
+    /// Quiet banner offering to archive redundant copies. Only appears when there are any.
+    @ViewBuilder
+    private var duplicateBanner: some View {
+        let groups = duplicateGroups
+        if !groups.isEmpty {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(groups.count == 1
+                         ? "1 possible duplicate"
+                         : "\(groups.count) possible duplicates")
+                        .font(.callout.weight(.medium))
+                    Text(groups.map { "“\($0.title)” (\($0.dayLabel))" }
+                            .joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Button("Archive extras") {
+                    withAnimation { groups.forEach(DuplicateAudit.resolve) }
+                }
+                .font(.callout.weight(.medium))
+                .accessibilityHint("Keeps the original of each and archives the later copies — nothing is deleted")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color.orange.opacity(0.12))
+            Divider()
+        }
     }
 
     // MARK: - Items
