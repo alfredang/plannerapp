@@ -236,6 +236,7 @@ final class WhatsAppReminders: ObservableObject {
                 var line = "• \(timeLabel(item.date))  \(item.title)"
                 let who = item.assignedTo.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !who.isEmpty { line += " (\(who))" }
+                if let link = item.meetingLink { line += "\n   🔗 \(link)" }
                 lines.append(line)
             }
         }

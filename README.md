@@ -37,6 +37,10 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   including the observed Monday when a holiday falls on a Sunday. Dates come from the
   [Ministry of Manpower list](https://www.mom.gov.sg/employment-practices/public-holidays)
   (2025–2027), bundled so the calendar works offline.
+- 🎥 **Meeting links** — paste a Google Meet, Zoom or Teams link into an appointment's
+  *Meeting link* field and a **Join meeting** button appears on it (calendar too); links
+  already in the notes are picked up automatically. The link is kept in the notes, so it
+  syncs everywhere, and it's included in the alerts and WhatsApp digests.
 - ⏰ **Today's appointments alert (iPhone)** — a morning summary of the day's appointments
   (8 am by default, adjustable; quiet days stay quiet) plus an alert just before each of your
   own appointments (15 minutes by default, or at start / 5 / 30 / 60 minutes / off).
@@ -71,8 +75,8 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   list at once from the Mac sidebar or the Manage Lists toolbar on iPhone.
 - ↕️ **Drag to rearrange** — hold and drag to-dos, appointments and lists into any order; the
   custom order syncs across devices.
-- 🚩 **To-Do priorities** — mark a to-do **Critical, High, Medium or Low** from the edit form
-  or its menu; to-dos sort by priority, and Critical and High are **pinned automatically**
+- 🚩 **To-Do priorities** — mark a to-do **Critical, High, Medium or Low** from the flag on
+  its row, the edit form or its menu; to-dos sort by priority, and Critical and High are **pinned automatically**
   (lowering them unpins). Coloured badges show the level; the Hermes agent can set it too.
 - 📌 **Pin to top** — tap the pin on a row (or swipe right on iPhone); pinned entries float
   above the rest, and the **Pinned** view collects them.
@@ -137,6 +141,7 @@ PlannerApp/                             — iOS app + code shared with the Mac t
 │               PlannerCategory.swift   — smart views (To-Do, Pinned, Today, Upcoming…)
 │               DaySections.swift       — Upcoming's by-date grouping (Overdue first)
 │               SingaporeHolidays.swift — MOM public-holiday table for the calendars
+│               MeetingLink.swift       — find/set an appointment's video-meeting link
 │               ManualOrder.swift       — synced drag-rearrange ordering helper
 │               ListHierarchy.swift     — nested sub-list outline + drag-to-nest logic
 │               ChatMessage.swift       — assistant conversation turn

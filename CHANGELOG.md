@@ -9,6 +9,8 @@
 - A fresh red app icon
 - Singapore public holidays marked on the calendar
 - To-Do priorities: mark a to-do Critical, High, Medium or Low; to-dos sort by priority, and Critical and High are pinned automatically
+- Meeting links for virtual appointments: paste a Google Meet, Zoom or Teams link and tap Join on the appointment (links already in the notes are picked up too)
+- A priority flag on every to-do row to change its priority in one tap
 - Choose your look in Settings: Light, Dark or System, and an accent colour (Indigo, Red, Blue, Green, Orange, Purple, Pink or Teal)
 
 ## [Unreleased] — Mac
@@ -16,6 +18,8 @@
 - Upcoming (was Reminders), broken down by date
 - A fresh red app icon
 - Singapore public holidays marked on the calendar
+- To-Do priorities (Critical / High / Medium / Low), set from a flag on each row; Critical and High are pinned automatically, and the Hermes agent can set them too
+- Meeting links on virtual appointments with a Join button; included in the WhatsApp digest
 - Calendar: a month grid with every appointment written into its day, plus a List view of all appointments; double-click a day to add one
 - Light / Dark toggle in the toolbar (⇧⌘D), and a default mode (System, Light or Dark) in Settings
 - Daily WhatsApp reminders: today's appointments at 8 am and tomorrow's at 3 pm (times adjustable), sent through Hermes or opened in WhatsApp

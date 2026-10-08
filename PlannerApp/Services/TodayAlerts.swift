@@ -142,6 +142,7 @@ enum TodayAlerts {
             content.body = minutes == 0
                 ? "Starting now · \(time)"
                 : "Starts at \(time) — in \(lead.title.replacingOccurrences(of: " before", with: ""))"
+            if let link = item.meetingLink { content.body += "\nJoin: \(link)" }
             content.sound = .default
             content.userInfo = ["itemID": item.id.uuidString]
             return request(id: identifierPrefix + "alert-" + item.id.uuidString, content: content, at: fire)

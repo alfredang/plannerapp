@@ -180,7 +180,8 @@ struct PlannerApp: App {
         }
         let items: [PlannerItem] = [
             PlannerItem(title: "Lunch with Sam", kind: .appointment, date: at(13, 0)),
-            PlannerItem(title: "Client call", kind: .appointment, date: at(16, 0)),
+            PlannerItem(title: "Client call", notes: "Meeting link: meet.google.com/abc-defg-hij",
+                        kind: .appointment, date: at(16, 0)),
             PlannerItem(title: "Team standup", kind: .appointment, date: at(9, 30, addDays: 1)),
             PlannerItem(title: "Dentist", kind: .appointment, date: at(14, 0, addDays: 1)),
             PlannerItem(title: "Python workshop", kind: .appointment, date: at(10, 0, addDays: 2)),

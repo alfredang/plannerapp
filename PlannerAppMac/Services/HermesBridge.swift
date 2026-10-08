@@ -92,6 +92,8 @@ enum HermesBridge {
         let assignedTo: String?
         /// "critical" / "high" / "medium" / "low" — to-dos only.
         let priority: String?
+        /// Video-meeting link of an appointment (kept in its notes).
+        let meetingLink: String?
         let done: Bool
         let archived: Bool
     }
@@ -137,6 +139,7 @@ enum HermesBridge {
                     notes: item.notes.isEmpty ? nil : item.notes,
                     assignedTo: item.assignedTo.isEmpty ? nil : item.assignedTo,
                     priority: item.kind == .task ? item.priority.title.lowercased() : nil,
+                    meetingLink: item.meetingLink,
                     done: item.isDone,
                     archived: item.isArchived
                 )
@@ -205,6 +208,9 @@ enum HermesBridge {
             }
             let item = PlannerItem(title: title, notes: params["notes"] ?? "", kind: kind, date: date)
             if let priority, kind == .task { item.setPriority(priority) }
+            if let link = params["link"], !link.isEmpty, kind == .appointment {
+                item.notes = MeetingLink.notes(item.notes, settingLink: link)
+            }
             if let listName = params["list"], !listName.isEmpty {
                 item.list = findOrCreateList(named: listName, context: context)
             }
@@ -268,6 +274,14 @@ enum HermesBridge {
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
             item.notes = params["notes"] ?? ""
             return "OK: notes of “\(item.title)” updated"
+
+        case "link":
+            guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
+            guard item.kind == .appointment else { return "ERROR: “\(item.title)” is a to-do — meeting links are for appointments" }
+            let link = params["url"] ?? ""
+            item.notes = MeetingLink.notes(item.notes, settingLink: link)
+            return link.isEmpty ? "OK: removed the meeting link from “\(item.title)”"
+                                : "OK: “\(item.title)” meeting link set to \(link)"
 
         case "priority":
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
@@ -564,6 +578,7 @@ enum HermesBridge {
     | Change kind | `planner://setkind?id=ab12cd34&kind=appointment` (`task` or `appointment`) |
     | Set notes | `planner://note?id=ab12cd34&notes=…` |
     | Assign | `planner://assign?title=Setup%20exams&to=Ngooi` (empty `to` unassigns) |
+    | Meeting link (appointments) | `planner://link?id=ab12cd34&url=meet.google.com/abc-defg-hij` (empty `url` removes it; `add` also takes `link=`) |
     | Priority (to-dos) | `planner://priority?id=ab12cd34&level=high` (`critical`, `high`, `medium`, `low`; Critical/High auto-pin) |
     | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
     | Rename list | `planner://renamelist?name=Errands&to=Chores` (items and sub-lists are kept) |

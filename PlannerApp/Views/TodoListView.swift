@@ -349,6 +349,10 @@ struct TodoListView: View {
             } onEdit: {
                 editingItem = item
             }
+            // Priority flag on to-dos: tap to set Critical / High / Medium / Low.
+            if item.kind == .task {
+                PriorityMenuButton(item: item)
+            }
             // Tap the pin to pin/unpin — solid orange when pinned, faint outline when not.
             Button {
                 withAnimation { item.isPinned.toggle() }

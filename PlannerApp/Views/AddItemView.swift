@@ -25,6 +25,8 @@ struct AddItemView: View {
     @State private var selectedListID: UUID?
     @State private var assignedTo = ""
     @State private var priority: PlannerPriority = .medium
+    /// Video-meeting link for appointments — stored in the notes (see `MeetingLink`).
+    @State private var meetingLink = ""
     /// Armed after prefill so the date-toggle → appointment auto-switch only reacts to
     /// the user, not to loading an existing dated to-do into the form.
     @State private var autoKindEnabled = false
@@ -124,6 +126,22 @@ struct AddItemView: View {
                     }
                 }
 
+                if kind == .appointment {
+                    Section {
+                        TextField("Meeting link (optional)", text: $meetingLink,
+                                  prompt: Text("e.g. meet.google.com/abc-defg-hij"))
+                            .autocorrectionDisabled()
+                            #if os(iOS)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                    } header: {
+                        Text("Virtual Meeting")
+                    } footer: {
+                        Text("Paste a Google Meet, Zoom or Teams link — a Join button appears on the appointment.")
+                    }
+                }
+
                 // Priority is a to-do thing; appointments are ordered by time.
                 if kind == .task {
                     Section {
@@ -208,6 +226,7 @@ struct AddItemView: View {
             selectedListID = itemToEdit.list?.id
             assignedTo = itemToEdit.assignedTo
             priority = itemToEdit.priority
+            meetingLink = MeetingLink.find(in: itemToEdit.notes) ?? ""
             if let d = itemToEdit.date {
                 date = d
                 includeDate = true
@@ -229,7 +248,11 @@ struct AddItemView: View {
 
     private func save() {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The meeting link rides in the notes, so it syncs everywhere without a new field.
+        if kind == .appointment {
+            trimmedNotes = MeetingLink.notes(trimmedNotes, settingLink: meetingLink)
+        }
         let list = lists.first { $0.id == selectedListID }
 
         let trimmedAssignee = assignedTo.trimmingCharacters(in: .whitespacesAndNewlines)

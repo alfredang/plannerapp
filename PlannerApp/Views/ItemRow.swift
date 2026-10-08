@@ -7,6 +7,8 @@ struct ItemRow: View {
     var onToggle: () -> Void
     var onEdit: (() -> Void)? = nil
 
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Button(action: onToggle) {
@@ -34,6 +36,26 @@ struct ItemRow: View {
                     Label(item.assignedTo, systemImage: "person.fill")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(Theme.accent)
+                }
+
+                // One-tap join for virtual appointments (link found in the notes).
+                if let url = item.meetingURL {
+                    Button {
+                        openURL(url)
+                    } label: {
+                        Label("Join meeting", systemImage: "video.fill")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Theme.accent.opacity(0.15), in: Capsule())
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .buttonStyle(.borderless)
+                    #if os(macOS)
+                    .help(url.absoluteString)
+                    #endif
+                    .accessibilityLabel("Join meeting")
+                    .accessibilityHint(url.absoluteString)
                 }
 
                 if !item.notes.isEmpty {
@@ -88,5 +110,40 @@ extension PlannerPriority {
         case .medium:   return .secondary
         case .low:      return .gray
         }
+    }
+}
+
+/// The flag on a to-do row: shows the priority at a glance and changes it in one tap
+/// (Critical and High pin automatically — see `PlannerItem.setPriority`).
+struct PriorityMenuButton: View {
+    @Bindable var item: PlannerItem
+    var size: CGFloat = 15
+
+    var body: some View {
+        Menu {
+            ForEach(PlannerPriority.ordered) { p in
+                Button {
+                    withAnimation { item.setPriority(p) }
+                } label: {
+                    Label(p.title, systemImage: item.priority == p ? "checkmark" : p.symbol)
+                }
+            }
+        } label: {
+            Image(systemName: item.priority == .medium ? "flag" : "flag.fill")
+                .font(.system(size: size))
+                .foregroundStyle(item.priority == .medium ? AnyShapeStyle(.secondary.opacity(0.5))
+                                                         : AnyShapeStyle(item.priority.color))
+                .frame(width: size + 13, height: size + 13)
+                .contentShape(Rectangle())
+        }
+        #if os(macOS)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Priority: \(item.priority.title)")
+        #else
+        .buttonStyle(.borderless)
+        #endif
+        .accessibilityLabel("Priority: \(item.priority.title)")
     }
 }
