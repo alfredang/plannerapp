@@ -8,6 +8,7 @@
 - Alerts now also show while Planner is open
 - A fresh red app icon
 - Singapore public holidays marked on the calendar
+- To-Do priorities: mark a to-do Critical, High, Medium or Low; to-dos sort by priority, and Critical and High are pinned automatically
 - Choose your look in Settings: Light, Dark or System, and an accent colour (Indigo, Red, Blue, Green, Orange, Purple, Pink or Teal)
 
 ## [Unreleased] — Mac

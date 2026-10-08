@@ -71,6 +71,9 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   list at once from the Mac sidebar or the Manage Lists toolbar on iPhone.
 - ↕️ **Drag to rearrange** — hold and drag to-dos, appointments and lists into any order; the
   custom order syncs across devices.
+- 🚩 **To-Do priorities** — mark a to-do **Critical, High, Medium or Low** from the edit form
+  or its menu; to-dos sort by priority, and Critical and High are **pinned automatically**
+  (lowering them unpins). Coloured badges show the level; the Hermes agent can set it too.
 - 📌 **Pin to top** — tap the pin on a row (or swipe right on iPhone); pinned entries float
   above the rest, and the **Pinned** view collects them.
 - 👤 **Delegate with Assign to** — put someone's name on an item and it leaves your queue:
@@ -100,10 +103,6 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   data by default:** `delete` archives instead and deleting a list is refused; opt in via
   Settings ▸ Agent safety.
 - 💬 **Feedback & About** — house-style tabs (WhatsApp feedback, developer info, version).
-
-> **Coming next:** To-Do priorities (Critical / High / Medium / Low, with Critical and High
-> pinned automatically). The change is ready in `scripts/pending/todo-priority.patch` and ships
-> once its new iCloud field is deployed to the Production CloudKit schema.
 
 ## Tech Stack
 
@@ -172,7 +171,6 @@ PlannerAppMac/                          — macOS desktop edition (DMG)
 
 scripts/build-macos-dmg.sh              — Release build → signed, notarized DMG
 scripts/icon/make_icon.py               — draws the iOS + Mac app icons
-scripts/pending/todo-priority.patch     — To-Do priority, waiting on a CloudKit deploy
 ```
 
 ## Getting Started

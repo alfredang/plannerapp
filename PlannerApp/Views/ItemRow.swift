@@ -54,6 +54,13 @@ struct ItemRow: View {
 
     private var caption: Text {
         var text = Text("\(Image(systemName: item.kind.symbol)) \(item.kind.title)")
+        // Priority leads the caption on to-dos; Medium is the default, so it stays quiet.
+        if item.kind == .task, item.priority != .medium {
+            let p = item.priority
+            text = Text("\(Image(systemName: p.symbol)) \(p.title)")
+                .fontWeight(.semibold)
+                .foregroundColor(p.color) + Text("  •  ") + text
+        }
         if let date = item.date {
             // An appointment's date is its slot; a to-do's date is a deadline — say so.
             let prefix = item.isAppointment ? "" : "Due "
@@ -69,5 +76,17 @@ struct ItemRow: View {
         item.isAppointment
             ? .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()
             : .dateTime.month(.abbreviated).day()
+    }
+}
+
+extension PlannerPriority {
+    /// Badge colour: red for Critical, orange for High, grey for Low.
+    var color: Color {
+        switch self {
+        case .critical: return .red
+        case .high:     return .orange
+        case .medium:   return .secondary
+        case .low:      return .gray
+        }
     }
 }

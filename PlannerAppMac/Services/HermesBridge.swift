@@ -90,6 +90,8 @@ enum HermesBridge {
         let list: String?
         let notes: String?
         let assignedTo: String?
+        /// "critical" / "high" / "medium" / "low" — to-dos only.
+        let priority: String?
         let done: Bool
         let archived: Bool
     }
@@ -134,6 +136,7 @@ enum HermesBridge {
                     list: item.list?.name,
                     notes: item.notes.isEmpty ? nil : item.notes,
                     assignedTo: item.assignedTo.isEmpty ? nil : item.assignedTo,
+                    priority: item.kind == .task ? item.priority.title.lowercased() : nil,
                     done: item.isDone,
                     archived: item.isArchived
                 )
@@ -193,7 +196,15 @@ enum HermesBridge {
                 }
                 date = parsed
             }
+            var priority: PlannerPriority?
+            if let raw = params["priority"], !raw.isEmpty {
+                guard let parsed = PlannerPriority(name: raw) else {
+                    return "ERROR: bad priority “\(raw)” — use critical, high, medium or low; nothing was added"
+                }
+                priority = parsed
+            }
             let item = PlannerItem(title: title, notes: params["notes"] ?? "", kind: kind, date: date)
+            if let priority, kind == .task { item.setPriority(priority) }
             if let listName = params["list"], !listName.isEmpty {
                 item.list = findOrCreateList(named: listName, context: context)
             }
@@ -257,6 +268,16 @@ enum HermesBridge {
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
             item.notes = params["notes"] ?? ""
             return "OK: notes of “\(item.title)” updated"
+
+        case "priority":
+            guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
+            guard item.kind == .task else { return "ERROR: “\(item.title)” is an appointment — priority is for to-dos" }
+            guard let level = PlannerPriority(name: params["level"] ?? "") else {
+                return "ERROR: bad level — use critical, high, medium or low"
+            }
+            item.setPriority(level)
+            let pin = level.autoPins ? " (pinned)" : ""
+            return "OK: “\(item.title)” priority set to \(level.title)\(pin)"
 
         case "assign":
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
@@ -543,6 +564,7 @@ enum HermesBridge {
     | Change kind | `planner://setkind?id=ab12cd34&kind=appointment` (`task` or `appointment`) |
     | Set notes | `planner://note?id=ab12cd34&notes=…` |
     | Assign | `planner://assign?title=Setup%20exams&to=Ngooi` (empty `to` unassigns) |
+    | Priority (to-dos) | `planner://priority?id=ab12cd34&level=high` (`critical`, `high`, `medium`, `low`; Critical/High auto-pin) |
     | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
     | Rename list | `planner://renamelist?name=Errands&to=Chores` (items and sub-lists are kept) |
     | Delete list | `planner://deletelist?name=Errands` — **disabled by default, see below** |
@@ -550,6 +572,7 @@ enum HermesBridge {
     Notes:
     * `kind` is `task` (a to-do) or `appointment` (anything at a specific time/place).
     * On `add`, a named `list` is created automatically if it doesn't exist.
+    * On `add`, a to-do may carry `priority=critical|high|medium|low` (default medium).
     * If you don't know an id you may pass `title=` with a title substring instead — but
       prefer ids from the snapshot; substring matching picks the first match.
 

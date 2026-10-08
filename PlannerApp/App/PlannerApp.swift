@@ -193,7 +193,13 @@ struct PlannerApp: App {
             PlannerItem(title: "Renew gym membership", kind: .task),
             PlannerItem(title: "Reply to client email", kind: .task)
         ]
-        items.forEach { ctx.insert($0) }
+        // A spread of priorities so the To-Do sort and badges show in screenshots.
+        let urgent = PlannerItem(title: "Submit tender proposal", kind: .task, date: at(17, 0, addDays: 1))
+        urgent.setPriority(.critical)
+        let high = PlannerItem(title: "Prepare course slides", kind: .task)
+        high.setPriority(.high)
+        items.first { $0.title == "Renew gym membership" }?.setPriority(.low)
+        (items + [urgent, high]).forEach { ctx.insert($0) }
 
         // A small nested list tree so the collapse/expand controls have something to act on.
         if ((try? ctx.fetch(FetchDescriptor<PlannerList>())) ?? []).isEmpty {

@@ -99,9 +99,14 @@ struct TodoListView: View {
     /// shows the same arrangement); never-placed rows keep their date order, after the
     /// placed ones. Same for the list chips below.
     /// Visible rows in manual drag order, pinned first.
+    /// To-dos also sort by priority (Critical → Low) inside each pinned partition.
     private var rows: [PlannerItem] {
-        ManualOrder.sortedPinnedFirst(visibleItems,
-                                      pinned: { $0.isPinned }, position: { $0.sortOrder })
+        mode == .task
+            ? ManualOrder.sortedPinnedByPriority(visibleItems, pinned: { $0.isPinned },
+                                                 priority: { $0.priorityRaw },
+                                                 position: { $0.sortOrder })
+            : ManualOrder.sortedPinnedFirst(visibleItems,
+                                            pinned: { $0.isPinned }, position: { $0.sortOrder })
     }
     private func moveItems(_ ordered: [PlannerItem], from source: IndexSet, to destination: Int) {
         ManualOrder.applyMove(ordered, from: source, to: destination) { item, position in
@@ -385,6 +390,17 @@ struct TodoListView: View {
             .tint(.orange)
         }
         .contextMenu {
+            if item.kind == .task {
+                Menu("Priority") {
+                    ForEach(PlannerPriority.ordered) { p in
+                        Button {
+                            withAnimation { item.setPriority(p) }
+                        } label: {
+                            Label(p.title, systemImage: item.priority == p ? "checkmark" : p.symbol)
+                        }
+                    }
+                }
+            }
             // iPhone equivalent of the Mac's drag-to-sidebar: same move, same
             // auto-reassign, without a drag target to aim at.
             Menu("Move to List") {

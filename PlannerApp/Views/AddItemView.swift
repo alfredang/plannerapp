@@ -24,6 +24,7 @@ struct AddItemView: View {
     @State private var date = Date()
     @State private var selectedListID: UUID?
     @State private var assignedTo = ""
+    @State private var priority: PlannerPriority = .medium
     /// Armed after prefill so the date-toggle → appointment auto-switch only reacts to
     /// the user, not to loading an existing dated to-do into the form.
     @State private var autoKindEnabled = false
@@ -123,6 +124,20 @@ struct AddItemView: View {
                     }
                 }
 
+                // Priority is a to-do thing; appointments are ordered by time.
+                if kind == .task {
+                    Section {
+                        Picker("Priority", selection: $priority) {
+                            ForEach(PlannerPriority.ordered) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                    } header: {
+                        Text("Priority")
+                    } footer: {
+                        Text("Critical and High to-dos are pinned to the top automatically.")
+                    }
+                }
+
                 Section {
                     TextField("Assign to (optional)", text: $assignedTo)
                         #if os(iOS)
@@ -192,6 +207,7 @@ struct AddItemView: View {
             kind = itemToEdit.kind
             selectedListID = itemToEdit.list?.id
             assignedTo = itemToEdit.assignedTo
+            priority = itemToEdit.priority
             if let d = itemToEdit.date {
                 date = d
                 includeDate = true
@@ -226,6 +242,7 @@ struct AddItemView: View {
             itemToEdit.date = includeDate ? date : nil
             itemToEdit.list = list
             itemToEdit.assignedTo = trimmedAssignee
+            if kind == .task, itemToEdit.priority != priority { itemToEdit.setPriority(priority) }
             saved = itemToEdit
         } else {
             let item = PlannerItem(
@@ -236,6 +253,7 @@ struct AddItemView: View {
             )
             item.list = list
             item.assignedTo = trimmedAssignee
+            if kind == .task { item.setPriority(priority) }
             context.insert(item)
             saved = item
         }

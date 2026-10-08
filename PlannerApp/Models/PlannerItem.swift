@@ -13,6 +13,51 @@ enum PlannerKind: String, CaseIterable, Identifiable {
     var symbol: String { self == .task ? "checklist" : "calendar" }
 }
 
+/// How urgent a to-do is. Persisted as an Int (CloudKit-friendly); higher = more urgent.
+/// Critical and High to-dos are pinned automatically (see `PlannerItem.setPriority`).
+enum PlannerPriority: Int, CaseIterable, Identifiable, Comparable {
+    case low = 0, medium = 1, high = 2, critical = 3
+
+    var id: Int { rawValue }
+
+    /// Menu / picker order, most urgent first.
+    static let ordered: [PlannerPriority] = [.critical, .high, .medium, .low]
+
+    var title: String {
+        switch self {
+        case .critical: return "Critical"
+        case .high:     return "High"
+        case .medium:   return "Medium"
+        case .low:      return "Low"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .critical: return "exclamationmark.3"
+        case .high:     return "exclamationmark.2"
+        case .medium:   return "minus"
+        case .low:      return "arrow.down"
+        }
+    }
+
+    /// Critical and High to-dos float to the top as pinned.
+    var autoPins: Bool { self >= .high }
+
+    /// Parses "critical" / "high" / "medium" / "low" (and a few shorthands) for the agent bridge.
+    init?(name: String) {
+        switch name.lowercased().trimmingCharacters(in: .whitespaces) {
+        case "critical", "crit", "urgent", "p0": self = .critical
+        case "high", "hi", "p1":                 self = .high
+        case "medium", "med", "normal", "p2":    self = .medium
+        case "low", "lo", "p3":                  self = .low
+        default: return nil
+        }
+    }
+
+    static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
+}
+
 /// A single entry in the planner — either a to-do task or a calendar appointment.
 ///
 /// CloudKit requirements honoured here: every stored property has a default value (or is
@@ -52,6 +97,10 @@ final class PlannerItem {
     /// Who this item is assigned to (free text, e.g. an intern's name). Empty = unassigned.
     var assignedTo: String = ""
 
+    /// To-do priority (`PlannerPriority` raw value), synced via CloudKit. Defaults to
+    /// Medium, so items from before priorities existed read as normal.
+    var priorityRaw: Int = PlannerPriority.medium.rawValue
+
     /// Identifier of the mirrored event in the system Calendar (see `CalendarSync`), so an
     /// edit updates that event instead of creating a duplicate. Optional (CloudKit
     /// requirement); `nil` until the appointment has been mirrored.
@@ -80,6 +129,24 @@ final class PlannerItem {
     }
 
     var isAppointment: Bool { kind == .appointment }
+
+    var priority: PlannerPriority {
+        get { PlannerPriority(rawValue: priorityRaw) ?? .medium }
+        set { priorityRaw = newValue.rawValue }
+    }
+
+    /// Change the priority, keeping the pin in step: Critical and High pin the to-do, and
+    /// lowering it from there to Medium or Low unpins it again. A manual pin on a Medium or
+    /// Low to-do is left alone.
+    func setPriority(_ newValue: PlannerPriority) {
+        let wasAutoPinned = priority.autoPins
+        priority = newValue
+        if newValue.autoPins {
+            isPinned = true
+        } else if wasAutoPinned {
+            isPinned = false
+        }
+    }
 
     /// True when this item belongs in the owner's own queue: either nobody is assigned, or
     /// it is assigned to the owner themselves. Work delegated to someone else is excluded,

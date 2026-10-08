@@ -23,6 +23,22 @@ enum ManualOrder {
             + sorted(rows.filter { !pinned($0) }, position: position)
     }
 
+    /// To-do order: pinned first, then by priority (Critical → Low), then manual position.
+    /// Dragging therefore rearranges rows within the same priority.
+    static func sortedPinnedByPriority<T>(_ rows: [T], pinned: (T) -> Bool,
+                                          priority: (T) -> Int,
+                                          position: (T) -> Int) -> [T] {
+        sortedPinnedFirst(rows, pinned: pinned, position: position)
+            .enumerated()
+            .sorted { a, b in
+                let (pa, pb) = (pinned(a.element), pinned(b.element))
+                if pa != pb { return pa }
+                let (ra, rb) = (priority(a.element), priority(b.element))
+                return ra == rb ? a.offset < b.offset : ra > rb
+            }
+            .map(\.element)
+    }
+
     /// Applies a List `onMove` to the displayed rows and hands every row its new 1-based
     /// position for persisting.
     static func applyMove<T>(_ rows: [T], from source: IndexSet, to destination: Int,

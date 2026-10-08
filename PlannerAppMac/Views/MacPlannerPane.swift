@@ -82,9 +82,12 @@ struct MacPlannerPane: View {
 
     /// Rows in manual drag order (synced via CloudKit through `PlannerItem.sortOrder`),
     /// pinned rows first; never-placed rows keep their date order, after the placed ones.
+    /// To-dos: pinned first, then by priority (Critical → Low), then manual order.
     private var tasks: [PlannerItem] {
-        ManualOrder.sortedPinnedFirst(items.filter { $0.kind == .task },
-                                      pinned: { $0.isPinned }, position: { $0.sortOrder })
+        ManualOrder.sortedPinnedByPriority(items.filter { $0.kind == .task },
+                                           pinned: { $0.isPinned },
+                                           priority: { $0.priorityRaw },
+                                           position: { $0.sortOrder })
     }
     private var appointments: [PlannerItem] {
         ManualOrder.sortedPinnedFirst(items.filter { $0.kind == .appointment },
@@ -307,6 +310,17 @@ struct MacPlannerPane: View {
                 .padding(6)
         }
         .contextMenu {
+            if item.kind == .task {
+                Menu("Priority") {
+                    ForEach(PlannerPriority.ordered) { p in
+                        Button {
+                            withAnimation { item.setPriority(p) }
+                        } label: {
+                            Label(p.title, systemImage: item.priority == p ? "checkmark" : p.symbol)
+                        }
+                    }
+                }
+            }
             Button(item.isPinned ? "Unpin" : "Pin to Top") {
                 withAnimation { item.isPinned.toggle() }
             }
