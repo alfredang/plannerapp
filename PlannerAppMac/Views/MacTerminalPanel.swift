@@ -35,9 +35,12 @@ enum TerminalAgent: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Arguments after the executable (e.g. `hermes chat`).
+    /// Arguments after the executable (e.g. `hermes chat`). Hermes preloads the Planner
+    /// bridge skill, so it knows the planner:// commands whatever its working directory.
     var arguments: String {
-        self == .hermes ? " chat" : ""
+        guard self == .hermes else { return "" }
+        let skillInstalled = FileManager.default.fileExists(atPath: HermesBridge.hermesSkillURL.path)
+        return skillInstalled ? " chat -s \(HermesBridge.hermesSkillName)" : " chat"
     }
 }
 
@@ -230,6 +233,14 @@ private struct HermesTerminalView: NSViewRepresentable {
         Self.hideScroller(in: nsView)
     }
 
+    /// SwiftUI can build this view more than once (e.g. the first layout pass picks the
+    /// overlay layout, the next the docked one). End the discarded terminal's agent, or it
+    /// keeps running unseen — a second Hermes listening alongside the visible one.
+    static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {
+        coordinator.isDismantled = true
+        nsView.terminate()
+    }
+
     /// SwiftTerm embeds an NSScroller with no public toggle — keep it hidden; scrollback
     /// still works with the trackpad/mouse wheel.
     private static func hideScroller(in view: NSView) {
@@ -240,10 +251,15 @@ private struct HermesTerminalView: NSViewRepresentable {
 
     final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
         let onProcessExit: () -> Void
+        /// Set when SwiftUI tears this terminal down, so its exit isn't reported as the
+        /// visible terminal's.
+        var isDismantled = false
         init(onProcessExit: @escaping () -> Void) { self.onProcessExit = onProcessExit }
 
         func processTerminated(source: TerminalView, exitCode: Int32?) {
-            DispatchQueue.main.async { self.onProcessExit() }
+            DispatchQueue.main.async {
+                if !self.isDismantled { self.onProcessExit() }
+            }
         }
 
         func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}

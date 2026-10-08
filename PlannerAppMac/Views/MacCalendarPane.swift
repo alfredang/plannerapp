@@ -1,15 +1,13 @@
 import SwiftUI
 import SwiftData
 
-/// The iPhone/iPad calendar of every appointment — the same two modes as the Mac pane:
-///  * **Month** — a month grid with each day's appointments written into its cell (tap a
-///    day for its agenda below, swipe to change month, long-press a day to add one);
+/// Desktop calendar of every appointment. Two modes:
+///  * **Month** — a month grid with each day's appointments written into its cell (click a
+///    day for its agenda below, double-click to add one, click an appointment to edit it);
 ///  * **List** — every appointment in date order, grouped by day, opened at today.
-/// Everyone's appointments are shown (the assignee is labelled on the row), unlike the
-/// Planner's smart views which only show the owner's own queue.
-struct CalendarView: View {
-    @Environment(\.horizontalSizeClass) private var sizeClass
-
+/// Everyone's appointments are shown (the assignee is labelled), unlike the smart views
+/// which only show the owner's own queue. Completed appointments can be shown dimmed.
+struct MacCalendarPane: View {
     @Query(
         filter: #Predicate<PlannerItem> { $0.kindRaw == "appointment" },
         sort: \PlannerItem.date
@@ -17,26 +15,12 @@ struct CalendarView: View {
     private var allAppointments: [PlannerItem]
 
     @AppStorage("calendar.mode") private var modeRaw = Mode.month.rawValue
-    @AppStorage("calendar.showCompleted") private var showCompleted = false
+    @AppStorage("calendar.showCompleted") private var showCompleted = true
 
     @State private var month = Calendar.current.startOfMonth(for: Date())
     @State private var selectedDay = Calendar.current.startOfDay(for: Date())
     @State private var editingItem: PlannerItem?
     @State private var newAppointment: NewAppointment?
-
-    init() {
-        #if DEBUG
-        // Screenshot helper: `-calendarMonth 2026-11` opens the grid on that month.
-        if let raw = UserDefaults.standard.string(forKey: "calendarMonth") {
-            let parts = raw.split(separator: "-").compactMap { Int($0) }
-            if parts.count == 2,
-               let first = Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: 1)) {
-                _month = State(initialValue: first)
-                _selectedDay = State(initialValue: first)
-            }
-        }
-        #endif
-    }
 
     private enum Mode: String, CaseIterable, Identifiable {
         case month, list
@@ -53,9 +37,6 @@ struct CalendarView: View {
     private var mode: Mode { Mode(rawValue: modeRaw) ?? .month }
     private var cal: Calendar { Calendar.current }
 
-    /// Taller cells on iPad, where there is room to write more of each day in.
-    private var cellHeight: CGFloat { sizeClass == .regular ? 104 : 64 }
-
     /// Dated appointments to show. Archived ones only when they were completed (and the
     /// toggle is on) — archived-but-not-done means removed (e.g. a duplicate), so never.
     private var appointments: [PlannerItem] {
@@ -70,81 +51,83 @@ struct CalendarView: View {
         Dictionary(grouping: appointments) { cal.startOfDay(for: $0.date ?? .distantPast) }
     }
 
+    private var upcomingCount: Int {
+        let start = cal.startOfDay(for: Date())
+        return appointments.filter { !$0.isArchived && ($0.date ?? .distantPast) >= start }.count
+    }
+
     var body: some View {
         let days = byDay
-        NavigationStack {
-            VStack(spacing: 0) {
-                Picker("View", selection: $modeRaw) {
-                    ForEach(Mode.allCases) { Text($0.title).tag($0.rawValue) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-
-                switch mode {
-                case .month:
-                    monthHeader
+        VStack(spacing: 0) {
+            header
+            Divider()
+            switch mode {
+            case .month:
+                VSplitView {
                     monthGrid(days)
-                    Divider()
+                        .frame(minHeight: 300)
                     dayAgenda(days[selectedDay] ?? [])
-                case .list:
-                    Divider()
-                    agendaList(days)
+                        .frame(minHeight: 110, idealHeight: 190)
                 }
+            case .list:
+                agendaList(days)
             }
-            .background(Theme.bg)
-            .navigationTitle("Calendar")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Today") { goToToday() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Toggle("Show Completed", isOn: $showCompleted)
-                    } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                    }
-                    .accessibilityLabel("Calendar options")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { addAppointment(on: selectedDay) } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Add appointment")
-                }
-            }
-            .sheet(item: $editingItem) { AddItemView(item: $0) }
-            .sheet(item: $newAppointment) { new in
-                AddItemView(prefill: ParsedEntry(title: "", kind: .appointment, date: new.date))
-            }
+        }
+        .navigationTitle("Calendar")
+        .navigationSubtitle("\(upcomingCount) upcoming appointment\(upcomingCount == 1 ? "" : "s")")
+        .sheet(item: $editingItem) { AddItemView(item: $0) }
+        .sheet(item: $newAppointment) { new in
+            AddItemView(prefill: ParsedEntry(title: "", kind: .appointment, date: new.date))
         }
     }
 
-    // MARK: - Month header
+    // MARK: - Header
 
-    private var monthHeader: some View {
-        HStack {
-            Text(month.formatted(.dateTime.month(.wide).year()))
-                .font(.title3.weight(.semibold))
-            Spacer()
-            Button { shiftMonth(-1) } label: {
-                Image(systemName: "chevron.left").frame(width: 36, height: 32)
+    private var header: some View {
+        HStack(spacing: 10) {
+            if mode == .month {
+                Text(month.formatted(.dateTime.month(.wide).year()))
+                    .font(.title2.weight(.semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+            } else {
+                Text("All Appointments")
+                    .font(.title2.weight(.semibold))
             }
-            .accessibilityLabel("Previous month")
-            Button { shiftMonth(1) } label: {
-                Image(systemName: "chevron.right").frame(width: 36, height: 32)
+            Spacer(minLength: 8)
+            Toggle("Show completed", isOn: $showCompleted)
+                .toggleStyle(.checkbox)
+                .fixedSize()
+                .help("Include appointments that were checked off (they are archived)")
+            Picker("View", selection: $modeRaw) {
+                ForEach(Mode.allCases) { Text($0.title).tag($0.rawValue) }
             }
-            .accessibilityLabel("Next month")
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            if mode == .month {
+                ControlGroup {
+                    Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
+                        .help("Previous month")
+                        .accessibilityLabel("Previous month")
+                    Button("Today") { goToToday() }
+                        .help("Jump to today")
+                    Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }
+                        .help("Next month")
+                        .accessibilityLabel("Next month")
+                }
+                .fixedSize()
+            }
         }
-        .font(.body.weight(.semibold))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 4)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.bar)
     }
 
     private func shiftMonth(_ delta: Int) {
         guard let next = cal.date(byAdding: .month, value: delta, to: month) else { return }
-        withAnimation(.easeInOut(duration: 0.2)) { month = next }
+        month = next
         // Keep the agenda on a day inside the visible month.
         if !cal.isDate(selectedDay, equalTo: month, toGranularity: .month) {
             selectedDay = cal.isDate(Date(), equalTo: month, toGranularity: .month)
@@ -153,10 +136,8 @@ struct CalendarView: View {
     }
 
     private func goToToday() {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            month = cal.startOfMonth(for: Date())
-            selectedDay = cal.startOfDay(for: Date())
-        }
+        month = cal.startOfMonth(for: Date())
+        selectedDay = cal.startOfDay(for: Date())
     }
 
     // MARK: - Month grid
@@ -181,7 +162,7 @@ struct CalendarView: View {
     }
 
     private var weekdaySymbols: [String] {
-        let symbols = cal.veryShortWeekdaySymbols
+        let symbols = cal.shortWeekdaySymbols
         let first = cal.firstWeekday - 1
         return Array(symbols[first...] + symbols[..<first])
     }
@@ -189,34 +170,26 @@ struct CalendarView: View {
     private func monthGrid(_ days: [Date: [PlannerItem]]) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
-                    Text(symbol)
+                ForEach(weekdaySymbols, id: \.self) { symbol in
+                    Text(symbol.uppercased())
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, 6)
             Divider()
             ForEach(weeks, id: \.first) { week in
                 HStack(spacing: 0) {
                     ForEach(week, id: \.self) { day in
                         dayCell(day, items: days[day] ?? [])
+                        if day != week.last { Divider() }
                     }
                 }
-                .frame(height: cellHeight)
+                .frame(maxHeight: .infinity)
                 Divider()
             }
         }
-        .background(Color(.systemBackground))
-        // Swipe left/right to change month, like the system Calendar.
-        .gesture(
-            DragGesture(minimumDistance: 30)
-                .onEnded { value in
-                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                    shiftMonth(value.translation.width < 0 ? 1 : -1)
-                }
-        )
     }
 
     private func dayCell(_ day: Date, items: [PlannerItem]) -> some View {
@@ -226,63 +199,58 @@ struct CalendarView: View {
         let holiday = SingaporeHolidays.name(on: day)
         return GeometryReader { geo in
             // How many appointment lines fit under the day number (and holiday name).
-            let capacity = max(0, Int((geo.size.height - 26 - (holiday == nil ? 0 : 13)) / 15))
-            // Wide cells (iPad) have room for the time as well as the title.
-            let showTime = geo.size.width >= 110
+            let capacity = max(0, Int((geo.size.height - 24 - (holiday == nil ? 0 : 16)) / 16))
+            // Narrow cells (the agent panel open) keep the title and drop the time.
+            let showTime = geo.size.width >= 120
             let shown = items.count > capacity ? max(0, capacity - 1) : items.count
-            VStack(spacing: 2) {
-                Text(day.formatted(.dateTime.day()))
-                    .font(.footnote.weight(isToday || isSelected ? .bold : .regular))
-                    .monospacedDigit()
-                    .foregroundStyle(isToday ? Color.white
-                                     : (isSelected ? Theme.accent
-                                        : (holiday != nil ? Color.red
-                                           : (inMonth ? Color.primary : Color.secondary))))
-                    .frame(width: 22, height: 22)
-                    .background(Circle().fill(isToday ? Theme.accent : Color.clear))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Spacer(minLength: 0)
+                    Text(day.formatted(.dateTime.day()))
+                        .font(.callout.weight(isToday ? .bold : .regular))
+                        .monospacedDigit()
+                        .foregroundStyle(isToday ? Color.white
+                                         : (holiday != nil ? Color.red
+                                            : (inMonth ? Color.primary : Color.secondary)))
+                        .frame(minWidth: 20, minHeight: 20)
+                        .background(Circle().fill(isToday ? Theme.accent : Color.clear))
+                }
                 if let holiday {
                     Text(holiday)
-                        .font(.system(size: showTime ? 11 : 8.5, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.red)
                         .lineLimit(1)
+                        .padding(.leading, 4)
+                        .help("Singapore public holiday: \(holiday)")
                 }
                 ForEach(items.prefix(shown)) { item in
                     appointmentChip(item, showTime: showTime)
                 }
                 if shown < items.count {
-                    Text("+\(items.count - shown)")
-                        .font(.system(size: 9, weight: .semibold))
+                    Text("+\(items.count - shown) more")
+                        .font(.caption2.weight(.medium))
                         .foregroundStyle(.secondary)
+                        .padding(.leading, 4)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 1.5)
-            .padding(.top, 2)
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+            .padding(4)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(isSelected ? Theme.accent.opacity(0.12)
                     : (holiday != nil ? Color.red.opacity(0.06)
                        : (inMonth ? Color.clear : Color.primary.opacity(0.035))))
-        .opacity(inMonth ? 1 : 0.55)
+        .opacity(inMonth ? 1 : 0.6)
         .contentShape(Rectangle())
-        .onTapGesture {
-            selectedDay = day
-            // Tapping a spill-over day from the next/previous month moves there.
-            if !inMonth { month = cal.startOfMonth(for: day) }
-        }
-        .contextMenu {
-            Button { addAppointment(on: day) } label: {
-                Label("New Appointment", systemImage: "plus")
-            }
-        }
-        .accessibilityElement(children: .ignore)
+        .onTapGesture(count: 2) { addAppointment(on: day) }
+        .onTapGesture { selectedDay = day }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(day.formatted(date: .complete, time: .omitted))\(holiday.map { ", \($0)" } ?? ""), \(items.count) appointment\(items.count == 1 ? "" : "s")")
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     private func appointmentChip(_ item: PlannerItem, showTime: Bool) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 3) {
             if showTime, let label = Self.timeLabel(item.date) {
                 Text(label)
                     .fontWeight(.semibold)
@@ -291,45 +259,74 @@ struct CalendarView: View {
             }
             Text(item.title)
                 .strikethrough(item.isDone)
+                .layoutPriority(1)
         }
-        .font(.system(size: showTime ? 11 : 9.5))
+        .font(.caption)
         .lineLimit(1)
         .foregroundStyle(item.isDone ? Color.secondary : Color.primary)
-        .padding(.horizontal, 2)
+        .padding(.horizontal, 4)
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 3)
+        .background(RoundedRectangle(cornerRadius: 4)
             .fill(Theme.accent.opacity(item.isDone ? 0.07 : 0.2)))
+        .contentShape(Rectangle())
+        .onTapGesture { editingItem = item }
+        .help(chipHelp(item))
+        .contextMenu { itemMenu(item) }
+    }
+
+    private func chipHelp(_ item: PlannerItem) -> String {
+        var parts = [item.title]
+        if let date = item.date { parts.append(date.formatted(date: .abbreviated, time: .shortened)) }
+        if !item.assignedTo.isEmpty { parts.append("Assigned to \(item.assignedTo)") }
+        if let list = item.list?.name { parts.append("List: \(list)") }
+        return parts.joined(separator: "\n")
+    }
+
+    @ViewBuilder
+    private func itemMenu(_ item: PlannerItem) -> some View {
+        Button("Edit…") { editingItem = item }
+        Button(item.isDone ? "Mark as Not Done" : "Mark as Done") {
+            withAnimation { item.toggleDone() }
+        }
     }
 
     // MARK: - Selected-day agenda
 
     private func dayAgenda(_ items: [PlannerItem]) -> some View {
-        List {
-            Section {
-                if items.isEmpty {
-                    Button {
-                        addAppointment(on: selectedDay)
-                    } label: {
-                        Label("No appointments — tap to add one", systemImage: "plus.circle")
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    ForEach(items) { row($0) }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(dayTitle(selectedDay))
+                    .font(.headline)
+                if let holiday = SingaporeHolidays.name(on: selectedDay) {
+                    Label(holiday, systemImage: "flag.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.red)
                 }
-            } header: {
-                HStack {
-                    Text(DaySections.title(for: selectedDay))
-                    if let holiday = SingaporeHolidays.name(on: selectedDay) {
-                        Spacer()
-                        Label(holiday, systemImage: "flag.fill")
-                            .foregroundStyle(.red)
+                Spacer()
+                Button {
+                    addAppointment(on: selectedDay)
+                } label: {
+                    Label("Add Appointment", systemImage: "plus")
+                }
+                .help("New appointment on this day (or double-click a day)")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            Divider()
+            if items.isEmpty {
+                Text("No appointments on this day.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(items) { item in
+                        row(item)
                     }
                 }
+                .listStyle(.inset)
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
     }
 
     private func row(_ item: PlannerItem) -> some View {
@@ -338,6 +335,7 @@ struct CalendarView: View {
         } onEdit: {
             editingItem = item
         }
+        .contextMenu { itemMenu(item) }
     }
 
     private func addAppointment(on day: Date) {
@@ -356,15 +354,17 @@ struct CalendarView: View {
         return ScrollViewReader { proxy in
             List {
                 if sortedDays.isEmpty {
-                    Text("No appointments yet. Tap + to add one, or tell the assistant on the Planner tab.")
+                    Text("No appointments yet. Ask the agent, or use + in the toolbar.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(sortedDays, id: \.self) { day in
                     Section {
-                        ForEach(days[day] ?? []) { row($0) }
+                        ForEach(days[day] ?? []) { item in
+                            row(item)
+                        }
                     } header: {
                         HStack {
-                            Text(DaySections.title(for: day))
+                            Text(dayTitle(day))
                             if let holiday = SingaporeHolidays.name(on: day) {
                                 Text(holiday).foregroundStyle(.red)
                             }
@@ -376,8 +376,7 @@ struct CalendarView: View {
                     .id(day)
                 }
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
+            .listStyle(.inset)
             .onAppear {
                 if let anchor { proxy.scrollTo(anchor, anchor: .top) }
             }
@@ -385,6 +384,15 @@ struct CalendarView: View {
     }
 
     // MARK: - Formatting
+
+    private func dayTitle(_ day: Date) -> String {
+        let full = day.formatted(.dateTime.weekday(.wide).day().month(.wide))
+        if cal.isDateInToday(day) { return "Today · \(full)" }
+        if cal.isDateInTomorrow(day) { return "Tomorrow · \(full)" }
+        if cal.isDateInYesterday(day) { return "Yesterday · \(full)" }
+        let year = cal.component(.year, from: day)
+        return year == cal.component(.year, from: Date()) ? full : "\(full) \(year)"
+    }
 
     /// "9:00" style label, or nil for date-only appointments (stored at midnight).
     private static func timeLabel(_ date: Date?) -> String? {
@@ -402,6 +410,7 @@ private extension Calendar {
 }
 
 #Preview {
-    CalendarView()
+    MacCalendarPane()
         .modelContainer(for: PlannerItem.self, inMemory: true)
+        .frame(width: 800, height: 640)
 }

@@ -1,0 +1,360 @@
+--- a/PlannerApp/Models/PlannerItem.swift
++++ b/PlannerApp/Models/PlannerItem.swift
+@@ -13,6 +13,51 @@
+     var symbol: String { self == .task ? "checklist" : "calendar" }
+ }
+ 
++/// How urgent a to-do is. Persisted as an Int (CloudKit-friendly); higher = more urgent.
++/// Critical and High to-dos are pinned automatically (see `PlannerItem.setPriority`).
++enum PlannerPriority: Int, CaseIterable, Identifiable, Comparable {
++    case low = 0, medium = 1, high = 2, critical = 3
++
++    var id: Int { rawValue }
++
++    /// Menu / picker order, most urgent first.
++    static let ordered: [PlannerPriority] = [.critical, .high, .medium, .low]
++
++    var title: String {
++        switch self {
++        case .critical: return "Critical"
++        case .high:     return "High"
++        case .medium:   return "Medium"
++        case .low:      return "Low"
++        }
++    }
++
++    var symbol: String {
++        switch self {
++        case .critical: return "exclamationmark.3"
++        case .high:     return "exclamationmark.2"
++        case .medium:   return "minus"
++        case .low:      return "arrow.down"
++        }
++    }
++
++    /// Critical and High to-dos float to the top as pinned.
++    var autoPins: Bool { self >= .high }
++
++    /// Parses "critical" / "high" / "medium" / "low" (and a few shorthands) for the agent bridge.
++    init?(name: String) {
++        switch name.lowercased().trimmingCharacters(in: .whitespaces) {
++        case "critical", "crit", "urgent", "p0": self = .critical
++        case "high", "hi", "p1":                 self = .high
++        case "medium", "med", "normal", "p2":    self = .medium
++        case "low", "lo", "p3":                  self = .low
++        default: return nil
++        }
++    }
++
++    static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
++}
++
+ /// A single entry in the planner — either a to-do task or a calendar appointment.
+ ///
+ /// CloudKit requirements honoured here: every stored property has a default value (or is
+@@ -52,6 +97,10 @@
+     /// Who this item is assigned to (free text, e.g. an intern's name). Empty = unassigned.
+     var assignedTo: String = ""
+ 
++    /// To-do priority (`PlannerPriority` raw value), synced via CloudKit. Defaults to
++    /// Medium, so items from before priorities existed read as normal.
++    var priorityRaw: Int = PlannerPriority.medium.rawValue
++
+     /// Identifier of the mirrored event in the system Calendar (see `CalendarSync`), so an
+     /// edit updates that event instead of creating a duplicate. Optional (CloudKit
+     /// requirement); `nil` until the appointment has been mirrored.
+@@ -81,6 +130,24 @@
+ 
+     var isAppointment: Bool { kind == .appointment }
+ 
++    var priority: PlannerPriority {
++        get { PlannerPriority(rawValue: priorityRaw) ?? .medium }
++        set { priorityRaw = newValue.rawValue }
++    }
++
++    /// Change the priority, keeping the pin in step: Critical and High pin the to-do, and
++    /// lowering it from there to Medium or Low unpins it again. A manual pin on a Medium or
++    /// Low to-do is left alone.
++    func setPriority(_ newValue: PlannerPriority) {
++        let wasAutoPinned = priority.autoPins
++        priority = newValue
++        if newValue.autoPins {
++            isPinned = true
++        } else if wasAutoPinned {
++            isPinned = false
++        }
++    }
++
+     /// True when this item belongs in the owner's own queue: either nobody is assigned, or
+     /// it is assigned to the owner themselves. Work delegated to someone else is excluded,
+     /// so the smart views (All / Pinned / Today) stay the owner's personal list.
+--- a/PlannerApp/Models/ManualOrder.swift
++++ b/PlannerApp/Models/ManualOrder.swift
+@@ -23,6 +23,22 @@
+             + sorted(rows.filter { !pinned($0) }, position: position)
+     }
+ 
++    /// To-do order: pinned first, then by priority (Critical → Low), then manual position.
++    /// Dragging therefore rearranges rows within the same priority.
++    static func sortedPinnedByPriority<T>(_ rows: [T], pinned: (T) -> Bool,
++                                          priority: (T) -> Int,
++                                          position: (T) -> Int) -> [T] {
++        sortedPinnedFirst(rows, pinned: pinned, position: position)
++            .enumerated()
++            .sorted { a, b in
++                let (pa, pb) = (pinned(a.element), pinned(b.element))
++                if pa != pb { return pa }
++                let (ra, rb) = (priority(a.element), priority(b.element))
++                return ra == rb ? a.offset < b.offset : ra > rb
++            }
++            .map(\.element)
++    }
++
+     /// Applies a List `onMove` to the displayed rows and hands every row its new 1-based
+     /// position for persisting.
+     static func applyMove<T>(_ rows: [T], from source: IndexSet, to destination: Int,
+--- a/PlannerApp/Views/ItemRow.swift
++++ b/PlannerApp/Views/ItemRow.swift
+@@ -54,6 +54,13 @@
+ 
+     private var caption: Text {
+         var text = Text("\(Image(systemName: item.kind.symbol)) \(item.kind.title)")
++        // Priority leads the caption on to-dos; Medium is the default, so it stays quiet.
++        if item.kind == .task, item.priority != .medium {
++            let p = item.priority
++            text = Text("\(Image(systemName: p.symbol)) \(p.title)")
++                .fontWeight(.semibold)
++                .foregroundColor(p.color) + Text("  •  ") + text
++        }
+         if let date = item.date {
+             // An appointment's date is its slot; a to-do's date is a deadline — say so.
+             let prefix = item.isAppointment ? "" : "Due "
+@@ -71,3 +78,15 @@
+             : .dateTime.month(.abbreviated).day()
+     }
+ }
++
++extension PlannerPriority {
++    /// Badge colour: red for Critical, orange for High, grey for Low.
++    var color: Color {
++        switch self {
++        case .critical: return .red
++        case .high:     return .orange
++        case .medium:   return .secondary
++        case .low:      return .gray
++        }
++    }
++}
+--- a/PlannerApp/Views/AddItemView.swift
++++ b/PlannerApp/Views/AddItemView.swift
+@@ -24,6 +24,7 @@
+     @State private var date = Date()
+     @State private var selectedListID: UUID?
+     @State private var assignedTo = ""
++    @State private var priority: PlannerPriority = .medium
+     /// Armed after prefill so the date-toggle → appointment auto-switch only reacts to
+     /// the user, not to loading an existing dated to-do into the form.
+     @State private var autoKindEnabled = false
+@@ -119,7 +120,21 @@
+                             ForEach(lists) { list in
+                                 Label(list.name, systemImage: "folder").tag(Optional(list.id))
+                             }
++                        }
++                    }
++                }
++
++                // Priority is a to-do thing; appointments are ordered by time.
++                if kind == .task {
++                    Section {
++                        Picker("Priority", selection: $priority) {
++                            ForEach(PlannerPriority.ordered) { Text($0.title).tag($0) }
+                         }
++                        .pickerStyle(.segmented)
++                    } header: {
++                        Text("Priority")
++                    } footer: {
++                        Text("Critical and High to-dos are pinned to the top automatically.")
+                     }
+                 }
+ 
+@@ -192,6 +207,7 @@
+             kind = itemToEdit.kind
+             selectedListID = itemToEdit.list?.id
+             assignedTo = itemToEdit.assignedTo
++            priority = itemToEdit.priority
+             if let d = itemToEdit.date {
+                 date = d
+                 includeDate = true
+@@ -226,6 +242,7 @@
+             itemToEdit.date = includeDate ? date : nil
+             itemToEdit.list = list
+             itemToEdit.assignedTo = trimmedAssignee
++            if kind == .task, itemToEdit.priority != priority { itemToEdit.setPriority(priority) }
+             saved = itemToEdit
+         } else {
+             let item = PlannerItem(
+@@ -236,6 +253,7 @@
+             )
+             item.list = list
+             item.assignedTo = trimmedAssignee
++            if kind == .task { item.setPriority(priority) }
+             context.insert(item)
+             saved = item
+         }
+--- a/PlannerApp/Views/TodoListView.swift
++++ b/PlannerApp/Views/TodoListView.swift
+@@ -99,9 +99,14 @@
+     /// shows the same arrangement); never-placed rows keep their date order, after the
+     /// placed ones. Same for the list chips below.
+     /// Visible rows in manual drag order, pinned first.
++    /// To-dos also sort by priority (Critical → Low) inside each pinned partition.
+     private var rows: [PlannerItem] {
+-        ManualOrder.sortedPinnedFirst(visibleItems,
+-                                      pinned: { $0.isPinned }, position: { $0.sortOrder })
++        mode == .task
++            ? ManualOrder.sortedPinnedByPriority(visibleItems, pinned: { $0.isPinned },
++                                                 priority: { $0.priorityRaw },
++                                                 position: { $0.sortOrder })
++            : ManualOrder.sortedPinnedFirst(visibleItems,
++                                            pinned: { $0.isPinned }, position: { $0.sortOrder })
+     }
+     private func moveItems(_ ordered: [PlannerItem], from source: IndexSet, to destination: Int) {
+         ManualOrder.applyMove(ordered, from: source, to: destination) { item, position in
+@@ -385,6 +390,17 @@
+             .tint(.orange)
+         }
+         .contextMenu {
++            if item.kind == .task {
++                Menu("Priority") {
++                    ForEach(PlannerPriority.ordered) { p in
++                        Button {
++                            withAnimation { item.setPriority(p) }
++                        } label: {
++                            Label(p.title, systemImage: item.priority == p ? "checkmark" : p.symbol)
++                        }
++                    }
++                }
++            }
+             // iPhone equivalent of the Mac's drag-to-sidebar: same move, same
+             // auto-reassign, without a drag target to aim at.
+             Menu("Move to List") {
+--- a/PlannerAppMac/Views/MacPlannerPane.swift
++++ b/PlannerAppMac/Views/MacPlannerPane.swift
+@@ -82,9 +82,12 @@
+ 
+     /// Rows in manual drag order (synced via CloudKit through `PlannerItem.sortOrder`),
+     /// pinned rows first; never-placed rows keep their date order, after the placed ones.
++    /// To-dos: pinned first, then by priority (Critical → Low), then manual order.
+     private var tasks: [PlannerItem] {
+-        ManualOrder.sortedPinnedFirst(items.filter { $0.kind == .task },
+-                                      pinned: { $0.isPinned }, position: { $0.sortOrder })
++        ManualOrder.sortedPinnedByPriority(items.filter { $0.kind == .task },
++                                           pinned: { $0.isPinned },
++                                           priority: { $0.priorityRaw },
++                                           position: { $0.sortOrder })
+     }
+     private var appointments: [PlannerItem] {
+         ManualOrder.sortedPinnedFirst(items.filter { $0.kind == .appointment },
+@@ -307,6 +310,17 @@
+                 .padding(6)
+         }
+         .contextMenu {
++            if item.kind == .task {
++                Menu("Priority") {
++                    ForEach(PlannerPriority.ordered) { p in
++                        Button {
++                            withAnimation { item.setPriority(p) }
++                        } label: {
++                            Label(p.title, systemImage: item.priority == p ? "checkmark" : p.symbol)
++                        }
++                    }
++                }
++            }
+             Button(item.isPinned ? "Unpin" : "Pin to Top") {
+                 withAnimation { item.isPinned.toggle() }
+             }
+--- a/PlannerAppMac/Services/HermesBridge.swift
++++ b/PlannerAppMac/Services/HermesBridge.swift
+@@ -90,6 +90,8 @@
+         let list: String?
+         let notes: String?
+         let assignedTo: String?
++        /// "critical" / "high" / "medium" / "low" — to-dos only.
++        let priority: String?
+         let done: Bool
+         let archived: Bool
+     }
+@@ -134,6 +136,7 @@
+                     list: item.list?.name,
+                     notes: item.notes.isEmpty ? nil : item.notes,
+                     assignedTo: item.assignedTo.isEmpty ? nil : item.assignedTo,
++                    priority: item.kind == .task ? item.priority.title.lowercased() : nil,
+                     done: item.isDone,
+                     archived: item.isArchived
+                 )
+@@ -193,7 +196,15 @@
+                 }
+                 date = parsed
+             }
++            var priority: PlannerPriority?
++            if let raw = params["priority"], !raw.isEmpty {
++                guard let parsed = PlannerPriority(name: raw) else {
++                    return "ERROR: bad priority “\(raw)” — use critical, high, medium or low; nothing was added"
++                }
++                priority = parsed
++            }
+             let item = PlannerItem(title: title, notes: params["notes"] ?? "", kind: kind, date: date)
++            if let priority, kind == .task { item.setPriority(priority) }
+             if let listName = params["list"], !listName.isEmpty {
+                 item.list = findOrCreateList(named: listName, context: context)
+             }
+@@ -258,6 +269,16 @@
+             item.notes = params["notes"] ?? ""
+             return "OK: notes of “\(item.title)” updated"
+ 
++        case "priority":
++            guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
++            guard item.kind == .task else { return "ERROR: “\(item.title)” is an appointment — priority is for to-dos" }
++            guard let level = PlannerPriority(name: params["level"] ?? "") else {
++                return "ERROR: bad level — use critical, high, medium or low"
++            }
++            item.setPriority(level)
++            let pin = level.autoPins ? " (pinned)" : ""
++            return "OK: “\(item.title)” priority set to \(level.title)\(pin)"
++
+         case "assign":
+             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
+             let assignee = params["to"] ?? ""
+@@ -543,6 +564,7 @@
+     | Change kind | `planner://setkind?id=ab12cd34&kind=appointment` (`task` or `appointment`) |
+     | Set notes | `planner://note?id=ab12cd34&notes=…` |
+     | Assign | `planner://assign?title=Setup%20exams&to=Ngooi` (empty `to` unassigns) |
++    | Priority (to-dos) | `planner://priority?id=ab12cd34&level=high` (`critical`, `high`, `medium`, `low`; Critical/High auto-pin) |
+     | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
+     | Rename list | `planner://renamelist?name=Errands&to=Chores` (items and sub-lists are kept) |
+     | Delete list | `planner://deletelist?name=Errands` — **disabled by default, see below** |
+@@ -550,6 +572,7 @@
+     Notes:
+     * `kind` is `task` (a to-do) or `appointment` (anything at a specific time/place).
+     * On `add`, a named `list` is created automatically if it doesn't exist.
++    * On `add`, a to-do may carry `priority=critical|high|medium|low` (default medium).
+     * If you don't know an id you may pass `title=` with a title substring instead — but
+       prefer ids from the snapshot; substring matching picks the first match.
+ 
+--- a/PlannerApp/App/PlannerApp.swift
++++ b/PlannerApp/App/PlannerApp.swift
+@@ -193,7 +193,13 @@
+             PlannerItem(title: "Renew gym membership", kind: .task),
+             PlannerItem(title: "Reply to client email", kind: .task)
+         ]
+-        items.forEach { ctx.insert($0) }
++        // A spread of priorities so the To-Do sort and badges show in screenshots.
++        let urgent = PlannerItem(title: "Submit tender proposal", kind: .task, date: at(17, 0, addDays: 1))
++        urgent.setPriority(.critical)
++        let high = PlannerItem(title: "Prepare course slides", kind: .task)
++        high.setPriority(.high)
++        items.first { $0.title == "Renew gym membership" }?.setPriority(.low)
++        (items + [urgent, high]).forEach { ctx.insert($0) }
+ 
+         // A small nested list tree so the collapse/expand controls have something to act on.
+         if ((try? ctx.fetch(FetchDescriptor<PlannerList>())) ?? []).isEmpty {

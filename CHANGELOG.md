@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.7] — 2026-10-08
+
+- New Calendar: a month view with each day's appointments written right into the day, plus a List view of every appointment; swipe to change month
+- Reminder is now Upcoming, broken down by date — Today, Tomorrow and each day after, with anything overdue on top
+- Today's appointments alert: a morning summary of the day's appointments (8 am, adjustable) and an alert just before each one starts
+- Alerts now also show while Planner is open
+- A fresh red app icon
+- Singapore public holidays marked on the calendar
+- Choose your look in Settings: Light, Dark or System, and an accent colour (Indigo, Red, Blue, Green, Orange, Purple, Pink or Teal)
+
+## [Unreleased] — Mac
+
+- Upcoming (was Reminders), broken down by date
+- A fresh red app icon
+- Singapore public holidays marked on the calendar
+- Calendar: a month grid with every appointment written into its day, plus a List view of all appointments; double-click a day to add one
+- Light / Dark toggle in the toolbar (⇧⌘D), and a default mode (System, Light or Dark) in Settings
+- Daily WhatsApp reminders: today's appointments at 8 am and tomorrow's at 3 pm (times adjustable), sent through Hermes or opened in WhatsApp
+- Fixed: appointments the Hermes agent was asked to add never appeared — the agent now always gets the Planner instructions, and its commands reach the open Planner window
+- Fixed: titles the agent sent with `+` for spaces kept the plus signs; a date the agent got wrong is now rejected instead of silently dropped
+- Fixed: a hidden second Hermes process could start alongside the visible one
+
+## [1.6] — 2026-08-18
+
+- A single Planner tab: To-Do and Appointment are now top tabs on one page
+- To-Do has All Tasks and Pinned Tasks; Appointment has Today and Reminder
+- A brighter look: the app now uses a clean light theme throughout
+- See your iCloud sync status in Settings, with the time of the last sync
+- Sync Now button and pull-to-refresh nudge iCloud whenever you want to be sure
+- Delete a row with its trash button, or move it to another list from its menu
+
 ## [1.5] — 2026-07-27
 
 - Tap a folder in Manage Lists to open it and see its to-dos and appointments

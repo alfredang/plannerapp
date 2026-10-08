@@ -3,7 +3,8 @@ import Foundation
 /// The smart list categories shared by the iPhone Planner tab and the Mac sidebar, so both
 /// platforms present the same structure: smart categories first, then the user's own lists.
 enum PlannerCategory: String, CaseIterable, Identifiable, Hashable {
-    // `scheduled` keeps its raw value (it is persisted in UI state); only the label changed.
+    // `scheduled` keeps its raw value (it is persisted in UI state); only the label changed
+    // (Scheduled → Reminders → Upcoming).
     case all, today, scheduled, pinned, todos, appointments
 
     var id: String { rawValue }
@@ -12,7 +13,7 @@ enum PlannerCategory: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .all:          return "To-Do"
         case .today:        return "Today"
-        case .scheduled:    return "Reminders"
+        case .scheduled:    return "Upcoming"
         case .pinned:       return "Pinned"
         case .todos:        return "To-Dos"
         case .appointments: return "Appointments"
@@ -31,7 +32,7 @@ enum PlannerCategory: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .all:          return "tray.full.fill"
         case .today:        return "star.fill"
-        case .scheduled:    return "bell.fill"
+        case .scheduled:    return "clock.fill"
         case .pinned:       return "pin.fill"
         case .todos:        return "checklist"
         case .appointments: return "calendar"
@@ -47,6 +48,8 @@ enum PlannerCategory: String, CaseIterable, Identifiable, Hashable {
             guard let date = item.date else { return false }
             return Calendar.current.isDateInToday(date)
         case .scheduled:
+            // Every dated item: the view breaks them down by day, with anything already
+            // past gathered under "Overdue" (see DaySections).
             return item.date != nil
         case .pinned:
             return item.isPinned

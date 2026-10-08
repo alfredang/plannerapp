@@ -14,10 +14,35 @@ struct RemindersSettingsView: View {
     /// Whose queue the smart views show (same key as the Mac app's Settings ▸ Me).
     @AppStorage("ownerName") private var ownerName = "Alfred"
 
+    /// Live iCloud sync state, so "is it syncing?" has an answer right in Settings.
+    @ObservedObject private var sync = CloudSyncStatus.shared
+
     // Calendar mirroring (off until explicitly enabled — it writes to a real calendar).
     @AppStorage("calendar.syncEnabled") private var calendarSyncEnabled = false
     @AppStorage("calendar.targetCalendarID") private var targetCalendarID = ""
     @State private var calendars: [EKCalendar] = []
+
+    #if os(iOS)
+    // Appearance (iPhone/iPad only — the Mac has its own Light/Dark control).
+    @AppStorage(AccentTheme.storageKey) private var accentRaw = AccentTheme.indigo.rawValue
+    @AppStorage(AppearanceChoice.storageKey) private var appearanceRaw = AppearanceChoice.light.rawValue
+    #endif
+
+    // Day-of appointment alerts (see TodayAlerts): morning summary + alert before each.
+    @AppStorage(TodayAlerts.summaryEnabledKey) private var summaryEnabled = true
+    @AppStorage(TodayAlerts.summaryMinutesKey) private var summaryMinutes = TodayAlerts.defaultSummaryMinutes
+    @AppStorage(TodayAlerts.leadKey) private var alertLeadRaw = TodayAlerts.Lead.fifteen.rawValue
+
+    /// The summary time as a Date for the picker, stored as minutes after midnight.
+    private var summaryTime: Binding<Date> {
+        Binding {
+            Calendar.current.date(byAdding: .minute, value: summaryMinutes,
+                                  to: Calendar.current.startOfDay(for: Date())) ?? Date()
+        } set: { date in
+            let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+            summaryMinutes = (parts.hour ?? 8) * 60 + (parts.minute ?? 0)
+        }
+    }
 
     /// Count from the last backfill run, so the button reports what it did.
     @State private var backfilled: Int?
@@ -36,6 +61,73 @@ struct RemindersSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                HStack(spacing: 10) {
+                    Image(systemName: sync.isOn ? "checkmark.icloud.fill" : "icloud.slash")
+                        .foregroundStyle(sync.isOn ? Color.green : Color.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sync.label)
+                        if let last = sync.lastSyncDate {
+                            Text("Last synced \(last.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Button("Sync Now") { sync.nudge(context: context) }
+            } header: {
+                Text("iCloud")
+            } footer: {
+                // A failed sync event is the one thing worth surfacing over the status text.
+                Text(sync.lastSyncError.map { "Last sync problem: \($0)" } ?? sync.detail)
+                    .foregroundStyle(sync.lastSyncError == nil ? Color.secondary : Color.orange)
+            }
+
+            #if os(iOS)
+            appearanceSection
+            #endif
+
+            Section {
+                Toggle("Morning summary", isOn: $summaryEnabled)
+                    .disabled(isBlockedBySystem)
+                if summaryEnabled {
+                    DatePicker("Time", selection: summaryTime, displayedComponents: .hourAndMinute)
+                        .disabled(isBlockedBySystem)
+                }
+                Picker("Alert before each", selection: $alertLeadRaw) {
+                    ForEach(TodayAlerts.Lead.allCases) { lead in
+                        Text(lead.title).tag(lead.rawValue)
+                    }
+                }
+                .disabled(isBlockedBySystem)
+            } header: {
+                Text("Today's Appointments")
+            } footer: {
+                Text("The morning summary lists the day's appointments; days without any stay quiet. Your own appointments (unassigned, or assigned to you) also alert you just before they start.")
+            }
+
+            Section {
+                Toggle("Remind me before", isOn: $isEnabled)
+                    .disabled(isBlockedBySystem)
+
+                if isEnabled {
+                    Picker("Alert me", selection: $leadTime) {
+                        ForEach(ReminderScheduler.LeadTime.allCases) { lead in
+                            Text(lead.title).tag(lead)
+                        }
+                    }
+                    .disabled(isBlockedBySystem)
+                }
+            } header: {
+                Text("Advance Reminders")
+            } footer: {
+                if isBlockedBySystem {
+                    Text("Notifications are turned off for Planner. Enable them in iOS Settings › Notifications › Planner to get advance alerts.")
+                } else {
+                    Text("Get a heads-up before anything with a date is due — appointments and dated to-dos alike.")
+                }
+            }
+
             Section {
                 TextField("My name", text: $ownerName)
                     #if os(iOS)
@@ -75,26 +167,6 @@ struct RemindersSettingsView: View {
                 Text("Calendar")
             } footer: {
                 Text("Appointments with a date are copied into the calendar you pick. Choose your Google calendar here to have them appear in Google — add the account first in Settings ▸ Apps ▸ Calendar ▸ Accounts. To-dos are never added.")
-            }
-
-            Section {
-                Toggle("Remind me before", isOn: $isEnabled)
-                    .disabled(isBlockedBySystem)
-
-                if isEnabled {
-                    Picker("Alert me", selection: $leadTime) {
-                        ForEach(ReminderScheduler.LeadTime.allCases) { lead in
-                            Text(lead.title).tag(lead)
-                        }
-                    }
-                    .disabled(isBlockedBySystem)
-                }
-            } footer: {
-                if isBlockedBySystem {
-                    Text("Notifications are turned off for Planner. Enable them in iOS Settings › Notifications › Planner to get advance alerts.")
-                } else {
-                    Text("Get a heads-up before anything with a date is due — appointments and dated to-dos alike.")
-                }
             }
 
             if isBlockedBySystem {
@@ -138,6 +210,9 @@ struct RemindersSettingsView: View {
             ReminderScheduler.leadTime = lead
             Task { await ReminderScheduler.rescheduleAll(context: context) }
         }
+        .onChange(of: summaryEnabled) { _, _ in rescheduleTodayAlerts() }
+        .onChange(of: summaryMinutes) { _, _ in rescheduleTodayAlerts() }
+        .onChange(of: alertLeadRaw) { _, _ in rescheduleTodayAlerts() }
         .onChange(of: calendarSyncEnabled) { _, on in
             guard on else { return }
             Task {
@@ -150,6 +225,59 @@ struct RemindersSettingsView: View {
         .onChange(of: targetCalendarID) { _, _ in
             // Re-mirror into the newly chosen calendar.
             CalendarSync.syncAll(context: context)
+        }
+    }
+
+    #if os(iOS)
+    private var appearanceSection: some View {
+        Section {
+            Picker("Appearance", selection: $appearanceRaw) {
+                ForEach(AppearanceChoice.allCases) { Text($0.title).tag($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 14) {
+                ForEach(AccentTheme.allCases) { theme in
+                    Button {
+                        accentRaw = theme.rawValue
+                    } label: {
+                        VStack(spacing: 4) {
+                            Circle()
+                                .fill(theme.color)
+                                .frame(width: 34, height: 34)
+                                .overlay {
+                                    if accentRaw == theme.rawValue {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundStyle(.white)
+                                    }
+                                }
+                            Text(theme.title)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(theme.title) theme")
+                    .accessibilityAddTraits(accentRaw == theme.rawValue ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 6)
+        } header: {
+            Text("Appearance")
+        } footer: {
+            Text("Light, Dark, or follow the phone's setting — and the colour used for buttons, tabs and highlights.")
+        }
+    }
+    #endif
+
+    private func rescheduleTodayAlerts() {
+        Task {
+            // Turning an alert on is the moment to ask, if the app never has.
+            if status == .notDetermined {
+                await ReminderScheduler.requestAuthorization()
+                status = await ReminderScheduler.authorizationStatus()
+            }
+            await ReminderScheduler.rescheduleAll(context: context)
         }
     }
 }

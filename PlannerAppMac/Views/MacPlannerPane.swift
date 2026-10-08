@@ -221,24 +221,43 @@ struct MacPlannerPane: View {
 
     // MARK: - Item list
 
+    /// Upcoming is broken down by date instead of by kind (search results stay flat).
+    private var showsDaySections: Bool {
+        selection == .category(.scheduled) && !isSearching
+    }
+
     private var itemList: some View {
         List {
-            if !appointments.isEmpty {
-                let ordered = appointments
-                Section("Appointments") {
-                    ForEach(ordered) { row($0) }
-                        .onMove { moveItems(ordered, from: $0, to: $1) }
+            if showsDaySections {
+                // Date order is the point here, so there's no drag-to-rearrange.
+                ForEach(DaySections.group(items)) { section in
+                    Section(section.title) {
+                        ForEach(section.items) { row($0) }
+                    }
                 }
-            }
-            if !tasks.isEmpty {
-                let ordered = tasks
-                Section("To-Do") {
-                    ForEach(ordered) { row($0) }
-                        .onMove { moveItems(ordered, from: $0, to: $1) }
-                }
+            } else {
+                kindSections
             }
         }
         .scrollContentBackground(.hidden)
+    }
+
+    @ViewBuilder
+    private var kindSections: some View {
+        if !appointments.isEmpty {
+            let ordered = appointments
+            Section("Appointments") {
+                ForEach(ordered) { row($0) }
+                    .onMove { moveItems(ordered, from: $0, to: $1) }
+            }
+        }
+        if !tasks.isEmpty {
+            let ordered = tasks
+            Section("To-Do") {
+                ForEach(ordered) { row($0) }
+                    .onMove { moveItems(ordered, from: $0, to: $1) }
+            }
+        }
     }
 
     private func row(_ item: PlannerItem) -> some View {

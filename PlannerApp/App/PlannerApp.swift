@@ -13,6 +13,8 @@ struct PlannerApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // Show alerts as banners even while Planner is open (iOS hides them by default).
+        UNUserNotificationCenter.current().delegate = ForegroundNotificationPresenter.shared
         #if DEBUG
         Self.initializeCloudKitSchemaIfRequested()
         #endif
@@ -30,7 +32,9 @@ struct PlannerApp: App {
                 isStoredInMemoryOnly: false,
                 cloudKitDatabase: .automatic
             )
-            return try ModelContainer(for: schema, configurations: config)
+            let container = try ModelContainer(for: schema, configurations: config)
+            Task { @MainActor in CloudSyncStatus.shared.containerUsesCloudKit = true }
+            return container
         } catch {
             // Fall back to a local-only store so the app never fails to launch.
             let local = ModelConfiguration(schema: schema, cloudKitDatabase: .none)
@@ -41,10 +45,15 @@ struct PlannerApp: App {
 
     var body: some Scene {
         WindowGroup {
+            // Tint and Light/Dark come from Settings ▸ Appearance (applied in MainTabView).
             MainTabView()
-                .tint(Theme.accent)
                 .modelUndoSupport()
-                .task { seedSampleDataIfRequested() }
+                .task {
+                    seedSampleDataIfRequested()
+                    #if DEBUG
+                    dumpTodayAlertsIfRequested()
+                    #endif
+                }
                 .task {
                     // One-time repair for items captured inside someone's list before the
                     // capture bar filled in "Assign to" (see AssigneeBackfill).
@@ -126,7 +135,31 @@ struct PlannerApp: App {
         }
         let text = lines.joined(separator: "\n")
         print(text)
-        let url = URL.documentsDirectory.appending(path: "pending-reminders.txt")
+        writeDump(text, to: "pending-reminders.txt")
+    }
+
+    /// DEBUG-only: write what `TodayAlerts` WOULD schedule (no permission needed), so the
+    /// morning summary and per-appointment alerts can be checked headlessly. `-dumpTodayAlerts`.
+    @MainActor
+    private func dumpTodayAlertsIfRequested() {
+        guard CommandLine.arguments.contains("-dumpTodayAlerts") else { return }
+        let items = (try? container.mainContext.fetch(FetchDescriptor<PlannerItem>())) ?? []
+        let active = items.filter { $0.kind == .appointment && !$0.isArchived && $0.date != nil }
+            .sorted { $0.date! < $1.date! }
+        let owner = UserDefaults.standard.string(forKey: "ownerName") ?? "Alfred"
+        let requests = TodayAlerts.summaryRequests(active, now: Date())
+            + TodayAlerts.alertRequests(active, ownerName: owner, now: Date())
+        let df = ISO8601DateFormatter()
+        df.timeZone = .current
+        let lines = requests.map { r -> String in
+            let next = (r.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate()
+            return "\(r.identifier) | fires=\(next.map(df.string(from:)) ?? "?") | \(r.content.title) | \(r.content.body.replacingOccurrences(of: "\n", with: " / "))"
+        }
+        writeDump((["count=\(requests.count)"] + lines).joined(separator: "\n"), to: "today-alerts.txt")
+    }
+
+    private func writeDump(_ text: String, to name: String) {
+        let url = URL.documentsDirectory.appending(path: name)
         try? text.write(to: url, atomically: true, encoding: .utf8)
     }
     #endif
@@ -147,7 +180,12 @@ struct PlannerApp: App {
         }
         let items: [PlannerItem] = [
             PlannerItem(title: "Lunch with Sam", kind: .appointment, date: at(13, 0)),
+            PlannerItem(title: "Client call", kind: .appointment, date: at(16, 0)),
             PlannerItem(title: "Team standup", kind: .appointment, date: at(9, 30, addDays: 1)),
+            PlannerItem(title: "Dentist", kind: .appointment, date: at(14, 0, addDays: 1)),
+            PlannerItem(title: "Python workshop", kind: .appointment, date: at(10, 0, addDays: 2)),
+            PlannerItem(title: "Site visit", kind: .appointment, date: at(11, 0, addDays: 4)),
+            PlannerItem(title: "Intern interview", kind: .appointment, date: at(15, 0, addDays: 6)),
             // Far enough out to sit beyond the reminder lead window, so the advance
             // alerts have something to schedule in demo/screenshot runs.
             PlannerItem(title: "Quarterly review", kind: .appointment, date: at(11, 0, addDays: 14)),
@@ -170,5 +208,17 @@ struct PlannerApp: App {
         }
         try? ctx.save()
         #endif
+    }
+}
+
+/// Lets the morning summary and appointment alerts appear while the app is in the
+/// foreground — otherwise an 8 am summary is silently dropped if Planner happens to be open.
+final class ForegroundNotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = ForegroundNotificationPresenter()
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async
+        -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
     }
 }

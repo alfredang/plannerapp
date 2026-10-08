@@ -42,10 +42,42 @@ enum HermesBridge {
     private static var logURL: URL { workspaceURL.appendingPathComponent("planner-log.txt") }
     private static var agentsURL: URL { workspaceURL.appendingPathComponent("AGENTS.md") }
 
-    /// Creates the workspace and (re)writes AGENTS.md so the protocol docs are always current.
+    /// The bridge instructions installed as a Hermes skill, so the panel can preload them
+    /// with `hermes chat -s planner-app`. AGENTS.md alone is not enough: Hermes only reads
+    /// it from its working directory, and a `terminal.cwd` in ~/.hermes/config.yaml (e.g. an
+    /// Obsidian vault) overrides the folder the panel launches it in — the agent then never
+    /// sees the bridge and files "add an appointment" somewhere else entirely.
+    static let hermesSkillName = "planner-app"
+
+    static var hermesSkillURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".hermes/skills/productivity/\(hermesSkillName)/SKILL.md")
+    }
+
+    /// Whether Hermes is installed (its home folder exists), i.e. whether the skill applies.
+    static var hermesHomeExists: Bool {
+        FileManager.default.fileExists(
+            atPath: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hermes").path)
+    }
+
+    /// Creates the workspace and (re)writes AGENTS.md — plus the Hermes skill, when Hermes
+    /// is installed — so the protocol docs are always current.
     static func prepareWorkspace() {
         try? FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
         try? agentsInstructions.data(using: .utf8)?.write(to: agentsURL)
+        if hermesHomeExists {
+            let skill = """
+            ---
+            name: \(hermesSkillName)
+            description: The Planner Mac app — the user's to-dos, APPOINTMENTS, meetings, reminders and lists. Use for any request to add, find, reschedule, complete, move or list tasks or appointments while running in the Planner app's terminal panel.
+            ---
+
+            \(agentsInstructions)
+            """
+            try? FileManager.default.createDirectory(
+                at: hermesSkillURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? skill.data(using: .utf8)?.write(to: hermesSkillURL)
+        }
     }
 
     // MARK: - Snapshot
@@ -125,8 +157,18 @@ enum HermesBridge {
     static func handle(_ url: URL, context: ModelContext) -> String {
         let command = url.host ?? url.pathComponents.dropFirst().first ?? ""
         var params: [String: String] = [:]
-        for q in URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [] {
-            params[q.name] = q.value ?? ""
+        // Decode by hand rather than via URLQueryItem, which leaves `+` as a literal plus.
+        // Agents often form-encode spaces as `+` (e.g. Python's urlencode), which used to
+        // produce titles like "SMEICC+2026+Opening+Ceremony". A real plus arrives as %2B.
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedQuery ?? ""
+        for pair in query.split(separator: "&") {
+            let parts = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            func decode(_ s: Substring) -> String {
+                let spaced = s.replacingOccurrences(of: "+", with: " ")
+                return spaced.removingPercentEncoding ?? spaced
+            }
+            guard let key = parts.first.map(decode), !key.isEmpty else { continue }
+            params[key] = parts.count > 1 ? decode(parts[1]) : ""
         }
 
         let result = execute(command: command, params: params, context: context)
@@ -141,14 +183,23 @@ enum HermesBridge {
         switch command {
         case "add":
             guard let title = params["title"], !title.isEmpty else { return "ERROR: missing title" }
-            let kind: PlannerKind = params["kind"] == "appointment" ? .appointment : .task
-            let item = PlannerItem(title: title, notes: params["notes"] ?? "", kind: kind,
-                                   date: params["date"].flatMap(parseDate))
+            let kind = parseKind(params["kind"])
+            // A date that doesn't parse must fail loudly — silently dropping it filed
+            // appointments with no date, which then appear on no calendar day.
+            var date: Date?
+            if let raw = params["date"], !raw.isEmpty {
+                guard let parsed = parseDate(raw) else {
+                    return "ERROR: bad date “\(raw)” — use yyyy-MM-dd HH:mm (24-hour, local time); nothing was added"
+                }
+                date = parsed
+            }
+            let item = PlannerItem(title: title, notes: params["notes"] ?? "", kind: kind, date: date)
             if let listName = params["list"], !listName.isEmpty {
                 item.list = findOrCreateList(named: listName, context: context)
             }
             context.insert(item)
-            return "OK: added \(kind.rawValue) “\(title)” (id \(shortID(item.id)))"
+            let when = date.map { " on \(dateFormatter.string(from: $0))" } ?? ""
+            return "OK: added \(kind.rawValue) “\(title)”\(when) (id \(shortID(item.id)))"
 
         case "done", "undone":
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
@@ -199,7 +250,7 @@ enum HermesBridge {
 
         case "setkind":
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
-            item.kind = params["kind"] == "appointment" ? .appointment : .task
+            item.kind = parseKind(params["kind"])
             return "OK: “\(item.title)” is now a \(item.kind.rawValue)"
 
         case "note":
@@ -257,6 +308,112 @@ enum HermesBridge {
         }
     }
 
+    // MARK: - Command inbox
+
+    /// The helper script the agent runs (`planner 'add?…'`): it drops the command into
+    /// `inbox/` and waits for the app's answer in `outbox/`. Files instead of
+    /// `open planner://…` because LaunchServices delivers URLs to the *registered* copy of
+    /// the app — with several builds installed that can launch a second, stale Planner
+    /// whose writes the visible window never shows — and drops some URLs sent in bursts.
+    private static var inboxURL: URL { workspaceURL.appendingPathComponent("inbox", isDirectory: true) }
+    private static var outboxURL: URL { workspaceURL.appendingPathComponent("outbox", isDirectory: true) }
+    private static var helperURL: URL { workspaceURL.appendingPathComponent("planner") }
+
+    @MainActor private static var inboxSource: DispatchSourceFileSystemObject?
+    @MainActor private static var inboxTimer: Timer?
+    @MainActor private static var inboxContext: ModelContext?
+
+    private static let helperScript = """
+    #!/bin/sh
+    # Planner bridge helper (written by the Planner app — edits are overwritten).
+    # Sends one command to the running app and prints its result.
+    #   planner 'add?title=Lunch with Sam&kind=appointment&date=2026-07-15 13:00'
+    # A full planner://… URL works too. Encode a literal & = + % in a value as %26 %3D %2B %25.
+    dir="$(cd "$(dirname "$0")" && pwd)"
+    if [ $# -lt 1 ]; then
+      echo "usage: planner 'add?title=…&kind=appointment&date=yyyy-MM-dd HH:mm'" >&2
+      exit 2
+    fi
+    id="$(date +%s)-$$"
+    mkdir -p "$dir/inbox" "$dir/outbox"
+    printf '%s' "$*" > "$dir/inbox/.$id.tmp" && mv "$dir/inbox/.$id.tmp" "$dir/inbox/$id.cmd"
+    i=0
+    while [ $i -lt 50 ]; do
+      if [ -f "$dir/outbox/$id.txt" ]; then
+        result="$(cat "$dir/outbox/$id.txt")"
+        rm -f "$dir/outbox/$id.txt"
+        echo "$result"
+        case "$result" in ERROR*|REFUSED*) exit 1 ;; esac
+        exit 0
+      fi
+      sleep 0.2
+      i=$((i + 1))
+    done
+    echo "QUEUED: Planner did not answer within 10 s (is the app running?). The command stays queued and runs when Planner opens."
+    exit 1
+
+    """
+
+    private static func writeHelperScript() {
+        try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: outboxURL, withIntermediateDirectories: true)
+        try? helperScript.data(using: .utf8)?.write(to: helperURL)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helperURL.path)
+    }
+
+    /// Watches `inbox/` and runs queued commands — immediately on change, plus a slow poll
+    /// as a safety net. Also drains anything queued while the app was closed.
+    @MainActor
+    static func startInbox(context: ModelContext) {
+        inboxContext = context
+        guard inboxSource == nil else { return }
+        writeHelperScript()
+        let fd = open(inboxURL.path, O_EVTONLY)
+        if fd >= 0 {
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: fd, eventMask: .write, queue: .main)
+            source.setEventHandler { MainActor.assumeIsolated { drainInbox() } }
+            source.setCancelHandler { close(fd) }
+            source.resume()
+            inboxSource = source
+        }
+        let timer = Timer(timeInterval: 3, repeats: true) { _ in
+            MainActor.assumeIsolated { drainInbox() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        inboxTimer = timer
+        drainInbox()
+    }
+
+    @MainActor
+    private static func drainInbox() {
+        guard let context = inboxContext else { return }
+        let fm = FileManager.default
+        let queued = ((try? fm.contentsOfDirectory(at: inboxURL, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "cmd" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for file in queued {
+            // Claim by atomic rename so two running copies of the app can't both run it.
+            let claimed = file.appendingPathExtension("claimed-\(getpid())")
+            guard rename(file.path, claimed.path) == 0 else { continue }
+            let text = ((try? String(contentsOf: claimed, encoding: .utf8)) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            try? fm.removeItem(at: claimed)
+
+            let raw = text.hasPrefix("planner://") ? text : "planner://" + text
+            let result: String
+            if let url = URL(string: raw) ?? URL(string: raw.replacingOccurrences(of: " ", with: "%20")) {
+                result = handle(url, context: context)
+            } else {
+                result = "ERROR: couldn't read the command “\(text)”"
+                log("\(text) → \(result)")
+            }
+            let answer = outboxURL.appendingPathComponent(
+                file.deletingPathExtension().lastPathComponent + ".txt")
+            try? result.data(using: .utf8)?.write(to: answer, options: .atomic)
+        }
+    }
+
     // MARK: - Lookup helpers
 
     /// Finds an item by `id` (the 8-char short id from the snapshot, or a full UUID) or,
@@ -286,10 +443,22 @@ enum HermesBridge {
         return list
     }
 
-    /// Accepts "yyyy-MM-dd HH:mm", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd" (local time) and ISO8601.
+    /// `appointment` (also "appt", "event", "meeting", any case) or `task` (the default).
+    private static func parseKind(_ raw: String?) -> PlannerKind {
+        switch raw?.trimmingCharacters(in: .whitespaces).lowercased() {
+        case "appointment", "appointments", "appt", "event", "meeting", "calendar":
+            return .appointment
+        default:
+            return .task
+        }
+    }
+
+    /// Accepts "yyyy-MM-dd HH:mm[:ss]", "yyyy-MM-dd'T'HH:mm[:ss]", "yyyy-MM-dd h:mm a",
+    /// "yyyy-MM-dd" (all local time) and ISO8601 with a zone.
     private static func parseDate(_ raw: String) -> Date? {
         let s = raw.trimmingCharacters(in: .whitespaces)
-        for format in ["yyyy-MM-dd HH:mm", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd"] {
+        for format in ["yyyy-MM-dd HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm",
+                       "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd h:mm a", "yyyy-MM-dd h:mma", "yyyy-MM-dd"] {
             let f = DateFormatter()
             f.dateFormat = format
             f.locale = Locale(identifier: "en_US_POSIX")
@@ -312,7 +481,10 @@ enum HermesBridge {
 
     // MARK: - Agent instructions
 
-    private static let agentsInstructions = """
+    /// The workspace path as written into the instructions.
+    private static var workspacePathForDocs: String { workspaceURL.path }
+
+    private static var agentsInstructions: String { """
     # Planner — Hermes Agent Bridge
 
     You are running inside the terminal panel of the **Planner** macOS app. Your job is to
@@ -320,13 +492,23 @@ enum HermesBridge {
     "add buy milk tomorrow", "move the n8n task to AI-LMS-TMS", "rename X to Y",
     "mark the dentist appointment done", "what's on today?".
 
+    **In this panel the Planner app is the source of truth for to-dos and appointments.**
+    When the user asks to add, change or look up a task or appointment ("add this to my
+    appointments", a screenshot of an invitation, "what's on tomorrow?"), do it in Planner
+    with the commands below — not in Obsidian notes, a kanban board or any other file —
+    unless the user explicitly names another place.
+
+    Bridge folder (quote it — it contains a space):
+    `\(workspacePathForDocs)`
+
     ## Reading the planner
 
-    `planner-state.json` in this directory is a LIVE snapshot of all data (the app rewrites
-    it on every change). Read it before answering questions or referencing items:
+    `planner-state.json` in the bridge folder is a LIVE snapshot of all data (the app
+    rewrites it on every change). Read it before answering questions or referencing items —
+    always by its full path, since your working directory may be elsewhere:
 
     ```bash
-    cat planner-state.json
+    cat "\(workspacePathForDocs)/planner-state.json"
     ```
 
     Each item has a short `id` — always use it when targeting an item. `archived: true`
@@ -334,9 +516,20 @@ enum HermesBridge {
 
     ## Editing the planner
 
-    Execute commands by opening `planner://` URLs with `open -g` (the `-g` keeps focus in
-    the terminal). URL-encode spaces as `%20`. Dates are LOCAL time, format `yyyy-MM-dd HH:mm`
-    (or just `yyyy-MM-dd`).
+    Run each command with the bridge helper. It hands the command to the running Planner
+    app and prints the result (`OK: …`, or `ERROR: …` with exit status 1):
+
+    ```bash
+    "\(workspacePathForDocs)/planner" 'add?title=Lunch with Sam&kind=appointment&date=2026-07-15 13:00'
+    ```
+
+    Pass the part of the URLs below after `planner://`. Plain spaces are fine inside the
+    single quotes (so are `%20` and `+`); encode a literal `&`, `=`, `+` or `%` in a value
+    as `%26`, `%3D`, `%2B`, `%25`. Use the helper — not `open "planner://…"`, which can
+    reach the wrong copy of the app and is silently dropped when sent in bursts. Dates are LOCAL time, 24-hour,
+    format `yyyy-MM-dd HH:mm` (or just `yyyy-MM-dd` for an all-day item). Anything with a
+    specific time or place — meetings, calls, trainings, events, invitations — is
+    `kind=appointment`; it then shows in the Appointments view and the Calendar.
 
     | Action | URL |
     |---|---|
@@ -360,20 +553,12 @@ enum HermesBridge {
     * If you don't know an id you may pass `title=` with a title substring instead — but
       prefer ids from the snapshot; substring matching picks the first match.
 
-    Example:
-
-    ```bash
-    open -g "planner://add?title=Lunch%20with%20Sam&kind=appointment&date=2026-07-15%2013:00"
-    ```
-
     ## Verifying
 
-    Every command appends its result to `planner-log.txt` and refreshes the snapshot.
-    After each change, confirm it worked:
-
-    ```bash
-    tail -1 planner-log.txt && cat planner-state.json
-    ```
+    The helper prints each command's result, and the snapshot is refreshed right after —
+    re-read it when you need the new state. If the helper prints `QUEUED:`, Planner isn't
+    running: the command waits and runs when the app opens — tell the user. Every result
+    is also appended to `planner-log.txt`.
 
     Report the outcome to the user briefly and in plain language. If a command returns
     `ERROR:`, read the snapshot again and retry with a correct id.
@@ -394,4 +579,5 @@ enum HermesBridge {
     * When the user is ambiguous about which item they mean, show the matching candidates
       and ask.
     """
+    }
 }

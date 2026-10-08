@@ -16,8 +16,8 @@ packages:
 
 settings:
   base:
-    MARKETING_VERSION: "1.5"
-    CURRENT_PROJECT_VERSION: "21"
+    MARKETING_VERSION: "1.7"
+    CURRENT_PROJECT_VERSION: "25"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: GU9WTSTX9M
     CODE_SIGN_STYLE: Automatic
@@ -58,7 +58,6 @@ targets:
       - path: PlannerApp/Views/ItemRow.swift
       - path: PlannerApp/Views/AddItemView.swift
       - path: PlannerApp/Views/ListsManagerView.swift
-      - path: PlannerApp/Views/CalendarView.swift
       - path: PlannerApp/Views/ArchiveView.swift
       - path: PlannerApp/Views/FeedbackView.swift
       - path: PlannerApp/Views/AboutView.swift

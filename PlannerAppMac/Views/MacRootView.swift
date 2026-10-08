@@ -20,7 +20,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .all:          return "To-Do"
         case .today:        return "Today"
-        case .scheduled:    return "Reminders"
+        case .scheduled:    return "Upcoming"
         case .pinned:       return "Pinned"
         case .todos:        return "To-Dos"
         case .appointments: return "Appointments"
@@ -36,7 +36,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .all:          return "tray.full.fill"
         case .today:        return "star.fill"
-        case .scheduled:    return "bell.fill"
+        case .scheduled:    return "clock.fill"
         case .pinned:       return "pin.fill"
         case .todos:        return "checklist"
         case .appointments: return "calendar"
@@ -89,6 +89,8 @@ enum SidebarSelection: Hashable {
 /// bar) or a dedicated pane.
 struct MacRootView: View {
     @Environment(\.modelContext) private var context
+    /// The appearance actually on screen (follows `AppearanceController` via NSApp).
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var selection: SidebarSelection = .category(.all)
     @State private var showingNewList = false
@@ -171,6 +173,25 @@ struct MacRootView: View {
                 .toolbar {
                     ToolbarItem(placement: .automatic) {
                         Button {
+                            selection = .category(.calendar)
+                        } label: {
+                            Image(systemName: "calendar")
+                        }
+                        .keyboardShortcut("k", modifiers: [.command, .shift])
+                        .help("Open the Calendar (⇧⌘K)")
+                        .accessibilityLabel("Open Calendar")
+                    }
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            AppearanceController.shared.toggle()
+                        } label: {
+                            Image(systemName: colorScheme == .dark ? "sun.max" : "moon")
+                        }
+                        .help(colorScheme == .dark ? "Switch to Light mode (⇧⌘D)" : "Switch to Dark mode (⇧⌘D)")
+                        .accessibilityLabel(colorScheme == .dark ? "Switch to Light mode" : "Switch to Dark mode")
+                    }
+                    ToolbarItem(placement: .automatic) {
+                        Button {
                             withAnimation { hermesVisible.toggle() }
                         } label: {
                             Image(systemName: "terminal")
@@ -195,6 +216,15 @@ struct MacRootView: View {
             // can't be missed; the flag keeps it to a single pass.
             AssigneeBackfill.runOnce(context: context)
             HermesBridge.writeSnapshot(context: context)
+            HermesBridge.startInbox(context: context)
+            #if DEBUG
+            // `-debugSidebar calendar` opens a pane directly (screenshots / UI checks).
+            if let raw = UserDefaults.standard.string(forKey: "debugSidebar"),
+               let item = SidebarItem(rawValue: raw) {
+                selection = .category(item)
+            }
+            #endif
+            WhatsAppReminders.shared.start(context: context)
         }
         .onChange(of: dataFingerprint) {
             HermesBridge.writeSnapshot(context: context)
@@ -318,6 +348,8 @@ struct MacRootView: View {
                 ForEach(SidebarItem.smartLists) { item in
                     categoryRow(item, count: count(for: item))
                 }
+                // Right under Appointments, so it's visible without scrolling the sidebar.
+                categoryRow(.calendar, count: upcomingAppointmentCount)
             }
             Section {
                 ForEach(ListHierarchy.rows(lists, collapsed: collapsedLists)) { row in
@@ -357,7 +389,6 @@ struct MacRootView: View {
                 }
             }
             Section("Browse") {
-                categoryRow(.calendar, count: 0)
                 categoryRow(.archive, count: archivedItems.count)
             }
             Section("Support") {
@@ -497,6 +528,12 @@ struct MacRootView: View {
         activeItems.filter { category.contains($0) && $0.isMine(ownerName: ownerName) }.count
     }
 
+    /// Calendar badge: appointments from today onwards (everyone's — the calendar shows all).
+    private var upcomingAppointmentCount: Int {
+        let start = Calendar.current.startOfDay(for: Date())
+        return activeItems.filter { $0.kind == .appointment && ($0.date ?? .distantPast) >= start }.count
+    }
+
     // MARK: - List management
 
     /// Drag over the flattened outline: reorders siblings, and dropping into a group's
@@ -583,7 +620,7 @@ struct MacRootView: View {
     private var detail: some View {
         switch selection {
         case .category(.calendar):
-            CalendarView()
+            MacCalendarPane()
         case .category(.archive):
             ArchiveView()
         case .category(.settings):

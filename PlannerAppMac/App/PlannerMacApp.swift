@@ -11,6 +11,9 @@ struct PlannerMacApp: App {
     /// command below and the toolbar button stay in sync via UserDefaults.
     @AppStorage("hermesPanelVisible") private var hermesVisible = true
 
+    /// Applies the saved Light/Dark/System default before the first window draws.
+    @NSApplicationDelegateAdaptor(PlannerMacAppDelegate.self) private var appDelegate
+
     init() {
         #if DEBUG
         Self.initializeCloudKitSchemaIfRequested()
@@ -24,6 +27,16 @@ struct PlannerMacApp: App {
     /// build without the entitlement) the app falls back to a purely local store.
     let container: ModelContainer = {
         let schema = Schema([PlannerItem.self, PlannerList.self])
+        #if DEBUG
+        // A schema-init run must never open the real store: this build talks to the
+        // Development environment, and mirroring the live data there would muddle it.
+        if CommandLine.arguments.contains("-initCloudKitSchema") {
+            let memory = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true,
+                                            cloudKitDatabase: .none)
+            // swiftlint:disable:next force_try
+            return try! ModelContainer(for: schema, configurations: memory)
+        }
+        #endif
         do {
             let config = ModelConfiguration(
                 schema: schema,
@@ -73,6 +86,8 @@ struct PlannerMacApp: App {
         } catch {
             print("CK-SCHEMA: FAILED — \(error)")
         }
+        // Done: don't go on to launch the app UI for a schema-init run.
+        exit(0)
     }
     #endif
 
@@ -96,15 +111,29 @@ struct PlannerMacApp: App {
                     hermesVisible.toggle()
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
+                Button("Toggle Light / Dark Mode") {
+                    AppearanceController.shared.toggle()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
             }
         }
 
         Settings {
             MacSettingsPane()
-                .frame(width: 420)
+                .frame(width: 480)
                 // The Settings scene is separate from the WindowGroup, so it needs the
                 // container too — without it any @Query here silently returns nothing.
                 .modelContainer(container)
         }
+    }
+}
+
+/// Sets the app-wide appearance from the saved default as early as possible, so the first
+/// window opens already in the right mode instead of flashing the system one.
+final class PlannerMacAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated { AppearanceController.shared.apply() }
+        // Before the terminal panel starts Hermes, so its `-s planner-app` skill exists.
+        HermesBridge.prepareWorkspace()
     }
 }

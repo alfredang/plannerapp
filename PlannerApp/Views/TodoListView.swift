@@ -1,14 +1,12 @@
 import SwiftUI
 import SwiftData
 
-/// The main planner screen, aligned with the Mac desktop layout: the same smart categories
-/// (All Items, Today, Scheduled, To-Dos, Appointments) plus the user's own lists, shown as a
-/// visible chip bar. Tap a chip to filter; long-press a list chip to rename or delete it;
-/// "＋ New List" creates one. Includes the **voice add** mic button and a manual add button.
+/// The main planner screen: two top tabs — To-Do and Appointment — each with its own pair
+/// of sub-tabs (To-Do: All Tasks / Pinned Tasks; Appointment: Today / Upcoming). A page
+/// never mixes both kinds. Includes the **voice add** mic button and a manual add button.
 struct TodoListView: View {
-    /// Which kind this tab shows — Appointments and To-Dos are separate tabs, so a page
-    /// never mixes both sections.
-    var mode: PlannerKind = .task
+    /// Which top tab is open — To-Do or Appointment.
+    @State private var mode: PlannerKind = .task
 
     @Environment(\.modelContext) private var context
 
@@ -44,6 +42,16 @@ struct TodoListView: View {
     /// stay in the smart views; anything delegated to someone else is filtered out.
     @AppStorage("ownerName") private var ownerName = "Alfred"
 
+    init() {
+        #if DEBUG
+        // Screenshot helper: `-openUpcoming` opens Appointment ▸ Upcoming at launch.
+        if CommandLine.arguments.contains("-openUpcoming") {
+            _mode = State(initialValue: .appointment)
+            _filter = State(initialValue: .category(.scheduled))
+        }
+        #endif
+    }
+
     /// The open user list, when the filter is one.
     private var currentList: PlannerList? {
         guard case .list(let id) = filter else { return nil }
@@ -54,7 +62,7 @@ struct TodoListView: View {
 
     private var navigationTitle: String {
         if case .list = filter, let list = currentList { return list.name }
-        return modeTitle
+        return "Planner"
     }
 
     /// Everything of this tab's kind (the tab never mixes to-dos and appointments).
@@ -104,7 +112,9 @@ struct TodoListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                chipBar
+                modeTabBar
+                Divider()
+                subTabBar
                 Divider()
                 duplicateBanner
                 if visibleItems.isEmpty {
@@ -168,27 +178,67 @@ struct TodoListView: View {
         }
     }
 
-    // MARK: - Chip bar (mirrors the Mac sidebar: smart categories, then My Lists)
+    // MARK: - Top tabs (To-Do | Appointment) and their sub-tabs
 
-    private var chipBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                // Just the three smart views — All, Pinned, Today. The user's lists live
-                // behind the folder button in the toolbar (tap a folder to open it).
-                // Same smart views as the Mac sidebar (Appointments/To-Dos are tabs here).
-                ForEach([PlannerCategory.all, .pinned, .today, .scheduled]) { category in
-                    chip(title: category.title(for: mode),
-                         symbol: category.symbol,
-                         // Same rule as `visibleItems`, so the badge matches the rows.
-                         count: kindItems.filter { category.contains($0) && $0.isMine(ownerName: ownerName) }.count,
-                         isSelected: filter == .category(category)) {
-                        withAnimation { filter = .category(category) }
+    /// The sub-views of the open top tab. To-Do offers All Tasks and Pinned Tasks;
+    /// Appointment offers Today and Upcoming ("scheduled" = anything with a date, broken
+    /// down by day).
+    private var subTabs: [(category: PlannerCategory, label: String)] {
+        mode == .task
+            ? [(.all, "All Tasks"), (.pinned, "Pinned Tasks")]
+            : [(.today, "Today"), (.scheduled, "Upcoming")]
+    }
+
+    private func select(_ kind: PlannerKind) {
+        withAnimation {
+            mode = kind
+            filter = .category(kind == .task ? .all : .today)
+        }
+    }
+
+    private var modeTabBar: some View {
+        HStack(spacing: 0) {
+            ForEach(PlannerKind.allCases) { kind in
+                Button { select(kind) } label: {
+                    VStack(spacing: 7) {
+                        HStack(spacing: 6) {
+                            Image(systemName: kind.symbol)
+                            Text(kind == .task ? "To-Do" : "Appointment")
+                        }
+                        .font(.subheadline.weight(mode == kind ? .semibold : .regular))
+                        .foregroundStyle(mode == kind ? Theme.accent : Color.secondary)
+                        // Underline indicator marks the open tab.
+                        Capsule()
+                            .fill(mode == kind ? Theme.accent : Color.clear)
+                            .frame(height: 3)
+                            .padding(.horizontal, 24)
                     }
+                    .padding(.top, 10)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(mode == kind ? .isSelected : [])
+            }
+        }
+        .background(Theme.bg)
+    }
+
+    private var subTabBar: some View {
+        HStack(spacing: 8) {
+            ForEach(subTabs, id: \.category) { tab in
+                chip(title: tab.label,
+                     symbol: tab.category.symbol,
+                     // Same rule as `visibleItems`, so the badge matches the rows.
+                     count: kindItems.filter { tab.category.contains($0) && $0.isMine(ownerName: ownerName) }.count,
+                     isSelected: filter == .category(tab.category)) {
+                    withAnimation { filter = .category(tab.category) }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .background(Theme.bg)
     }
 
@@ -257,16 +307,37 @@ struct TodoListView: View {
 
     // MARK: - Items
 
-    private var itemList: some View {
-        List {
-            let ordered = rows
-            ForEach(ordered) { row($0) }
-                .onDelete { delete(ordered, at: $0) }
-                .onMove { moveItems(ordered, from: $0, to: $1) }
-        }
+    /// Upcoming is broken down by date instead of one hand-ordered list (search results
+    /// stay flat).
+    private var showsDaySections: Bool {
+        filter == .category(.scheduled) && !isSearching
     }
 
-    private func row(_ item: PlannerItem) -> some View {
+    private var itemList: some View {
+        List {
+            if showsDaySections {
+                // Date order is the point here, so there's no drag-to-rearrange.
+                ForEach(DaySections.group(visibleItems)) { section in
+                    Section {
+                        ForEach(section.items) { row($0, showsGrip: false) }
+                            .onDelete { delete(section.items, at: $0) }
+                    } header: {
+                        Text(section.title)
+                            .foregroundStyle(section.day == nil ? Color.red : Color.secondary)
+                    }
+                }
+            } else {
+                let ordered = rows
+                ForEach(ordered) { row($0) }
+                    .onDelete { delete(ordered, at: $0) }
+                    .onMove { moveItems(ordered, from: $0, to: $1) }
+            }
+        }
+        // Pull down to nudge iCloud: pushes pending changes up and re-checks the account.
+        .refreshable { CloudSyncStatus.shared.nudge(context: context) }
+    }
+
+    private func row(_ item: PlannerItem, showsGrip: Bool = true) -> some View {
         HStack(spacing: 10) {
             ItemRow(item: item) {
                 withAnimation { item.toggleDone() }   // checking auto-archives
@@ -297,10 +368,12 @@ struct TodoListView: View {
             .buttonStyle(.borderless)
             .accessibilityLabel("Delete")
             // Drag affordance — hold and drag anywhere on the row to rearrange.
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
+            if showsGrip {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button {

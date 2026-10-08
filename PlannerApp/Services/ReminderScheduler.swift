@@ -92,22 +92,37 @@ enum ReminderScheduler {
         let ours = pending.map(\.identifier).filter { $0.hasPrefix(identifierPrefix) }
         center.removePendingNotificationRequests(withIdentifiers: ours)
 
-        guard isEnabled else { return }
-        guard await authorizationStatus() == .authorized else { return }
+        guard await authorizationStatus() == .authorized else {
+            #if os(iOS)
+            await TodayAlerts.cancelAll()
+            #endif
+            return
+        }
 
         let descriptor = FetchDescriptor<PlannerItem>(
             predicate: #Predicate { !$0.isArchived }
         )
         guard let items = try? context.fetch(descriptor) else { return }
 
+        #if os(iOS)
+        // The day-of alerts (morning summary + before each appointment) have their own
+        // switches, so they're rebuilt even when the advance reminders are off. iPhone only:
+        // the Mac sends its daily digest through WhatsApp instead.
+        let ownerName = UserDefaults.standard.string(forKey: "ownerName") ?? "Alfred"
+        await TodayAlerts.schedule(appointments: items, ownerName: ownerName)
+        #endif
+
+        guard isEnabled else { return }
+
         // Soonest first, so if we hit the 64-request ceiling we keep the most imminent alerts.
+        // 40 leaves room for the day-of alerts (up to 7 summaries + 15 appointment alerts).
         let upcoming = items
             .compactMap { item -> (PlannerItem, Date)? in
                 guard let fireDate = fireDate(for: item) else { return nil }
                 return (item, fireDate)
             }
             .sorted { $0.1 < $1.1 }
-            .prefix(60)
+            .prefix(40)
 
         for (item, fireDate) in upcoming {
             try? await center.add(request(for: item, at: fireDate))
