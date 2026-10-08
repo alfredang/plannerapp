@@ -111,8 +111,6 @@ struct MacCalendarPane: View {
                     Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
                         .help("Previous month")
                         .accessibilityLabel("Previous month")
-                    Button("Today") { goToToday() }
-                        .help("Jump to today")
                     Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }
                         .help("Next month")
                         .accessibilityLabel("Next month")
@@ -133,11 +131,6 @@ struct MacCalendarPane: View {
             selectedDay = cal.isDate(Date(), equalTo: month, toGranularity: .month)
                 ? cal.startOfDay(for: Date()) : month
         }
-    }
-
-    private func goToToday() {
-        month = cal.startOfMonth(for: Date())
-        selectedDay = cal.startOfDay(for: Date())
     }
 
     // MARK: - Month grid

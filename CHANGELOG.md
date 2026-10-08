@@ -20,7 +20,7 @@
 - Singapore public holidays marked on the calendar
 - To-Do priorities (Critical / High / Medium / Low), set from a flag on each row; Critical and High are pinned automatically, and the Hermes agent can set them too
 - Meeting links on virtual appointments with a Join button; included in the WhatsApp digest
-- Calendar: a month grid with every appointment written into its day, plus a List view of all appointments; double-click a day to add one
+- Calendar: a month grid with every appointment written into its day, plus a List view of all appointments; double-click a day to add one; ‹ › arrows change month
 - Light / Dark toggle in the toolbar (⇧⌘D), and a default mode (System, Light or Dark) in Settings
 - Daily WhatsApp reminders: today's appointments at 8 am and tomorrow's at 3 pm (times adjustable), sent through Hermes or opened in WhatsApp
 - Fixed: appointments the Hermes agent was asked to add never appeared — the agent now always gets the Planner instructions, and its commands reach the open Planner window
