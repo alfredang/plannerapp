@@ -33,6 +33,7 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         var date: String?
         var summary: String?
         var url: String?
+        var modified: Int?
         var id: String { file }
         var displayTitle: String { title ?? file.replacingOccurrences(of: ".html", with: "") }
     }

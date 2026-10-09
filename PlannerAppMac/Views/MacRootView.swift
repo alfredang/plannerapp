@@ -10,7 +10,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     // Smart lists
     case all, today, scheduled, pinned, todos, appointments
     // Browse
-    case calendar, jobs, archive
+    case calendar, jobs, updates, archive
     // Support
     case settings, feedback, about
 
@@ -26,6 +26,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .appointments: return "Appointments"
         case .calendar:     return "Calendar"
         case .jobs:         return "Schedule"
+        case .updates:      return "Updates"
         case .archive:      return "Archive"
         case .settings:     return "Settings"
         case .feedback:     return "Feedback"
@@ -43,6 +44,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .appointments: return "calendar"
         case .calendar:     return "calendar.badge.clock"
         case .jobs:         return "clock.arrow.circlepath"
+        case .updates:      return "doc.richtext.fill"
         case .archive:      return "archivebox.fill"
         case .settings:     return "gearshape.fill"
         case .feedback:     return "bubble.left.and.bubble.right.fill"
@@ -358,6 +360,10 @@ struct MacRootView: View {
                 // Scheduled background jobs (agents, cron) — not planner items, so no count.
                 Label(SidebarItem.jobs.title, systemImage: SidebarItem.jobs.symbol)
                     .tag(SidebarSelection.category(.jobs))
+                // History of the agents' report pages; opens them in the Browser tab.
+                Label(SidebarItem.updates.title, systemImage: SidebarItem.updates.symbol)
+                    .badge(todaysUpdates)
+                    .tag(SidebarSelection.category(.updates))
             }
             Section {
                 ForEach(ListHierarchy.rows(lists, collapsed: collapsedLists)) { row in
@@ -536,6 +542,14 @@ struct MacRootView: View {
         activeItems.filter { category.contains($0) && $0.isMine(ownerName: ownerName) }.count
     }
 
+    @ObservedObject private var agentBrowser = AgentBrowser.shared
+
+    /// Updates badge: reports published today.
+    private var todaysUpdates: Int {
+        let today = Date().formatted(.iso8601.year().month().day())
+        return agentBrowser.reports.filter { $0.date == today }.count
+    }
+
     /// Calendar badge: appointments from today onwards (everyone's — the calendar shows all).
     private var upcomingAppointmentCount: Int {
         let start = Calendar.current.startOfDay(for: Date())
@@ -631,6 +645,8 @@ struct MacRootView: View {
             MacCalendarPane()
         case .category(.jobs):
             MacSchedulePane()
+        case .category(.updates):
+            MacUpdatesPane()
         case .category(.archive):
             ArchiveView()
         case .category(.settings):

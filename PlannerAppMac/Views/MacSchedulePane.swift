@@ -273,11 +273,12 @@ struct MacSchedulePane: View {
     @State private var loading = false
     @State private var lastLoaded: Date?
     @State private var message: String?
+    @State private var selectedID: ScheduledJob.ID?
 
     private let refreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        List {
+        List(selection: $selectedID) {
             if let message {
                 Text(message).font(.caption).foregroundStyle(.secondary)
             }
@@ -366,19 +367,26 @@ struct MacSchedulePane: View {
             }
         }
         .padding(.vertical, 3)
-        .contextMenu {
-            if let label = job.launchdLabel {
-                Button("Run Now") { runNow(label, name: job.name) }
-            }
-            if let log = job.logURL {
-                Button("Open Last Log") { NSWorkspace.shared.open(log) }
-            }
-            if let error = job.lastError {
-                Button("Copy Error") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(error, forType: .string)
-                }
-            }
+        .contentShape(Rectangle())
+        .popover(isPresented: Binding(
+            get: { selectedID == job.id },
+            set: { if !$0, selectedID == job.id { selectedID = nil } }
+        ), arrowEdge: .trailing) {
+            JobDetailView(job: job, runNow: { runNow($0, name: job.name) })
+        }
+        .contextMenu { actions(job) }
+    }
+
+    @ViewBuilder
+    private func actions(_ job: ScheduledJob) -> some View {
+        if let label = job.launchdLabel {
+            Button("Run Now") { runNow(label, name: job.name) }
+        }
+        if let log = job.logURL {
+            Button("Open Last Log") { NSWorkspace.shared.open(log) }
+        }
+        if let error = job.lastError {
+            Button("Copy Error") { copy(error) }
         }
     }
 
@@ -407,6 +415,103 @@ struct MacSchedulePane: View {
         Task.detached {
             ScheduleLoader.run("/bin/launchctl", ["kickstart", target])
             await MainActor.run { message = "Started “\(name)” — refresh in a moment for its result." }
+        }
+    }
+}
+
+private func copy(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+}
+
+/// Click-through details for one scheduled job: full schedule, run times, the untruncated
+/// last error and the actions available for its source.
+private struct JobDetailView: View {
+    let job: ScheduledJob
+    let runNow: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: job.source.symbol).foregroundStyle(.secondary)
+                Text(job.name).font(.headline)
+                if !job.enabled {
+                    Text("Paused").font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                }
+            }
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+                field("Source", job.source.rawValue)
+                if let detail = job.detail { field("Target", detail) }
+                field("Schedule", job.schedule)
+                field("Next run", job.enabled ? job.nextRun.map(dateText) ?? "—" : "Paused")
+                field("Last run", job.lastRun.map(dateText) ?? "No run recorded")
+                field("Status", statusText)
+                if let label = job.launchdLabel { field("launchd", label) }
+            }
+            .font(.callout)
+            if let error = job.lastError {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Last error").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    ScrollView {
+                        Text(error)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(job.status == .failed ? .red : .orange)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 160)
+                }
+            }
+            HStack {
+                if let label = job.launchdLabel {
+                    Button("Run Now") { runNow(label); dismiss() }
+                        .keyboardShortcut(.defaultAction)
+                }
+                if let log = job.logURL {
+                    Button("Open Last Log") { NSWorkspace.shared.open(log) }
+                }
+                if let error = job.lastError {
+                    Button("Copy Error") { copy(error) }
+                }
+                Spacer()
+            }
+            if job.launchdLabel == nil {
+                Text(hint).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .frame(width: 420)
+    }
+
+    private func field(_ title: String, _ value: String) -> some View {
+        GridRow {
+            Text(title).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+            Text(value).textSelection(.enabled)
+        }
+    }
+
+    private func dateText(_ date: Date) -> String {
+        "\(date.formatted(date: .abbreviated, time: .shortened)) (\(date.formatted(.relative(presentation: .named))))"
+    }
+
+    private var statusText: String {
+        switch job.status {
+        case .ok: "Last run succeeded"
+        case .failed: "Last run failed"
+        case .skipped: "Last run was skipped"
+        case .unknown: "No run recorded yet"
+        }
+    }
+
+    private var hint: String {
+        switch job.source {
+        case .hermes: "Managed by Hermes — edit or run it with `hermes cron`."
+        case .openclaw: "Managed by OpenClaw — edit or run it with `openclaw cron`."
+        case .planner: "Change this time in Settings ▸ WhatsApp reminders."
+        case .workforce: ""
         }
     }
 }
