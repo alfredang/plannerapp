@@ -18,6 +18,7 @@ struct CalendarView: View {
 
     @AppStorage("calendar.mode") private var modeRaw = Mode.month.rawValue
     @AppStorage("calendar.showCompleted") private var showCompleted = false
+    @AppStorage(WeekStart.storageKey) private var weekStartRaw = WeekStart.defaultValue.rawValue
 
     @State private var month = Calendar.current.startOfMonth(for: Date())
     @State private var selectedDay = Calendar.current.startOfDay(for: Date())
@@ -51,7 +52,7 @@ struct CalendarView: View {
     }
 
     private var mode: Mode { Mode(rawValue: modeRaw) ?? .month }
-    private var cal: Calendar { Calendar.current }
+    private var cal: Calendar { (WeekStart(rawValue: weekStartRaw) ?? .defaultValue).calendar }
 
     /// Taller cells on iPad, where there is room to write more of each day in.
     private var cellHeight: CGFloat { sizeClass == .regular ? 104 : 64 }

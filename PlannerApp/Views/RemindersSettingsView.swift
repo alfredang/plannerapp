@@ -13,6 +13,7 @@ struct RemindersSettingsView: View {
     @State private var status: UNAuthorizationStatus = .notDetermined
     /// Whose queue the smart views show (same key as the Mac app's Settings ▸ Me).
     @AppStorage("ownerName") private var ownerName = "Alfred"
+    @AppStorage(WeekStart.storageKey) private var weekStartRaw = WeekStart.defaultValue.rawValue
 
     /// Live iCloud sync state, so "is it syncing?" has an answer right in Settings.
     @ObservedObject private var sync = CloudSyncStatus.shared
@@ -86,6 +87,14 @@ struct RemindersSettingsView: View {
             #if os(iOS)
             appearanceSection
             #endif
+
+            Section {
+                Picker("Week starts on", selection: $weekStartRaw) {
+                    ForEach(WeekStart.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+            } header: {
+                Text("Calendar")
+            }
 
             Section {
                 Toggle("Morning summary", isOn: $summaryEnabled)

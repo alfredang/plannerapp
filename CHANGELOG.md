@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8] — 2026-10-09
+
+- Choose the first day of the week for the calendar in Settings: Monday (the new default), Sunday or Saturday
+- Sub-lists now start collapsed in My Lists, so your top-level lists fit on one screen; tap a chevron to open one
+
 ## [1.7] — 2026-10-08
 
 - New Calendar: a month view with each day's appointments written right into the day, plus a List view of every appointment; swipe to change month
@@ -14,6 +19,15 @@
 - Choose your look in Settings: Light, Dark or System, and an accent colour (Indigo, Red, Blue, Green, Orange, Purple, Pink or Teal)
 
 ## [Unreleased] — Mac
+
+- Built-in browser next to the agent terminal: agents' daily HTML reports (with a Reports list), links clicked in the terminal, and an agent `browse` command
+- Schedule: every scheduled background job in one place — Digital Workforce agents, Hermes and OpenClaw cron — with next run, last run and status; Run Now for agent jobs
+- The agent terminal can start Claude Code, Codex, Hermes or OpenClaw (or a plain shell); scroll back through a Claude Code or OpenClaw conversation with the mouse wheel
+- Agents can reorder lists (`orderlists`); the agent snapshot lists them in sidebar order
+- Calendar week starts on Monday by default (Settings ▸ Calendar); sub-lists start collapsed
+- Opens at login, and a "Keep running with the lid closed" switch (Settings ▸ Run in background)
+- Fixed: Claude started inside the panel ran as a nested child of whatever session launched Planner (old version, wrong settings)
+- Fixed: a hidden duplicate terminal kept running behind the visible one
 
 - Upcoming (was Reminders), broken down by date
 - A fresh red app icon

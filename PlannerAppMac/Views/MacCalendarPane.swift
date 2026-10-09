@@ -16,6 +16,7 @@ struct MacCalendarPane: View {
 
     @AppStorage("calendar.mode") private var modeRaw = Mode.month.rawValue
     @AppStorage("calendar.showCompleted") private var showCompleted = true
+    @AppStorage(WeekStart.storageKey) private var weekStartRaw = WeekStart.defaultValue.rawValue
 
     @State private var month = Calendar.current.startOfMonth(for: Date())
     @State private var selectedDay = Calendar.current.startOfDay(for: Date())
@@ -35,7 +36,7 @@ struct MacCalendarPane: View {
     }
 
     private var mode: Mode { Mode(rawValue: modeRaw) ?? .month }
-    private var cal: Calendar { Calendar.current }
+    private var cal: Calendar { (WeekStart(rawValue: weekStartRaw) ?? .defaultValue).calendar }
 
     /// Dated appointments to show. Archived ones only when they were completed (and the
     /// toggle is on) — archived-but-not-done means removed (e.g. a duplicate), so never.

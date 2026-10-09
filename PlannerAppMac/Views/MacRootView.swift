@@ -10,7 +10,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     // Smart lists
     case all, today, scheduled, pinned, todos, appointments
     // Browse
-    case calendar, archive
+    case calendar, jobs, archive
     // Support
     case settings, feedback, about
 
@@ -25,6 +25,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .todos:        return "To-Dos"
         case .appointments: return "Appointments"
         case .calendar:     return "Calendar"
+        case .jobs:         return "Schedule"
         case .archive:      return "Archive"
         case .settings:     return "Settings"
         case .feedback:     return "Feedback"
@@ -41,6 +42,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .todos:        return "checklist"
         case .appointments: return "calendar"
         case .calendar:     return "calendar.badge.clock"
+        case .jobs:         return "clock.arrow.circlepath"
         case .archive:      return "archivebox.fill"
         case .settings:     return "gearshape.fill"
         case .feedback:     return "bubble.left.and.bubble.right.fill"
@@ -210,6 +212,9 @@ struct MacRootView: View {
         // Hermes agent bridge: keep the workspace + JSON snapshot current, and execute the
         // planner:// commands the agent issues from the terminal panel (see HermesBridge).
         .task {
+            // Start with every sub-list tucked away; expand by chevron as needed.
+            collapseAllLists()
+            PowerSettings.registerLoginItemOnce()
             HermesBridge.prepareWorkspace()
             // One-time repair for items captured inside someone's list before the capture
             // bar filled in "Assign to". Runs at launch rather than behind a button so it
@@ -350,6 +355,9 @@ struct MacRootView: View {
                 }
                 // Right under Appointments, so it's visible without scrolling the sidebar.
                 categoryRow(.calendar, count: upcomingAppointmentCount)
+                // Scheduled background jobs (agents, cron) — not planner items, so no count.
+                Label(SidebarItem.jobs.title, systemImage: SidebarItem.jobs.symbol)
+                    .tag(SidebarSelection.category(.jobs))
             }
             Section {
                 ForEach(ListHierarchy.rows(lists, collapsed: collapsedLists)) { row in
@@ -621,6 +629,8 @@ struct MacRootView: View {
         switch selection {
         case .category(.calendar):
             MacCalendarPane()
+        case .category(.jobs):
+            MacSchedulePane()
         case .category(.archive):
             ArchiveView()
         case .category(.settings):

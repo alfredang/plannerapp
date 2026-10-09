@@ -37,6 +37,10 @@ struct ListsManagerView: View {
     }
 
     /// True when at least one parent list is still expanded (so "Collapse All" has work).
+    /// Sub-lists start collapsed: the first time My Lists opens after launch, every parent
+    /// list is folded (same as the Mac sidebar). Expanding by hand sticks until next launch.
+    private static var didAutoCollapse = false
+
     private var hasExpandedLists: Bool {
         let collapsed = collapsedLists
         return collapsibleListIDs.contains { !collapsed.contains($0) }
@@ -113,6 +117,11 @@ struct ListsManagerView: View {
                 }
             }
             .navigationTitle("My Lists")
+            .onAppear {
+                guard !Self.didAutoCollapse else { return }
+                Self.didAutoCollapse = true
+                collapsedListsRaw = collapsibleListIDs.map(\.uuidString).joined(separator: ",")
+            }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

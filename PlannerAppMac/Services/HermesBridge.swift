@@ -65,6 +65,8 @@ enum HermesBridge {
     static func prepareWorkspace() {
         try? FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
         try? agentsInstructions.data(using: .utf8)?.write(to: agentsURL)
+        // Claude Code reads CLAUDE.md, not AGENTS.md (Codex reads AGENTS.md natively).
+        try? "@AGENTS.md\n".data(using: .utf8)?.write(to: workspaceURL.appendingPathComponent("CLAUDE.md"))
         if hermesHomeExists {
             let skill = """
             ---
@@ -127,8 +129,10 @@ enum HermesBridge {
 
         let snapshot = StateSnapshot(
             generatedAt: dateFormatter.string(from: Date()),
-            lists: lists.map { ListSnapshot(name: $0.name, activeCount: $0.activeCount,
-                                            parent: $0.parent?.name) },
+            // Sidebar order (parents before their sub-lists), so agents see the current order.
+            lists: ListHierarchy.rows(lists).map { row in
+                ListSnapshot(name: row.list.name, activeCount: row.list.activeCount,
+                             parent: row.list.parent?.name) },
             items: items.map { item in
                 ItemSnapshot(
                     id: shortID(item.id),
@@ -321,6 +325,60 @@ enum HermesBridge {
             else { return "ERROR: list not found" }
             list.name = newName   // non-destructive: items and sub-lists are untouched
             return "OK: renamed list “\(name)” to “\(newName)”"
+
+        case "browse":
+            // Opens a page in the agent panel's built-in browser: file=<name> from reports/,
+            // or url=<http(s) URL or absolute file path>.
+            let target: URL
+            if let file = params["file"], !file.isEmpty {
+                let url = AgentBrowser.reportsURL.appendingPathComponent(file)
+                guard !file.contains(".."), FileManager.default.fileExists(atPath: url.path)
+                else { return "ERROR: report “\(file)” not found in \(AgentBrowser.reportsURL.path)" }
+                target = url
+            } else if let raw = params["url"], !raw.isEmpty {
+                if raw.hasPrefix("/") || raw.hasPrefix("~") {
+                    let url = URL(fileURLWithPath: (raw as NSString).expandingTildeInPath)
+                    guard FileManager.default.fileExists(atPath: url.path) else { return "ERROR: file not found" }
+                    target = url
+                } else {
+                    guard let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+                    else { return "ERROR: url must be http(s) or an absolute file path" }
+                    target = url
+                }
+            } else {
+                return "ERROR: missing file or url"
+            }
+            Task { @MainActor in AgentBrowser.shared.open(target) }
+            return "OK: opened \(target.isFileURL ? target.lastPathComponent : target.absoluteString) in Planner's browser"
+
+        case "orderlists":
+            // names=A,B,C — sibling lists (same parent) in the order wanted. Siblings not
+            // named keep their relative order after them. Pinned lists still float first.
+            let names = (params["names"] ?? "").split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            guard !names.isEmpty else { return "ERROR: missing names" }
+            let lists = (try? context.fetch(FetchDescriptor<PlannerList>())) ?? []
+            var ordered: [PlannerList] = []
+            for name in names {
+                let matches = lists.filter { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+                guard let list = matches.first else { return "ERROR: list “\(name)” not found" }
+                guard matches.count == 1 else { return "ERROR: more than one list is named “\(name)” — rename one first" }
+                guard !ordered.contains(where: { $0.id == list.id }) else { return "ERROR: “\(name)” is named twice" }
+                ordered.append(list)
+            }
+            let parent = ordered[0].parent
+            guard ordered.allSatisfy({ $0.parent?.id == parent?.id }) else {
+                return "ERROR: orderlists only reorders lists that share the same parent — use separate calls per level"
+            }
+            let siblings = lists.filter { $0.parent?.id == parent?.id }
+            let rest = ManualOrder.sortedPinnedFirst(siblings, pinned: { $0.isPinned },
+                                                     position: { $0.sortOrder })
+                .filter { list in !ordered.contains { $0.id == list.id } }
+            for (index, list) in (ordered + rest).enumerated() { list.sortOrder = index + 1 }
+            let pinnedNote = ordered.contains(where: \.isPinned) && ordered.contains(where: { !$0.isPinned })
+                ? " (pinned lists still show first)" : ""
+            return "OK: ordered " + (ordered + rest).map { "“\($0.name)”" }.joined(separator: ", ")
+                 + (parent.map { " under “\($0.name)”" } ?? "") + pinnedNote
 
         case "deletelist":
             guard let name = params["name"], !name.isEmpty else { return "ERROR: missing name" }
@@ -582,6 +640,8 @@ enum HermesBridge {
     | Priority (to-dos) | `planner://priority?id=ab12cd34&level=high` (`critical`, `high`, `medium`, `low`; Critical/High auto-pin) |
     | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
     | Rename list | `planner://renamelist?name=Errands&to=Chores` (items and sub-lists are kept) |
+    | Reorder lists | `planner://orderlists?names=Alfred,Projects,Clients` — lists sharing one parent (or all top-level), in the order wanted; unnamed siblings follow in their current order. Sub-lists move with their parent. One call per level. |
+    | Show a page | `planner://browse?file=2026-10-09-oracle.html` opens a report from `reports/` in Planner's built-in browser (next to this terminal); `planner://browse?url=https://…` opens any web page or absolute file path |
     | Delete list | `planner://deletelist?name=Errands` — **disabled by default, see below** |
 
     Notes:
@@ -590,6 +650,13 @@ enum HermesBridge {
     * On `add`, a to-do may carry `priority=critical|high|medium|low` (default medium).
     * If you don't know an id you may pass `title=` with a title substring instead — but
       prefer ids from the snapshot; substring matching picks the first match.
+
+    ## Reports (built-in browser)
+
+    Save report pages as self-contained HTML in `reports/` next to this file
+    (`reports/<yyyy-MM-dd>-<agent>.html`) and list them newest-first in `reports/index.json`:
+    `[{"file":"2026-10-09-oracle.html","title":"Oracle CEO Review","agent":"Oracle","date":"2026-10-09","summary":"one line","url":"https://claude.ai/artifact/… (optional)"}]`.
+    Planner's Browser tab lists them automatically; use `browse` to bring one up.
 
     ## Verifying
 

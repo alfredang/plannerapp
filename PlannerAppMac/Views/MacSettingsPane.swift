@@ -16,6 +16,7 @@ struct MacSettingsPane: View {
     @AppStorage("ownerName") private var ownerName = "Alfred"
 
     @AppStorage(AppearanceMode.storageKey) private var appearanceModeRaw = AppearanceMode.system.rawValue
+    @AppStorage(WeekStart.storageKey) private var weekStartRaw = WeekStart.defaultValue.rawValue
 
     @AppStorage(WhatsAppReminders.enabledKey) private var remindersEnabled = false
     @AppStorage(WhatsAppReminders.phoneKey) private var reminderPhone = WhatsAppReminders.defaultPhone
@@ -26,6 +27,8 @@ struct MacSettingsPane: View {
     @ObservedObject private var reminders = WhatsAppReminders.shared
     @State private var opensAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginItemError: String?
+    @State private var keepsAwakeLidClosed = PowerSettings.isSleepDisabled
+    @State private var lidSleepError: String?
 
     var body: some View {
         Form {
@@ -41,6 +44,14 @@ struct MacSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Calendar") {
+                Picker("Week starts on", selection: $weekStartRaw) {
+                    ForEach(WeekStart.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+            }
+
+            backgroundSection
 
             whatsAppSection
 
@@ -93,6 +104,32 @@ struct MacSettingsPane: View {
         .navigationTitle("Settings")
     }
 
+    // MARK: - Background
+
+    private var backgroundSection: some View {
+        Section("Run in background") {
+            Toggle("Open Planner at login", isOn: $opensAtLogin)
+                .onChange(of: opensAtLogin) { setOpensAtLogin(opensAtLogin) }
+            if let loginItemError {
+                Text(loginItemError).font(.caption).foregroundStyle(.orange)
+            }
+            Toggle("Keep running with the lid closed", isOn: Binding(
+                get: { keepsAwakeLidClosed },
+                set: { setKeepsAwake($0) }))
+            if let lidSleepError, !lidSleepError.isEmpty {
+                Text(lidSleepError).font(.caption).foregroundStyle(.orange)
+            }
+            Text("Keeps reminders and the agent working when the MacBook lid is shut. This stops the whole Mac from sleeping (macOS asks for your password to change it) — it stays warm and drains the battery when unplugged, so don't leave it on in a bag.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func setKeepsAwake(_ on: Bool) {
+        lidSleepError = PowerSettings.setSleepDisabled(on)
+        keepsAwakeLidClosed = PowerSettings.isSleepDisabled   // reflect what actually happened
+    }
+
     // MARK: - WhatsApp reminders
 
     private var whatsAppSection: some View {
@@ -110,8 +147,6 @@ struct MacSettingsPane: View {
                 ForEach(WhatsAppDelivery.allCases) { Text($0.title).tag($0.rawValue) }
             }
             Toggle("Skip days with no appointments", isOn: $skipEmptyDays)
-            Toggle("Open Planner at login", isOn: $opensAtLogin)
-                .onChange(of: opensAtLogin) { setOpensAtLogin(opensAtLogin) }
             HStack {
                 Button("Send Today's Now") { Task { await reminders.send(.today) } }
                 Button("Send Tomorrow's Now") { Task { await reminders.send(.tomorrow) } }
@@ -123,9 +158,6 @@ struct MacSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(reminders.lastStatus.contains("failed") ? .orange : .green)
                     .textSelection(.enabled)
-            }
-            if let loginItemError {
-                Text(loginItemError).font(.caption).foregroundStyle(.orange)
             }
             Text(deliveryRaw == WhatsAppDelivery.hermes.rawValue
                  ? "Sent automatically through Hermes's WhatsApp bridge. One-time setup in Terminal: run `hermes whatsapp`, scan the QR code with WhatsApp, then restart the gateway (`hermes gateway restart`). Planner must be running at the scheduled time (it can sit in the background); a reminder missed while the Mac slept is sent on wake if it's less than 4 hours late."
