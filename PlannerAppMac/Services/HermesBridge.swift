@@ -62,9 +62,21 @@ enum HermesBridge {
 
     /// Creates the workspace and (re)writes AGENTS.md — plus the Hermes skill, when Hermes
     /// is installed — so the protocol docs are always current.
+    /// The agents' shared long-term memory (see "Shared memory" in AGENTS.md). Created with an
+    /// empty index on first run; the contents belong to the agents and are never overwritten.
+    static var memoryURL: URL { workspaceURL.appendingPathComponent("memory", isDirectory: true) }
+
+    private static func prepareMemory() {
+        let index = memoryURL.appendingPathComponent("MEMORY.md")
+        try? FileManager.default.createDirectory(at: memoryURL, withIntermediateDirectories: true)
+        guard !FileManager.default.fileExists(atPath: index.path) else { return }
+        try? "".data(using: .utf8)?.write(to: index)
+    }
+
     static func prepareWorkspace() {
         try? FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
         try? agentsInstructions.data(using: .utf8)?.write(to: agentsURL)
+        prepareMemory()
         // Claude Code reads CLAUDE.md, not AGENTS.md (Codex reads AGENTS.md natively).
         try? "@AGENTS.md\n".data(using: .utf8)?.write(to: workspaceURL.appendingPathComponent("CLAUDE.md"))
         if hermesHomeExists {
@@ -650,6 +662,32 @@ enum HermesBridge {
     * On `add`, a to-do may carry `priority=critical|high|medium|low` (default medium).
     * If you don't know an id you may pass `title=` with a title substring instead — but
       prefer ids from the snapshot; substring matching picks the first match.
+
+    ## Shared memory — read first, keep it current
+
+    Every agent that works for this user (Claude Code, Codex, Hermes, OpenClaw and the
+    scheduled Digital Workforce agents) shares one long-term memory:
+    `\(workspacePathForDocs)/memory/`.
+
+    * **At the start of a session**, read `memory/MEMORY.md` (the index) and open any note
+      whose description looks relevant to the request.
+    * **Save** anything worth knowing next time: the user's preferences and corrections, decisions
+      made, people/clients and who they are, recurring facts, where things live, open
+      commitments. One fact per file, e.g. `memory/client-uob.md`:
+      ```
+      ---
+      name: client-uob
+      description: UOB — corporate training client; key contacts, programmes, open deals
+      metadata:
+        type: user | feedback | project | reference
+      ---
+      The fact. For feedback/project notes add **Why:** and **How to apply:** lines.
+      ```
+      then add one line to `memory/MEMORY.md`: `- [Title](file.md) — one-line hook`.
+    * **Update** an existing note rather than adding a near-duplicate; delete notes that turn
+      out to be wrong. Convert relative dates to absolute ones (2026-10-09, not "today").
+    * **Never** store passwords, API keys, tokens or other secrets. Don't copy what's already
+      in `planner-state.json` (items and lists) — memory is for what the planner can't hold.
 
     ## Reports (built-in browser)
 
