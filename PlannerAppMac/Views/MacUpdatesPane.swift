@@ -8,6 +8,17 @@ struct MacUpdatesPane: View {
     @ObservedObject private var browser = AgentBrowser.shared
     @AppStorage("hermesPanelVisible") private var panelVisible = true
     @State private var search = ""
+    /// Past days start collapsed; the user's opens/closes are remembered for this session.
+    @State private var toggledDays: Set<String> = []
+
+    private static let todayKey: String = Date().formatted(.iso8601.year().month().day())
+
+    private func isExpanded(_ key: String) -> Bool {
+        // A search shows every match; otherwise today is open and past days are closed.
+        if !search.trimmingCharacters(in: .whitespaces).isEmpty { return true }
+        let openByDefault = key >= Self.todayKey
+        return toggledDays.contains(key) ? !openByDefault : openByDefault
+    }
 
     private var filtered: [AgentBrowser.Report] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -18,25 +29,39 @@ struct MacUpdatesPane: View {
         }
     }
 
-    /// (day label, reports) in newest-first order.
+    /// (day key, reports) — days newest first, and newest first within each day.
     private var groups: [(String, [AgentBrowser.Report])] {
-        var order: [String] = []
         var byDay: [String: [AgentBrowser.Report]] = [:]
-        for report in filtered {
-            let key = report.date ?? "Undated"
-            if byDay[key] == nil { order.append(key) }
-            byDay[key, default: []].append(report)
+        for report in filtered { byDay[report.date ?? "Undated", default: []].append(report) }
+        return byDay.keys.sorted(by: >).map { key in
+            (key, (byDay[key] ?? []).sorted { ($0.modified ?? 0) > ($1.modified ?? 0) })
         }
-        return order.map { (Self.dayLabel($0), byDay[$0] ?? []) }
     }
 
     var body: some View {
         List {
             ForEach(groups, id: \.0) { day, reports in
-                Section(day) {
-                    ForEach(reports) { report in
-                        row(report)
+                Section {
+                    if isExpanded(day) {
+                        ForEach(reports) { report in
+                            row(report)
+                        }
                     }
+                } header: {
+                    Button {
+                        if toggledDays.contains(day) { toggledDays.remove(day) } else { toggledDays.insert(day) }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isExpanded(day) ? "chevron.down" : "chevron.right")
+                                .font(.caption2.weight(.bold))
+                                .frame(width: 10)
+                            Text(Self.dayLabel(day))
+                            Text("\(reports.count)").foregroundStyle(.tertiary)
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             if browser.reports.isEmpty {
