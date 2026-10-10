@@ -122,12 +122,12 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
       if (!location.pathname.endsWith('.html') || location.protocol !== 'file:') return;
       var page = location.pathname.split('/').pop();
       var st = document.createElement('style');
-      st.textContent = '.pl-reply{margin:10px 0 0;font:14px -apple-system,sans-serif}.pl-reply textarea{width:100%;box-sizing:border-box;min-height:44px;padding:8px;border:1px solid #c9ced6;border-radius:8px;font:inherit;resize:vertical}.pl-reply button{margin-top:6px;padding:5px 14px;border:0;border-radius:8px;background:#3949c8;color:#fff;font:600 13px -apple-system,sans-serif;cursor:pointer}.pl-saved{margin-top:6px;padding:6px 10px;border-radius:8px;background:#e8f4ec;color:#1d5c34;font-size:13px;white-space:pre-wrap}';
+      st.textContent = '.item{flex-wrap:wrap}.pl-reply{flex:0 0 100%;grid-column:1/-1;width:100%;margin:10px 0 0;font:14px -apple-system,sans-serif}.pl-reply textarea{width:100%;box-sizing:border-box;min-height:44px;padding:8px;border:1px solid #c9ced6;border-radius:8px;font:inherit;resize:vertical}.pl-reply button{margin-top:6px;padding:5px 14px;border:0;border-radius:8px;background:#3949c8;color:#fff;font:600 13px -apple-system,sans-serif;cursor:pointer}.pl-saved{margin-top:6px;padding:6px 10px;border-radius:8px;background:#e8f4ec;color:#1d5c34;font-size:13px;white-space:pre-wrap}';
       document.head.appendChild(st);
       function key(el) { return (el.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 90); }
       window.__plShow = function (saved) {
         document.querySelectorAll('.item').forEach(function (el) {
-          if (el.querySelector('.pl-reply')) return;
+          if (el.querySelector('.pl-reply') || el.closest('.exec')) return;
           var k = key(el), box = document.createElement('div'); box.className = 'pl-reply';
           var ta = document.createElement('textarea'); ta.placeholder = 'Reply to the agents…';
           var btn = document.createElement('button'); btn.textContent = 'Send reply';
