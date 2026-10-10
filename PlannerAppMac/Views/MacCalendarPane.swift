@@ -238,7 +238,7 @@ struct MacCalendarPane: View {
         .opacity(inMonth ? 1 : 0.6)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { addAppointment(on: day) }
-        .onTapGesture { selectedDay = day }
+        .onTapGesture { selectedDay = day; showUpdates(for: day) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(day.formatted(date: .complete, time: .omitted))\(holiday.map { ", \($0)" } ?? ""), \(items.count) appointment\(items.count == 1 ? "" : "s")")
     }
@@ -331,6 +331,18 @@ struct MacCalendarPane: View {
             editingItem = item
         }
         .contextMenu { itemMenu(item) }
+    }
+
+    /// Clicking a date shows that day's Morning Updates (or the day's newest report) in the
+    /// agent panel's Browser tab. Days with no report leave the browser alone.
+    private func showUpdates(for day: Date) {
+        let key = day.formatted(.iso8601.year().month().day())
+        let browser = AgentBrowser.shared
+        browser.reloadReports()
+        let reports = browser.reports.filter { $0.date == key }
+        guard let report = reports.first(where: { $0.file.contains("oracle-updates") }) ?? reports.first else { return }
+        UserDefaults.standard.set(true, forKey: "hermesPanelVisible")
+        browser.open(report: report)
     }
 
     private func addAppointment(on day: Date) {

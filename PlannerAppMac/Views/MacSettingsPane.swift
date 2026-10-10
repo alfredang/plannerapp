@@ -29,6 +29,7 @@ struct MacSettingsPane: View {
     @State private var loginItemError: String?
     @State private var keepsAwakeLidClosed = PowerSettings.isSleepDisabled
     @State private var lidSleepError: String?
+    @State private var powersOnDaily = PowerSettings.isPowerOnScheduled
 
     var body: some View {
         Form {
@@ -119,6 +120,15 @@ struct MacSettingsPane: View {
             if let lidSleepError, !lidSleepError.isEmpty {
                 Text(lidSleepError).font(.caption).foregroundStyle(.orange)
             }
+            Toggle("Power the Mac on every morning (06:55)", isOn: Binding(
+                get: { powersOnDaily },
+                set: { on in
+                    lidSleepError = PowerSettings.setPowerOnScheduled(on)
+                    powersOnDaily = PowerSettings.isPowerOnScheduled
+                }))
+            Text("If the Mac was shut down overnight it starts itself at 06:55, so the 07:03 brief and 07:30 Morning Updates still run (macOS asks for your password). Planner opens at login and keeps running after its window is closed.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Text("Keeps reminders and the agent working when the MacBook lid is shut. This stops the whole Mac from sleeping (macOS asks for your password to change it) — it stays warm and drains the battery when unplugged, so don't leave it on in a bag.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

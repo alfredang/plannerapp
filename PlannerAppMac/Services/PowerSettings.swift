@@ -50,4 +50,37 @@ enum PowerSettings {
         if (error[NSAppleScript.errorNumber] as? Int) == -128 { return "" }
         return (error[NSAppleScript.errorMessage] as? String) ?? "pmset failed"
     }
+
+    // MARK: - Power on for the morning briefs
+
+    /// Daily time the Mac powers itself on (`pmset repeat wakeorpoweron`), just before the
+    /// first Digital Workforce job at 07:03 — so the briefs run even if the Mac was shut down.
+    static let powerOnTime = "06:55:00"
+
+    /// True when a repeating wake-or-power-on event is scheduled (`pmset -g sched`).
+    static var isPowerOnScheduled: Bool {
+        let pipe = Pipe()
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        task.arguments = ["-g", "sched"]
+        task.standardOutput = pipe
+        guard (try? task.run()) != nil else { return false }
+        task.waitUntilExit()
+        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        return out.contains("Repeating power events") && out.contains("poweron")
+            || out.contains("wakepoweron")
+    }
+
+    /// Schedules (or cancels) the daily power-on. Needs an administrator password.
+    /// Returns an error message, "" if cancelled, or nil on success.
+    static func setPowerOnScheduled(_ on: Bool) -> String? {
+        let command = on ? "/usr/bin/pmset repeat wakeorpoweron MTWRFSU \(powerOnTime)"
+                         : "/usr/bin/pmset repeat cancel"
+        let source = "do shell script \"\(command)\" with administrator privileges"
+        var error: NSDictionary?
+        NSAppleScript(source: source)?.executeAndReturnError(&error)
+        guard let error else { return nil }
+        if (error[NSAppleScript.errorNumber] as? Int) == -128 { return "" }
+        return (error[NSAppleScript.errorMessage] as? String) ?? "pmset failed"
+    }
 }

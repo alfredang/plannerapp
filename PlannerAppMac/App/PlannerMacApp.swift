@@ -131,6 +131,10 @@ struct PlannerMacApp: App {
 /// Sets the app-wide appearance from the saved default as early as possible, so the first
 /// window opens already in the right mode instead of flashing the system one.
 final class PlannerMacAppDelegate: NSObject, NSApplicationDelegate {
+    /// Closing the window must not quit Planner — reminders, the agent bridge and the
+    /// background jobs keep running; the Dock icon reopens the window.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated { AppearanceController.shared.apply() }
         // Before the terminal panel starts Hermes, so its `-s planner-app` skill exists.
