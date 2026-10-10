@@ -31,6 +31,14 @@ struct ItemRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                // Past appointments: checked = completed, unchecked = missed.
+                if item.isAppointment, item.isDone || item.isMissed {
+                    Label(item.isDone ? "Completed" : "Missed",
+                          systemImage: item.isDone ? "checkmark.circle" : "exclamationmark.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(item.isDone ? Theme.accent : Color.red)
+                }
+
                 // Own line so it never gets squeezed out of the caption row.
                 if !item.assignedTo.isEmpty {
                     Label(item.assignedTo, systemImage: "person.fill")

@@ -257,12 +257,13 @@ struct MacCalendarPane: View {
         }
         .font(.caption)
         .lineLimit(1)
-        .foregroundStyle(item.isDone ? Color.secondary : Color.primary)
+        .foregroundStyle(item.isDone ? Color.secondary : (item.isMissed ? Color.red : Color.primary))
         .padding(.horizontal, 4)
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 4)
-            .fill(Theme.accent.opacity(item.isDone ? 0.07 : 0.2)))
+            .fill(item.isMissed ? Color.red.opacity(0.15)
+                  : Theme.accent.opacity(item.isDone ? 0.07 : 0.2)))
         .contentShape(Rectangle())
         .onTapGesture { editingItem = item }
         .help(chipHelp(item))

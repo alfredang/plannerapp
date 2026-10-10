@@ -4,6 +4,7 @@
 
 - Choose the first day of the week for the calendar in Settings: Monday (the new default), Sunday or Saturday
 - Sub-lists now start collapsed in My Lists, so your top-level lists fit on one screen; tap a chevron to open one
+- Calendar keeps past appointments: checked ones show as Completed, unchecked ones as Missed (in red); tap any appointment to open it and add comments in its notes
 
 ## [1.7] — 2026-10-08
 

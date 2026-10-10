@@ -130,6 +130,18 @@ final class PlannerItem {
 
     var isAppointment: Bool { kind == .appointment }
 
+    /// An appointment that is over without being checked off. Date-only appointments
+    /// (stored at midnight) count as over once their day has passed.
+    var isMissed: Bool {
+        guard isAppointment, !isDone, let date else { return false }
+        let cal = Calendar.current
+        let parts = cal.dateComponents([.hour, .minute], from: date)
+        if parts.hour == 0 && parts.minute == 0 {
+            return cal.startOfDay(for: date) < cal.startOfDay(for: Date())
+        }
+        return date < Date()
+    }
+
     var priority: PlannerPriority {
         get { PlannerPriority(rawValue: priorityRaw) ?? .medium }
         set { priorityRaw = newValue.rawValue }

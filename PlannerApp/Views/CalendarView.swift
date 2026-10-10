@@ -17,7 +17,7 @@ struct CalendarView: View {
     private var allAppointments: [PlannerItem]
 
     @AppStorage("calendar.mode") private var modeRaw = Mode.month.rawValue
-    @AppStorage("calendar.showCompleted") private var showCompleted = false
+    @AppStorage("calendar.showCompleted") private var showCompleted = true
     @AppStorage(WeekStart.storageKey) private var weekStartRaw = WeekStart.defaultValue.rawValue
 
     @State private var month = Calendar.current.startOfMonth(for: Date())
@@ -295,12 +295,16 @@ struct CalendarView: View {
         }
         .font(.system(size: showTime ? 11 : 9.5))
         .lineLimit(1)
-        .foregroundStyle(item.isDone ? Color.secondary : Color.primary)
+        .foregroundStyle(item.isDone ? Color.secondary : (item.isMissed ? Color.red : Color.primary))
         .padding(.horizontal, 2)
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 3)
-            .fill(Theme.accent.opacity(item.isDone ? 0.07 : 0.2)))
+            .fill(item.isMissed ? Color.red.opacity(0.15)
+                  : Theme.accent.opacity(item.isDone ? 0.07 : 0.2)))
+        .contentShape(Rectangle())
+        // Tap an event to open it — add comments in its Notes.
+        .onTapGesture { editingItem = item }
     }
 
     // MARK: - Selected-day agenda
