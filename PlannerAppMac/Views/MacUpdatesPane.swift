@@ -125,6 +125,7 @@ struct MacUpdatesPane: View {
         case "forge": return "🛠️"
         case "ledger": return "💰"
         case "oracle": return "🧭"
+        case "nova": return "🚀"
         default: return "📄"
         }
     }

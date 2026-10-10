@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// links clicked in the terminal, and the agents' `planner://browse` command — so agent
 /// reports (self-contained HTML pages) and claude.ai artifacts open right next to the chat.
 @MainActor
-final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
+final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     static let shared = AgentBrowser()
 
     /// Which tab the agent panel shows ("terminal" / "browser"). AppStorage-backed, so
@@ -44,8 +44,13 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     private override init() {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()   // persistent: a claude.ai sign-in sticks
+        // Reply boxes on report cards: the page script posts Alfred's answer here and the
+        // agents read it back on their next run (see `saveReply`).
+        config.userContentController.addUserScript(
+            WKUserScript(source: Self.replyScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
+        config.userContentController.add(ReplyHandlerProxy(self), name: "reply")
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -68,6 +73,77 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         reloadReports()
         watchReportsFolder()
     }
+
+    // MARK: - Replies to the agents
+
+    /// One JSON object per line: {ts, page, item, text}. The Digital Workforce agents read
+    /// this file at the start of every run and treat it as Alfred's answers.
+    nonisolated static var repliesURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("DigitalWorkforce/replies/replies.jsonl")
+    }
+
+    private func savedReplies(forPage page: String) -> [[String: String]] {
+        guard let text = try? String(contentsOf: Self.repliesURL, encoding: .utf8) else { return [] }
+        return text.split(separator: "\n").compactMap { line in
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: String],
+                  obj["page"] == page else { return nil }
+            return obj
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let url = webView.url, url.isFileURL, url.pathExtension.lowercased() == "html",
+              let data = try? JSONSerialization.data(withJSONObject: savedReplies(forPage: url.lastPathComponent)),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("if (window.__plShow) window.__plShow(\(json));")
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: String],
+              let page = body["page"], let item = body["item"],
+              let text = body["text"]?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+        let record: [String: String] = [
+            "ts": ISO8601DateFormatter().string(from: Date()), "page": page, "item": item, "text": text,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) else { return }
+        let url = Self.repliesURL
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile(); handle.write(data); handle.write(Data("\n".utf8)); try? handle.close()
+        } else {
+            try? (data + Data("\n".utf8)).write(to: url)
+        }
+    }
+
+    /// Adds a "Reply" box under every card (`.item`) of a report page.
+    private static let replyScript = """
+    (function () {
+      if (!location.pathname.endsWith('.html') || location.protocol !== 'file:') return;
+      var page = location.pathname.split('/').pop();
+      var st = document.createElement('style');
+      st.textContent = '.pl-reply{margin:10px 0 0;font:14px -apple-system,sans-serif}.pl-reply textarea{width:100%;box-sizing:border-box;min-height:44px;padding:8px;border:1px solid #c9ced6;border-radius:8px;font:inherit;resize:vertical}.pl-reply button{margin-top:6px;padding:5px 14px;border:0;border-radius:8px;background:#3949c8;color:#fff;font:600 13px -apple-system,sans-serif;cursor:pointer}.pl-saved{margin-top:6px;padding:6px 10px;border-radius:8px;background:#e8f4ec;color:#1d5c34;font-size:13px;white-space:pre-wrap}';
+      document.head.appendChild(st);
+      function key(el) { return (el.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 90); }
+      window.__plShow = function (saved) {
+        document.querySelectorAll('.item').forEach(function (el) {
+          if (el.querySelector('.pl-reply')) return;
+          var k = key(el), box = document.createElement('div'); box.className = 'pl-reply';
+          var ta = document.createElement('textarea'); ta.placeholder = 'Reply to the agents…';
+          var btn = document.createElement('button'); btn.textContent = 'Send reply';
+          var out = document.createElement('div');
+          function note(t) { var d = document.createElement('div'); d.className = 'pl-saved'; d.textContent = '✓ You: ' + t; out.appendChild(d); }
+          saved.filter(function (r) { return r.item === k; }).forEach(function (r) { note(r.text); });
+          btn.onclick = function () {
+            var t = ta.value.trim(); if (!t) return;
+            window.webkit.messageHandlers.reply.postMessage({ page: page, item: k, text: t });
+            note(t); ta.value = '';
+          };
+          box.appendChild(out); box.appendChild(ta); box.appendChild(btn); el.appendChild(box);
+        });
+      };
+    })();
+    """
 
     // MARK: - Opening
 
@@ -268,4 +344,14 @@ private struct BrowserWebView: NSViewRepresentable {
     let webView: WKWebView
     func makeNSView(context: Context) -> WKWebView { webView }
     func updateNSView(_ nsView: WKWebView, context: Context) {}
+}
+
+
+/// WKUserContentController retains its handlers; this keeps the browser from retaining itself.
+private final class ReplyHandlerProxy: NSObject, WKScriptMessageHandler {
+    weak var target: WKScriptMessageHandler?
+    init(_ target: WKScriptMessageHandler) { self.target = target }
+    func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+        target?.userContentController(c, didReceive: m)
+    }
 }
