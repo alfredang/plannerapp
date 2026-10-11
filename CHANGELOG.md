@@ -1,11 +1,15 @@
 # Changelog
 
+## [2.0] — 2026-10-11
+
+- New Updates tab: read your Digital Workforce reports from the Mac and reply to any card right from the iPhone (syncs through iCloud)
+- Past appointments you haven't ticked now ask "Did this happen?" with one-tap Yes, it happened / Reply buttons, instead of calling them missed
+
 ## [1.9] — 2026-10-10
 
 - Choose the first day of the week for the calendar in Settings: Monday (the new default), Sunday or Saturday
 - Sub-lists now start collapsed in My Lists, so your top-level lists fit on one screen; tap a chevron to open one
 - Calendar keeps past appointments: checked ones show as Completed, unchecked ones as Missed (in red); tap any appointment to open it and add comments in its notes
-- New Updates tab: read your Digital Workforce reports from the Mac and reply to any card right from the iPhone (syncs through iCloud)
 
 ## [1.7] — 2026-10-08
 
