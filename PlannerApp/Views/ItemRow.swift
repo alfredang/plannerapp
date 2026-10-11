@@ -33,7 +33,9 @@ struct ItemRow: View {
 
                 // Past appointments: checked = completed, unchecked = missed.
                 if item.isAppointment, item.isDone || item.isMissed {
-                    Label(item.isDone ? "Completed" : "Missed",
+                    // Unticked past appointments read as a question, not a verdict: the app
+                    // can't know it happened until the circle is ticked.
+                    Label(item.isDone ? "Completed" : "Not ticked — did it happen? Tick ○ if yes",
                           systemImage: item.isDone ? "checkmark.circle" : "exclamationmark.circle")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(item.isDone ? Theme.accent : Color.red)

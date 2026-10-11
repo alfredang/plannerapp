@@ -4,7 +4,7 @@ import SwiftData
 /// Root navigation. House-style bottom tabs: the app's content first, then Feedback + About.
 struct MainTabView: View {
     private enum Tab: Hashable {
-        case planner, calendar, archive, settings, feedback, about
+        case planner, calendar, updates, archive, settings, feedback, about
     }
 
     @State private var selection: Tab = .planner
@@ -40,6 +40,8 @@ struct MainTabView: View {
             _selection = State(initialValue: .planner)
         } else if CommandLine.arguments.contains("-openCalendar") {
             _selection = State(initialValue: .calendar)
+        } else if CommandLine.arguments.contains("-openUpdates") {
+            _selection = State(initialValue: .updates)
         } else if CommandLine.arguments.contains("-openSettings") || CommandLine.arguments.contains("-openAppearance") {
             _selection = State(initialValue: .settings)
         }
@@ -57,6 +59,10 @@ struct MainTabView: View {
             CalendarView()
                 .tabItem { Label("Calendar", systemImage: "calendar") }
                 .tag(Tab.calendar)
+
+            UpdatesView()
+                .tabItem { Label("Updates", systemImage: "doc.richtext") }
+                .tag(Tab.updates)
 
             ArchiveView()
                 .tabItem { Label("Archive", systemImage: "archivebox.fill") }

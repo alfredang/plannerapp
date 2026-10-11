@@ -83,31 +83,29 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             .appendingPathComponent("DigitalWorkforce/replies/replies.jsonl")
     }
 
-    private func savedReplies(forPage page: String) -> [[String: String]] {
-        guard let text = try? String(contentsOf: Self.repliesURL, encoding: .utf8) else { return [] }
-        return text.split(separator: "\n").compactMap { line in
-            guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: String],
-                  obj["page"] == page else { return nil }
-            return obj
+    /// The agents' immediate answers to those replies: {ts, page, item, replyTs, agent, text}.
+    nonisolated static var answersURL: URL {
+        repliesURL.deletingLastPathComponent().appendingPathComponent("answers.jsonl")
+    }
+
+    /// Runs the report's agent on one reply and prints its answer (see the script's header).
+    nonisolated static var answerScriptURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("DigitalWorkforce/bin/answer-reply.sh")
+    }
+
+    /// Replies whose agent is still working, by reply ts.
+    private var pendingAnswers: Set<String> = []
+
+    private static func readJSONL(_ url: URL) -> [[String: String]] {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return text.split(separator: "\n").compactMap {
+            try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: String]
         }
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard let url = webView.url, url.isFileURL, url.pathExtension.lowercased() == "html",
-              let data = try? JSONSerialization.data(withJSONObject: savedReplies(forPage: url.lastPathComponent)),
-              let json = String(data: data, encoding: .utf8) else { return }
-        webView.evaluateJavaScript("if (window.__plShow) window.__plShow(\(json));")
-    }
-
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: String],
-              let page = body["page"], let item = body["item"],
-              let text = body["text"]?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
-        let record: [String: String] = [
-            "ts": ISO8601DateFormatter().string(from: Date()), "page": page, "item": item, "text": text,
-        ]
+    private static func appendJSONL(_ record: [String: String], to url: URL) {
         guard let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) else { return }
-        let url = Self.repliesURL
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let handle = try? FileHandle(forWritingTo: url) {
             handle.seekToEndOfFile(); handle.write(data); handle.write(Data("\n".utf8)); try? handle.close()
@@ -116,31 +114,150 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
     }
 
-    /// Adds a "Reply" box under every card (`.item`) of a report page.
+    /// "2026-10-10-oracle-updates.html" → "Oracle" — the agent that wrote the page.
+    nonisolated static func agentName(forPage page: String) -> String {
+        var name = (page as NSString).deletingPathExtension
+        if name.range(of: #"^\d{4}-\d{2}-\d{2}-"#, options: .regularExpression) != nil {
+            name = String(name.dropFirst(11))
+        }
+        return (name.split(separator: "-").first.map(String.init) ?? "agent").capitalized
+    }
+
+    /// The page's replies, each with its agent's answer (or `pending`) merged in.
+    private func savedReplies(forPage page: String) -> [[String: String]] {
+        let answers = Self.readJSONL(Self.answersURL).filter { $0["page"] == page }
+        let agent = Self.agentName(forPage: page)
+        return Self.readJSONL(Self.repliesURL).filter { $0["page"] == page }.map { reply in
+            var r = reply
+            r["agent"] = agent
+            if let ts = reply["ts"] {
+                if let a = answers.last(where: { $0["replyTs"] == ts }) { r["answer"] = a["text"] }
+                else if pendingAnswers.contains(ts) { r["pending"] = "1" }
+            }
+            return r
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let url = webView.url, url.isFileURL, url.pathExtension.lowercased() == "html",
+              let data = try? JSONSerialization.data(withJSONObject: savedReplies(forPage: url.lastPathComponent)),
+              let json = String(data: data, encoding: .utf8) else { return }
+        let agent = Self.agentName(forPage: url.lastPathComponent)
+        webView.evaluateJavaScript("window.__plAgent = '\(agent)'; if (window.__plShow) window.__plShow(\(json));")
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: String],
+              let page = body["page"], let item = body["item"],
+              let text = body["text"]?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+        let ts = body["ts"] ?? ISO8601DateFormatter().string(from: Date())
+        // The thread so far on this card, so a follow-up reads as a conversation.
+        let thread = savedReplies(forPage: page).filter { $0["item"] == item }.map { r in
+            "Alfred: \(r["text"] ?? "")" + (r["answer"].map { "\n\(r["agent"] ?? "Agent"): \($0)" } ?? "")
+        }.joined(separator: "\n")
+        Self.appendJSONL(["ts": ts, "page": page, "item": item, "text": text], to: Self.repliesURL)
+        askAgent(page: page, item: item, text: text, replyTs: ts, thread: thread)
+    }
+
+    /// Runs the report's agent on the reply right away and shows its answer under it.
+    private func askAgent(page: String, item: String, text: String, replyTs: String, thread: String) {
+        let script = Self.answerScriptURL
+        guard FileManager.default.isExecutableFile(atPath: script.path) else {
+            deliver(page: page, replyTs: replyTs, answer: nil,
+                    note: "Saved. The agents will pick this up on their next run.")
+            return
+        }
+        pendingAnswers.insert(replyTs)
+        let agent = Self.agentName(forPage: page)
+        Task.detached {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            task.arguments = [script.path, page, item, text]
+            var env = ProcessInfo.processInfo.environment
+            env["THREAD"] = thread
+            task.environment = env
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = FileHandle.nullDevice
+            var output = ""
+            if (try? task.run()) != nil {
+                // A stuck agent run shouldn't leave the card "checking…" forever.
+                let timeout = DispatchWorkItem { if task.isRunning { task.terminate() } }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 600, execute: timeout)
+                output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                task.waitUntilExit()
+                timeout.cancel()
+            }
+            let answer = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            await MainActor.run {
+                self.pendingAnswers.remove(replyTs)
+                if answer.isEmpty {
+                    self.deliver(page: page, replyTs: replyTs, answer: nil,
+                                 note: "\(agent) couldn't answer just now. Saved for the next run.")
+                } else {
+                    Self.appendJSONL(["ts": ISO8601DateFormatter().string(from: Date()), "page": page,
+                                      "item": item, "replyTs": replyTs, "agent": agent, "text": answer],
+                                     to: Self.answersURL)
+                    self.deliver(page: page, replyTs: replyTs, answer: answer, note: nil)
+                }
+            }
+        }
+    }
+
+    /// Shows an answer (or a status note) under the reply, if that page is still open.
+    private func deliver(page: String, replyTs: String, answer: String?, note: String?) {
+        guard webView.url?.lastPathComponent == page,
+              let data = try? JSONSerialization.data(withJSONObject: [
+                  "ts": replyTs, "agent": Self.agentName(forPage: page), "answer": answer ?? "", "note": note ?? "",
+              ]),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("if (window.__plAnswer) window.__plAnswer(\(json));")
+    }
+
+    /// Adds a reply thread under every card (`.item`) of a report page: Alfred's replies,
+    /// each followed by the agent's answer once it arrives.
     private static let replyScript = """
     (function () {
       if (!location.pathname.endsWith('.html') || location.protocol !== 'file:') return;
       var page = location.pathname.split('/').pop();
       var st = document.createElement('style');
-      st.textContent = '.pl-reply{grid-column:2;font:13px -apple-system,sans-serif;margin:0}.pl-link{color:#3949c8;cursor:pointer;font-weight:600;font-size:12px;background:none;border:0;padding:0}.pl-form{display:none;gap:6px;margin-top:4px}.pl-form.open{display:flex}.pl-form input{flex:1;min-width:0;padding:4px 8px;border:1px solid #c9ced6;border-radius:6px;font:inherit}.pl-form button{padding:4px 12px;border:0;border-radius:6px;background:#3949c8;color:#fff;font:600 12px -apple-system,sans-serif;cursor:pointer}.pl-saved{margin-top:3px;padding:3px 8px;border-radius:6px;background:#e8f4ec;color:#1d5c34;font-size:12px;white-space:pre-wrap}';
+      st.textContent = '.pl-reply{grid-column:2;font:13px -apple-system,sans-serif;margin:0}.pl-link{color:#3949c8;cursor:pointer;font-weight:600;font-size:12px;background:none;border:0;padding:0}.pl-form{display:none;gap:6px;margin-top:4px}.pl-form.open{display:flex}.pl-form input{flex:1;min-width:0;padding:4px 8px;border:1px solid #c9ced6;border-radius:6px;font:inherit}.pl-form button{padding:4px 12px;border:0;border-radius:6px;background:#3949c8;color:#fff;font:600 12px -apple-system,sans-serif;cursor:pointer}.pl-saved{margin-top:3px;padding:3px 8px;border-radius:6px;background:#e8f4ec;color:#1d5c34;font-size:12px;white-space:pre-wrap}.pl-ans{margin-top:3px;padding:5px 8px;border-radius:6px;background:#eef0fb;color:#1f2a5c;font-size:12.5px;line-height:1.45;white-space:pre-wrap}.pl-ans b{color:#3949c8}.pl-wait{margin-top:3px;font-size:12px;color:#6b7280;font-style:italic}';
       document.head.appendChild(st);
       function key(el) { return (el.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 90); }
+      function answerEl(agent, text) {
+        var d = document.createElement('div'); d.className = 'pl-ans';
+        var b = document.createElement('b'); b.textContent = agent + ': ';
+        d.appendChild(b); d.appendChild(document.createTextNode(text)); return d;
+      }
+      function waitEl(text) { var d = document.createElement('div'); d.className = 'pl-wait'; d.textContent = text; return d; }
+      window.__plAnswer = function (a) {
+        var slot = document.querySelector('[data-pl-ts="' + a.ts + '"]'); if (!slot) return;
+        slot.textContent = '';
+        slot.appendChild(a.answer ? answerEl(a.agent, a.answer) : waitEl(a.note));
+      };
       window.__plShow = function (saved) {
         document.querySelectorAll('.item').forEach(function (el) {
           if (el.querySelector('.pl-reply') || el.closest('.exec')) return;
           var k = key(el), box = document.createElement('div'); box.className = 'pl-reply';
           var link = document.createElement('button'); link.className = 'pl-link'; link.textContent = '💬 Reply';
           var form = document.createElement('div'); form.className = 'pl-form';
-          var ta = document.createElement('input'); ta.placeholder = 'Reply to the agents…';
+          var ta = document.createElement('input'); ta.placeholder = 'Reply or ask a follow-up…';
           var btn = document.createElement('button'); btn.textContent = 'Send';
           var out = document.createElement('div');
           link.onclick = function () { form.classList.toggle('open'); if (form.classList.contains('open')) ta.focus(); };
-          function note(t) { var d = document.createElement('div'); d.className = 'pl-saved'; d.textContent = '✓ You: ' + t; out.appendChild(d); }
-          saved.filter(function (r) { return r.item === k; }).forEach(function (r) { note(r.text); });
+          function note(r) {
+            var d = document.createElement('div'); d.className = 'pl-saved'; d.textContent = 'You: ' + r.text; out.appendChild(d);
+            var slot = document.createElement('div'); slot.setAttribute('data-pl-ts', r.ts || ''); out.appendChild(slot);
+            if (r.answer) slot.appendChild(answerEl(r.agent, r.answer));
+            else if (r.pending) slot.appendChild(waitEl('⏳ ' + r.agent + ' is checking…'));
+          }
+          saved.filter(function (r) { return r.item === k; }).forEach(note);
           function send() {
             var t = ta.value.trim(); if (!t) return;
-            window.webkit.messageHandlers.reply.postMessage({ page: page, item: k, text: t });
-            note(t); ta.value = ''; form.classList.remove('open');
+            var ts = new Date().toISOString();
+            window.webkit.messageHandlers.reply.postMessage({ page: page, item: k, text: t, ts: ts });
+            note({ text: t, ts: ts, pending: '1', agent: window.__plAgent || 'Agent' });
+            ta.value = ''; form.classList.remove('open');
           }
           btn.onclick = send;
           ta.onkeydown = function (e) { if (e.key === 'Enter') send(); };

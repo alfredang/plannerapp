@@ -25,7 +25,7 @@ struct PlannerApp: App {
     /// data syncs across all of the user's signed-in devices. If iCloud is unavailable the app
     /// falls back to a purely local store so it still works offline.
     let container: ModelContainer = {
-        let schema = Schema([PlannerItem.self, PlannerList.self])
+        let schema = Schema([PlannerItem.self, PlannerList.self, AgentReport.self, ReportReply.self])
         do {
             let config = ModelConfiguration(
                 schema: schema,
@@ -87,7 +87,7 @@ struct PlannerApp: App {
     /// App Store builds sync against Production and fail silently without it.
     private static func initializeCloudKitSchemaIfRequested() {
         guard CommandLine.arguments.contains("-initCloudKitSchema") else { return }
-        guard let mom = NSManagedObjectModel.makeManagedObjectModel(for: [PlannerItem.self, PlannerList.self]) else {
+        guard let mom = NSManagedObjectModel.makeManagedObjectModel(for: [PlannerItem.self, PlannerList.self, AgentReport.self, ReportReply.self]) else {
             report("CK-SCHEMA: failed to build managed object model")
             return
         }

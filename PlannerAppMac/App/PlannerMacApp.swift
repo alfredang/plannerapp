@@ -26,7 +26,7 @@ struct PlannerMacApp: App {
     /// environment as the App Store iPhone app. If iCloud is unavailable (signed out, or a
     /// build without the entitlement) the app falls back to a purely local store.
     let container: ModelContainer = {
-        let schema = Schema([PlannerItem.self, PlannerList.self])
+        let schema = Schema([PlannerItem.self, PlannerList.self, AgentReport.self, ReportReply.self])
         #if DEBUG
         // A schema-init run must never open the real store: this build talks to the
         // Development environment, and mirroring the live data there would muddle it.
@@ -67,7 +67,7 @@ struct PlannerMacApp: App {
     /// Development → Production in the CloudKit console.
     private static func initializeCloudKitSchemaIfRequested() {
         guard CommandLine.arguments.contains("-initCloudKitSchema") else { return }
-        guard let mom = NSManagedObjectModel.makeManagedObjectModel(for: [PlannerItem.self, PlannerList.self]) else {
+        guard let mom = NSManagedObjectModel.makeManagedObjectModel(for: [PlannerItem.self, PlannerList.self, AgentReport.self, ReportReply.self]) else {
             print("CK-SCHEMA: failed to build managed object model")
             return
         }
@@ -97,6 +97,7 @@ struct PlannerMacApp: App {
                 .tint(Theme.accent)
                 .modelUndoSupport()
                 .frame(minWidth: 860, minHeight: 560)
+                .task { UpdatesSync.shared.start(container: container) }
                 // Route planner:// URL events (the Hermes bridge) into THIS window.
                 // Without this, every external URL spawns a brand-new window.
                 .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
