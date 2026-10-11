@@ -31,14 +31,37 @@ struct ItemRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                // Past appointments: checked = completed, unchecked = missed.
-                if item.isAppointment, item.isDone || item.isMissed {
-                    // Unticked past appointments read as a question, not a verdict: the app
-                    // can't know it happened until the circle is ticked.
-                    Label(item.isDone ? "Completed" : "Not ticked — did it happen? Tick ○ if yes",
-                          systemImage: item.isDone ? "checkmark.circle" : "exclamationmark.circle")
+                // Past appointments: ticked = completed. Unticked ones ask instead of
+                // judging — the app can't know it happened — with one-tap answers.
+                if item.isAppointment, item.isDone {
+                    Label("Completed", systemImage: "checkmark.circle")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(item.isDone ? Theme.accent : Color.red)
+                        .foregroundStyle(Theme.accent)
+                } else if item.isAppointment, item.isMissed {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Did this happen?", systemImage: "questionmark.circle")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.orange)
+                        HStack(spacing: 8) {
+                            Button(action: onToggle) {
+                                Label("Yes, it happened", systemImage: "checkmark")
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 10).padding(.vertical, 4)
+                                    .background(Theme.accent.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(Theme.accent)
+                            }
+                            if let onEdit {
+                                Button(action: onEdit) {
+                                    Label("Reply / comment", systemImage: "text.bubble")
+                                        .font(.caption.weight(.semibold))
+                                        .padding(.horizontal, 10).padding(.vertical, 4)
+                                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                                        .foregroundStyle(.primary)
+                                }
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                    }
                 }
 
                 // Own line so it never gets squeezed out of the caption row.
