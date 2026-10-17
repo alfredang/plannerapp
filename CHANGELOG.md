@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [2.3] — 2026-10-18
 
-- To-Do priorities have their own colours — Critical red, High orange, Medium blue, Low green — on the flag, the badge and in every priority menu (with a tick on the current one)
-- Once you've replied to "Did this happen?", the question changes to "Replied"
-- Mac: Atlas answers your comment on an appointment right away, under the comment — it checks Gmail, Calendar and Planner, gives the next move and saves any message as an unsent Gmail draft; the answer syncs to your iPhone
+- To-do priorities now have their own colours — Critical red, High orange, Medium blue, Low green — on the flag, the badge and in the priority menu, with a tick on the current level
+- Once you've replied to "Did this happen?" on a past appointment, it shows as Replied instead of asking again
+- Answers from your Digital Workforce agent (Atlas, on the Mac) now appear right under your comment on the appointment, so you can see the next step on your iPhone
 
 ## [2.2] — 2026-10-16
 
