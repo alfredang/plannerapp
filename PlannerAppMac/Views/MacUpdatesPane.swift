@@ -11,12 +11,10 @@ struct MacUpdatesPane: View {
     /// Past days start collapsed; the user's opens/closes are remembered for this session.
     @State private var toggledDays: Set<String> = []
 
-    private static let todayKey: String = Date().formatted(.iso8601.year().month().day())
-
     private func isExpanded(_ key: String) -> Bool {
         // A search shows every match; otherwise today is open and past days are closed.
         if !search.trimmingCharacters(in: .whitespaces).isEmpty { return true }
-        let openByDefault = key >= Self.todayKey
+        let openByDefault = key >= ReportPresentation.dayKey()
         return toggledDays.contains(key) ? !openByDefault : openByDefault
     }
 
@@ -29,12 +27,18 @@ struct MacUpdatesPane: View {
         }
     }
 
-    /// (day key, reports) — days newest first, and newest first within each day.
+    /// Days newest first; each day's Morning Brief precedes its other reports.
     private var groups: [(String, [AgentBrowser.Report])] {
         var byDay: [String: [AgentBrowser.Report]] = [:]
         for report in filtered { byDay[report.date ?? "Undated", default: []].append(report) }
         return byDay.keys.sorted(by: >).map { key in
-            (key, (byDay[key] ?? []).sorted { ($0.modified ?? 0) > ($1.modified ?? 0) })
+            (key, (byDay[key] ?? []).sorted {
+                let firstPinned = ReportPresentation.isPinnedMorningBrief(file: $0.file, title: $0.displayTitle)
+                let secondPinned = ReportPresentation.isPinnedMorningBrief(file: $1.file, title: $1.displayTitle)
+                if firstPinned != secondPinned { return firstPinned }
+                if $0.modified != $1.modified { return ($0.modified ?? 0) > ($1.modified ?? 0) }
+                return $0.file < $1.file
+            })
         }
     }
 
@@ -67,7 +71,7 @@ struct MacUpdatesPane: View {
             if browser.reports.isEmpty {
                 ContentUnavailableView(
                     "No updates yet", systemImage: "doc.richtext",
-                    description: Text("Reports your agents publish appear here — the 07:30 Morning Updates brief, daily briefs and weekly reviews."))
+                    description: Text("Reports your agents publish appear here — the 07:30 Morning Brief, daily briefs and weekly reviews."))
             }
         }
         .searchable(text: $search, prompt: "Search updates")
@@ -93,10 +97,17 @@ struct MacUpdatesPane: View {
                     .font(.title3)
                     .frame(width: 26)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(report.displayTitle)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if ReportPresentation.isPinnedMorningBrief(file: report.file, title: report.displayTitle) {
+                            Image(systemName: "pin.fill")
+                                .font(.caption).foregroundStyle(Theme.accent)
+                                .accessibilityLabel("Pinned Morning Brief")
+                        }
+                        Text(report.displayTitle)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                    }
                     if let summary = report.summary, !summary.isEmpty {
                         Text(summary)
                             .font(.callout)

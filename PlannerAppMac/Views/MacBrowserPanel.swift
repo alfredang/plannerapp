@@ -35,7 +35,7 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         var url: String?
         var modified: Int?
         var id: String { file }
-        var displayTitle: String { title ?? file.replacingOccurrences(of: ".html", with: "") }
+        var displayTitle: String { ReportPresentation.title(title ?? file.replacingOccurrences(of: ".html", with: "")) }
     }
 
     private var observations: [NSKeyValueObservation] = []
@@ -91,7 +91,7 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     /// Runs the report's agent on one reply and prints its answer (see the script's header).
     nonisolated static var answerScriptURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("DigitalWorkforce/bin/answer-reply.sh")
+            .appendingPathComponent("DigitalWorkforce/bin/answer-reply-worker.py")
     }
 
     /// Replies whose agent is still working, by reply ts.
@@ -131,7 +131,10 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             var r = reply
             r["agent"] = agent
             if let ts = reply["ts"] {
-                if let a = answers.last(where: { $0["replyTs"] == ts }) { r["answer"] = a["text"] }
+                if let a = answers.last(where: { $0["replyTs"] == ts }) {
+                    r["answer"] = a["text"]
+                    r["agent"] = a["agent"] ?? agent
+                }
                 else if pendingAnswers.contains(ts) { r["pending"] = "1" }
             }
             return r
@@ -144,6 +147,24 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
               let json = String(data: data, encoding: .utf8) else { return }
         let agent = Self.agentName(forPage: url.lastPathComponent)
         webView.evaluateJavaScript("window.__plAgent = '\(agent)'; if (window.__plShow) window.__plShow(\(json));")
+        resumeUnansweredReplies(forPage: url.lastPathComponent)
+    }
+
+    /// Recover recent replies after a restart; the worker prevents duplicate runs.
+    private func resumeUnansweredReplies(forPage page: String) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let fallback = ISO8601DateFormatter()
+        for reply in savedReplies(forPage: page) {
+            guard reply["answer"] == nil, let ts = reply["ts"], !pendingAnswers.contains(ts),
+                  let date = formatter.date(from: ts) ?? fallback.date(from: ts),
+                  date > Date().addingTimeInterval(-86_400),
+                  let item = reply["item"], let text = reply["text"] else { continue }
+            let thread = savedReplies(forPage: page).filter { $0["item"] == item && $0["ts"] != ts }
+                .map { "Alfred: \($0["text"] ?? "")" + ($0["answer"].map { "\nAgent: \($0)" } ?? "") }
+                .joined(separator: "\n")
+            askAgent(page: page, item: item, text: text, replyTs: ts, thread: thread)
+        }
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -162,17 +183,18 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     /// Runs the report's agent on the reply right away and shows its answer under it.
     private func askAgent(page: String, item: String, text: String, replyTs: String, thread: String) {
         let script = Self.answerScriptURL
-        guard FileManager.default.isExecutableFile(atPath: script.path) else {
+        guard FileManager.default.fileExists(atPath: script.path) else {
             deliver(page: page, replyTs: replyTs, answer: nil,
                     note: "Saved. The agents will pick this up on their next run.")
             return
         }
         pendingAnswers.insert(replyTs)
         let agent = Self.agentName(forPage: page)
+        deliver(page: page, replyTs: replyTs, answer: nil, note: "⏳ \(agent) is checking the next move…")
         Task.detached {
             let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            task.arguments = [script.path, page, item, text]
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+            task.arguments = [script.path, page, item, text, replyTs]
             var env = ProcessInfo.processInfo.environment
             env["THREAD"] = thread
             task.environment = env
@@ -180,7 +202,9 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             task.standardOutput = pipe
             task.standardError = FileHandle.nullDevice
             var output = ""
+            var didRun = false
             if (try? task.run()) != nil {
+                didRun = true
                 // A stuck agent run shouldn't leave the card "checking…" forever.
                 let timeout = DispatchWorkItem { if task.isRunning { task.terminate() } }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 600, execute: timeout)
@@ -188,16 +212,13 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                 task.waitUntilExit()
                 timeout.cancel()
             }
-            let answer = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            let answer = didRun && task.terminationStatus == 0 ? output.trimmingCharacters(in: .whitespacesAndNewlines) : ""
             await MainActor.run {
                 self.pendingAnswers.remove(replyTs)
                 if answer.isEmpty {
                     self.deliver(page: page, replyTs: replyTs, answer: nil,
                                  note: "\(agent) couldn't answer just now. Saved for the next run.")
                 } else {
-                    Self.appendJSONL(["ts": ISO8601DateFormatter().string(from: Date()), "page": page,
-                                      "item": item, "replyTs": replyTs, "agent": agent, "text": answer],
-                                     to: Self.answersURL)
                     self.deliver(page: page, replyTs: replyTs, answer: answer, note: nil)
                 }
             }
@@ -206,9 +227,11 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     /// Shows an answer (or a status note) under the reply, if that page is still open.
     private func deliver(page: String, replyTs: String, answer: String?, note: String?) {
+        let agent = Self.readJSONL(Self.answersURL).last(where: { $0["page"] == page && $0["replyTs"] == replyTs })?["agent"]
+            ?? Self.agentName(forPage: page)
         guard webView.url?.lastPathComponent == page,
               let data = try? JSONSerialization.data(withJSONObject: [
-                  "ts": replyTs, "agent": Self.agentName(forPage: page), "answer": answer ?? "", "note": note ?? "",
+                  "ts": replyTs, "agent": agent, "answer": answer ?? "", "note": note ?? "",
               ]),
               let json = String(data: data, encoding: .utf8) else { return }
         webView.evaluateJavaScript("if (window.__plAnswer) window.__plAnswer(\(json));")

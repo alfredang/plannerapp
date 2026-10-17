@@ -97,7 +97,10 @@ struct PlannerMacApp: App {
                 .tint(Theme.accent)
                 .modelUndoSupport()
                 .frame(minWidth: 860, minHeight: 560)
-                .task { UpdatesSync.shared.start(container: container) }
+                .task {
+                    UpdatesSync.shared.start(container: container)
+                    AppointmentAgent.shared.start(container: container)
+                }
                 // Route planner:// URL events (the Hermes bridge) into THIS window.
                 // Without this, every external URL spawns a brand-new window.
                 .handlesExternalEvents(preferring: ["*"], allowing: ["*"])

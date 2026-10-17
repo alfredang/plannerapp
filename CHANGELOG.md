@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+- To-Do priorities have their own colours — Critical red, High orange, Medium blue, Low green — on the flag, the badge and in every priority menu (with a tick on the current one)
+- Once you've replied to "Did this happen?", the question changes to "Replied"
+- Mac: Atlas answers your comment on an appointment right away, under the comment — it checks Gmail, Calendar and Planner, gives the next move and saves any message as an unsent Gmail draft; the answer syncs to your iPhone
+
+## [2.2] — 2026-10-16
+
+- Update appointments by voice or text: say or type "move the Claude exam to 8pm" or "postpone UOB training to Friday" and the existing appointment is changed, instead of a new one being added
+- A time alone keeps the day, and a day alone keeps the time
+- Changes you make on iPhone now reach the Mac and your other devices straight away, even if you lock the phone right after
+- Reply / comment on a past appointment now opens a comment box right under it, instead of the edit form; your comments show on the appointment and sync to your other devices
+
 ## [2.0] — 2026-10-11
 
 - New Updates tab: read your Digital Workforce reports from the Mac and reply to any card right from the iPhone (syncs through iCloud)

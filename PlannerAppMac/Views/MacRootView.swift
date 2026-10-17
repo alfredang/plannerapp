@@ -86,6 +86,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
 enum SidebarSelection: Hashable {
     case category(SidebarItem)
     case userList(UUID)
+    case digitalStaff(String)
 }
 
 /// Desktop root: two-column layout. Left — smart categories plus the user's own lists
@@ -97,6 +98,7 @@ struct MacRootView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var selection: SidebarSelection = .category(.all)
+    @State private var staffRoster: [String: AgentProfile] = [:]
     @State private var showingNewList = false
     @State private var newListName = ""
     /// When set, the New List alert creates a sub-list under this parent.
@@ -136,6 +138,18 @@ struct MacRootView: View {
 
     private func expandAllLists() {
         collapsedListsRaw = ""
+    }
+
+    private func openWorkforce(_ list: PlannerList) {
+        collapsedListsRaw = collapsedLists.subtracting([list.id]).map(\.uuidString).joined(separator: ",")
+        selection = .userList(list.id)
+        UserDefaults.standard.set(false, forKey: "agentPaneShowsItems")
+    }
+
+    private func selection(for list: PlannerList) -> SidebarSelection {
+        let id = list.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if staffRoster[id] != nil { return .digitalStaff(id) }
+        return .userList(list.id)
     }
     @State private var renamingList: PlannerList?
     @State private var renameText = ""
@@ -216,6 +230,7 @@ struct MacRootView: View {
         .task {
             // Start with every sub-list tucked away; expand by chevron as needed.
             collapseAllLists()
+            staffRoster = AgentRoster.load()
             PowerSettings.registerLoginItemOnce()
             HermesBridge.prepareWorkspace()
             // One-time repair for items captured inside someone's list before the capture
@@ -229,6 +244,11 @@ struct MacRootView: View {
             if let raw = UserDefaults.standard.string(forKey: "debugSidebar"),
                let item = SidebarItem(rawValue: raw) {
                 selection = .category(item)
+            }
+            // `-debugList Atlas` opens a user list by name.
+            if let name = UserDefaults.standard.string(forKey: "debugList"),
+               let list = lists.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                selection = .userList(list.id)
             }
             #endif
             WhatsAppReminders.shared.start(context: context)
@@ -368,6 +388,18 @@ struct MacRootView: View {
             Section {
                 ForEach(ListHierarchy.rows(lists, collapsed: collapsedLists)) { row in
                     userListRow(row.list, depth: row.depth)
+                    if row.list.name.caseInsensitiveCompare("Digital Workforce") == .orderedSame,
+                       !collapsedLists.contains(row.list.id) {
+                        let listed = Set((row.list.children ?? []).map { $0.name.lowercased() })
+                        ForEach(AgentRoster.staffIDs.filter { !listed.contains($0) }, id: \.self) { id in
+                            if let agent = staffRoster[id] {
+                                Label(agent.displayName, systemImage: "person.crop.circle")
+                                    .padding(.leading, CGFloat(row.depth + 1) * 28)
+                                    .tag(SidebarSelection.digitalStaff(id))
+                                    .accessibilityLabel("Chat with \(agent.displayName)")
+                            }
+                        }
+                    }
                 }
                 .onMove(perform: moveLists)
                 Button {
@@ -472,7 +504,18 @@ struct MacRootView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(isCollapsed ? "Expand \(list.name)" : "Collapse \(list.name)")
             }
-            Label(list.name, systemImage: "folder")
+            if list.name.caseInsensitiveCompare("Digital Workforce") == .orderedSame {
+                Button { openWorkforce(list) } label: {
+                    Label(list.name, systemImage: "folder")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Digital Workforce")
+                .help("Expand the staff and open the interactive org chart")
+            } else {
+                Label(list.name, systemImage: "folder")
+            }
             if list.isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 9))
@@ -482,7 +525,7 @@ struct MacRootView: View {
         }
             .padding(.leading, CGFloat(depth) * 28)
             .badge(list.subtreeActiveCount)
-            .tag(SidebarSelection.userList(list.id))
+            .tag(selection(for: list))
             .onDrop(of: [UTType.plannerItem],
                     isTargeted: Binding(
                         get: { dropTargetListID == list.id },
@@ -656,7 +699,9 @@ struct MacRootView: View {
         case .category(.about):
             AboutView()
         default:
-            MacPlannerPane(selection: selection)
+            MacPlannerPane(selection: selection,
+                           onOpenList: { selection = .userList($0) },
+                           onOpenAgent: { selection = .digitalStaff($0) })
         }
     }
 }

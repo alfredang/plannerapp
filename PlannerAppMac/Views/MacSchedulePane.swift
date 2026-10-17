@@ -50,7 +50,7 @@ enum ScheduleLoader {
 
     // MARK: Digital Workforce (launchd)
 
-    private static func workforce() -> [ScheduledJob] {
+    static func workforce() -> [ScheduledJob] {
         let dir = home.appendingPathComponent("Library/LaunchAgents")
         let files = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.lastPathComponent.hasPrefix(workforcePrefix) && $0.pathExtension == "plist" }
@@ -85,7 +85,7 @@ enum ScheduleLoader {
             let status: ScheduledJob.Status = code == nil ? .unknown : (code == 0 ? .ok : .failed)
             return ScheduledJob(
                 id: "wf-" + label, source: .workforce,
-                name: short.replacingOccurrences(of: "-", with: " ").capitalized,
+                name: short == "updates-brief" ? "Morning Brief" : short.replacingOccurrences(of: "-", with: " ").capitalized,
                 detail: agent, schedule: schedule, nextRun: next,
                 lastRun: log.map(modified), status: log == nil && code == 0 ? .unknown : status,
                 lastError: code.flatMap { $0 == 0 ? nil : "Last exit code \($0)" },

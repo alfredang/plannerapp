@@ -60,6 +60,9 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   to appointment.
 - ✍️ **Typo-tolerant titles** — the assistant fixes spelling as it writes an item
   ("sumit ato" → "Submit ATO"), but never adds words you didn't type.
+- 🔁 **Change appointments by voice or text** — say or type *"move the Claude exam to 8pm"*
+  or *"postpone UOB training to Friday"* and the existing appointment is changed instead of a
+  new one being added. A time alone keeps the day; a day alone keeps the time.
 - 🎙️ **Voice capture** — tap the mic, speak, and native speech-to-text transcribes it.
 - ✏️ **Tap to edit** — tap any item to change its title, notes, type, date, list or assignee
   in the same form used to create it.
@@ -77,7 +80,9 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   custom order syncs across devices.
 - 🚩 **To-Do priorities** — mark a to-do **Critical, High, Medium or Low** from the flag on
   its row, the edit form or its menu; to-dos sort by priority, and Critical and High are **pinned automatically**
-  (lowering them unpins). Coloured badges show the level; the Hermes agent can set it too.
+  (lowering them unpins). Each level has its colour — **Critical red, High orange, Medium
+  blue, Low green** — on the flag, the badge and every priority menu. The Hermes agent can set
+  it too.
 - 📌 **Pin to top** — tap the pin on a row (or swipe right on iPhone); pinned entries float
   above the rest, and the **Pinned** view collects them.
 - 👤 **Delegate with Assign to** — put someone's name on an item and it leaves your queue:
@@ -85,6 +90,14 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   person's list shows theirs. Set who "you" are in Settings ▸ Me.
 - 📆 **Mirror to your system Calendar** — optionally copy dated appointments into any calendar
   you pick, including a Google account added in iOS Settings; EventKit only, off until enabled.
+- ❓ **"Did this happen?"** — an appointment that's over but never ticked asks instead of
+  judging, with **Yes, it happened** and **Reply / comment**. A comment opens right under the
+  row, is saved in the appointment's notes and syncs to every device. On the Mac, **Atlas**
+  (the Digital Workforce schedule agent) answers each comment on the spot: it checks Gmail,
+  Calendar and Planner, says what to do next and saves any message as an unsent Gmail draft.
+  Its answer appears under your comment on the iPhone too.
+- ✅ **Follow-up actions** — add follow-up to-dos straight from an appointment; they show
+  under it and in your To-Do queue.
 - 📥 **Auto-archive** — checking off an item moves it to the Archive; uncheck to restore.
 - ↩️ **Undo everywhere** — ⌘Z on the Mac, the Undo toolbar button on iPhone.
 - ☁️ **iCloud sync** — SwiftData + CloudKit mirrors your data to your private iCloud database
@@ -106,6 +119,14 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   reading live state from an auto-maintained JSON snapshot. **The agent cannot delete your
   data by default:** `delete` archives instead and deleting a list is refused; opt in via
   Settings ▸ Agent safety.
+- 📰 **Updates (iPhone + Mac)** — read the Digital Workforce agents' reports (Morning Brief,
+  daily previews, weekly reviews) in Planner ▸ Updates, newest first and grouped by day. Reply
+  under any card, from either device; on the Mac the agent that wrote the report answers right
+  away, and every reply is handed to the agents' next run.
+- 🧑‍💼 **Digital Workforce (Mac)** — each agent's profile and org chart, a chat with any agent,
+  and a **Schedule** view of every background job on the Mac (workforce LaunchAgents, Hermes
+  and OpenClaw cron, WhatsApp reminders). The agent panel has a built-in **Browser** tab for
+  reports and claude.ai artifacts.
 - 💬 **Feedback & About** — house-style tabs (WhatsApp feedback, developer info, version).
 
 ## Tech Stack
@@ -143,6 +164,10 @@ PlannerApp/                             — iOS app + code shared with the Mac t
 │               SingaporeHolidays.swift — MOM public-holiday table for the calendars
 │               MeetingLink.swift       — find/set an appointment's video-meeting link
 │               ManualOrder.swift       — synced drag-rearrange ordering helper
+│               AppointmentComments.swift — "Reply / comment" lines + agent answers in notes
+│               FollowUpActions.swift   — follow-up to-dos linked to an appointment
+│               AgentUpdates.swift      — synced agent reports (AgentReport) + replies
+│               ReportPresentation.swift — report titles and ordering
 │               ListHierarchy.swift     — nested sub-list outline + drag-to-nest logic
 │               ChatMessage.swift       — assistant conversation turn
 ├── Services/   IntentAssistant.swift   — on-device Apple Intelligence drafting (26+)
@@ -159,6 +184,7 @@ PlannerApp/                             — iOS app + code shared with the Mac t
 └── Views/      MainTabView, TodoListView (Planner: To-Do | Appointment), CalendarView
                 (month grid + list), ArchiveView, AddItemView, ListsManagerView
                 (+ ListDetailView), RemindersSettingsView (Settings), ItemRow,
+                FollowUpActionsView, UpdatesView,
                 VoiceCaptureView, AssistantChatView (not currently shown), FeedbackView,
                 AboutView
 
@@ -168,13 +194,27 @@ PlannerAppMac/                          — macOS desktop edition (DMG)
 │                                         snapshot + Hermes skill/AGENTS.md workspace
 │               WhatsAppReminders.swift — daily WhatsApp digests of appointments
 │               AppearanceController.swift — Light/Dark/System for the Mac app
+│               UpdatesSync.swift       — agent reports → iCloud; replies → the agents
+│               AppointmentAgent.swift  — Atlas answers appointment comments
+│               AgentRoster.swift       — the agents in ~/.claude/agents
+│               AgentChat.swift         — chat sessions with an agent
+│               PowerSettings.swift     — daily wake / power-on schedule
 └── Views/      MacRootView.swift       — sidebar: smart views + user lists + sync badge
                 MacPlannerPane.swift    — item list (Upcoming by date) + capture bar
                 MacCalendarPane.swift   — month grid / list calendar with holidays
                 MacTerminalPanel.swift  — collapsible SwiftTerm panel running hermes
+                MacBrowserPanel.swift   — agent panel's Browser tab (reports, replies)
+                MacUpdatesPane.swift    — report history, grouped by day
+                MacSchedulePane.swift   — every scheduled background job on this Mac
+                MacAgentProfileView.swift, MacAgentChatView.swift,
+                DigitalWorkforceArtifactView.swift — agent profiles, org chart, chat
                 MacSettingsPane.swift   — owner, appearance, WhatsApp, agent safety
 
+PlannerAppUITests/                      — iOS UI tests (navigation, appointment edits)
+
 scripts/build-macos-dmg.sh              — Release build → signed, notarized DMG
+scripts/test-*.swift                    — standalone regression tests (capture-bar edits,
+                                          follow-up actions)
 scripts/icon/make_icon.py               — draws the iOS + Mac app icons
 ```
 
@@ -187,6 +227,17 @@ open PlannerApp.xcodeproj
 ```
 
 Build & run on the **iPhone 17 Pro** simulator, or select your device.
+
+### Tests
+
+```bash
+# UI tests (iOS simulator)
+xcodebuild test -project PlannerApp.xcodeproj -scheme PlannerApp \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+
+# Standalone regression tests (no simulator) — the run line is at the top of each file
+head -3 scripts/test-capture-edits.swift scripts/test-follow-up-actions.swift
+```
 
 ### Enabling iCloud sync on a device
 

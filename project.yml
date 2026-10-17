@@ -16,17 +16,32 @@ packages:
 
 settings:
   base:
-    MARKETING_VERSION: "2.0"
-    CURRENT_PROJECT_VERSION: "31"
+    MARKETING_VERSION: "2.2"
+    CURRENT_PROJECT_VERSION: "34"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: GU9WTSTX9M
     CODE_SIGN_STYLE: Automatic
 
 targets:
+  PlannerAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: PlannerAppUITests
+    dependencies:
+      - target: PlannerApp
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.tertiaryinfotech.plannerapp.uitests
+        TEST_TARGET_NAME: PlannerApp
   PlannerApp:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
+    scheme:
+      testTargets:
+        - PlannerAppUITests
     sources:
       - path: PlannerApp
     settings:
@@ -56,6 +71,7 @@ targets:
       - path: PlannerApp/Theme
       - path: PlannerApp/Assets.xcassets
       - path: PlannerApp/Views/ItemRow.swift
+      - path: PlannerApp/Views/FollowUpActionsView.swift
       - path: PlannerApp/Views/AddItemView.swift
       - path: PlannerApp/Views/ListsManagerView.swift
       - path: PlannerApp/Views/ArchiveView.swift
@@ -67,6 +83,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Planner
+        CURRENT_PROJECT_VERSION: "36"
         PRODUCT_BUNDLE_IDENTIFIER: com.tertiaryinfotech.plannerapp
         INFOPLIST_FILE: PlannerAppMac/Info.plist
         CODE_SIGN_ENTITLEMENTS: PlannerAppMac/PlannerAppMac.entitlements

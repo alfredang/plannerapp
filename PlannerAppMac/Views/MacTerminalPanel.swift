@@ -71,9 +71,13 @@ struct MacTerminalPanel: View {
     @AppStorage(AgentBrowser.tabKey) private var tab = "terminal"
     private var showsBrowser: Bool { tab == "browser" }
 
-    /// Bumping this recreates the terminal view, restarting the agent process.
-    @State private var runID = UUID()
-    @State private var processExited = false
+    /// Each agent gets its own terminal, started the first time it's picked and kept alive
+    /// (just hidden) while another agent is showing — switching never restarts a session.
+    @State private var startedAgents: [TerminalAgent] = []
+    /// Bumping an agent's ID recreates its terminal view, restarting that agent's process.
+    @State private var runIDs: [TerminalAgent: UUID] = [:]
+    @State private var exitedAgents: Set<TerminalAgent> = []
+    private var processExited: Bool { exitedAgents.contains(agent) }
 
     /// Width of the scroller strip SwiftTerm reserves at its right edge (legacy style —
     /// must match `scrollerStyle` in SwiftTerm's MacTerminalView).
@@ -90,13 +94,18 @@ struct MacTerminalPanel: View {
                 // computed on width − scrollerWidth) and we hide that scroller — so push the
                 // dead strip past the panel edge (clipped below) to keep the visible left and
                 // right margins symmetric at 8pt.
-                HermesTerminalView(agent: agent) {
-                    processExited = true
+                ForEach(startedAgents) { running in
+                    let isActive = running == agent && !showsBrowser
+                    HermesTerminalView(agent: running, isActive: isActive) {
+                        exitedAgents.insert(running)
+                    }
+                    .padding(.leading, 8)
+                    .padding(.trailing, 8 - Self.scrollerInset)
+                    .padding(.vertical, 6)
+                    .id(runIDs[running])
+                    .opacity(running == agent ? 1 : 0)
+                    .allowsHitTesting(running == agent)
                 }
-                .padding(.leading, 8)
-                .padding(.trailing, 8 - Self.scrollerInset)
-                .padding(.vertical, 6)
-                .id(runID)
 
                 if processExited {
                     exitOverlay
@@ -113,7 +122,9 @@ struct MacTerminalPanel: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .onChange(of: terminalAgentRaw) { restart() }   // switching agents reboots the terminal
+        .onAppear { start(agent) }
+        // Switching agents shows that agent's own terminal, starting it on first use.
+        .onChange(of: terminalAgentRaw) { start(agent) }
     }
 
     private var header: some View {
@@ -206,9 +217,14 @@ struct MacTerminalPanel: View {
         .background(.regularMaterial)
     }
 
+    private func start(_ agent: TerminalAgent) {
+        if !startedAgents.contains(agent) { startedAgents.append(agent) }
+    }
+
+    /// Restarts only the agent currently showing; the others keep running.
     private func restart() {
-        processExited = false
-        runID = UUID()
+        exitedAgents.remove(agent)
+        runIDs[agent] = UUID()
     }
 }
 
@@ -216,6 +232,9 @@ struct MacTerminalPanel: View {
 /// (or a plain shell as fallback) inside the Hermes workspace directory.
 private struct HermesTerminalView: NSViewRepresentable {
     var agent: TerminalAgent
+    /// The terminal on screen. Background agents' terminals are hidden so they never take
+    /// keystrokes or wheel events, but their processes keep running.
+    var isActive: Bool
     var onProcessExit: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onProcessExit: onProcessExit) }
@@ -227,7 +246,7 @@ private struct HermesTerminalView: NSViewRepresentable {
         context.coordinator.linkRouter = LinkRoutingDelegate(base: terminal)
         terminal.terminalDelegate = context.coordinator.linkRouter
         context.coordinator.wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak terminal] event in
-            guard let terminal, event.window === terminal.window,
+            guard let terminal, event.window === terminal.window, !terminal.isHiddenOrHasHiddenAncestor,
                   UserDefaults.standard.string(forKey: AgentBrowser.tabKey) != "browser",
                   terminal.bounds.contains(terminal.convert(event.locationInWindow, from: nil))
             else { return event }
@@ -288,11 +307,25 @@ private struct HermesTerminalView: NSViewRepresentable {
             args: ["-l", "-c", bootstrap],
             environment: env.map { "\($0.key)=\($0.value)" }
         )
+        terminal.isHidden = !isActive
+        context.coordinator.wasActive = isActive
+        if isActive { Self.focus(terminal) }
         return terminal
     }
 
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
         Self.hideScroller(in: nsView)
+        nsView.isHidden = !isActive
+        // Coming to the front: hand it the keyboard so typing goes to this agent.
+        if isActive && !context.coordinator.wasActive { Self.focus(nsView) }
+        context.coordinator.wasActive = isActive
+    }
+
+    private static func focus(_ view: NSView) {
+        DispatchQueue.main.async {
+            guard !view.isHiddenOrHasHiddenAncestor else { return }
+            view.window?.makeFirstResponder(view)
+        }
     }
 
     /// SwiftUI can build this view more than once (e.g. the first layout pass picks the
@@ -326,6 +359,7 @@ private struct HermesTerminalView: NSViewRepresentable {
         /// Set when SwiftUI tears this terminal down, so its exit isn't reported as the
         /// visible terminal's.
         var isDismantled = false
+        var wasActive = false
         var linkRouter: LinkRoutingDelegate?
         var wheelMonitor: Any?
         init(onProcessExit: @escaping () -> Void) { self.onProcessExit = onProcessExit }

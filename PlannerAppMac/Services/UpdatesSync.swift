@@ -56,18 +56,20 @@ final class UpdatesSync {
         for entry in entries {
             guard let html = try? String(contentsOf: dir.appendingPathComponent(entry.file), encoding: .utf8),
                   html.utf8.count < 700_000 else { continue }
-            let hash = SHA256.hash(data: Data(html.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+            let displayHTML = ReportPresentation.title(html)
+            let title = ReportPresentation.title(entry.title ?? entry.file)
+            let hash = SHA256.hash(data: Data(displayHTML.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
             let report = byFile[entry.file] ?? {
                 let new = AgentReport(file: entry.file)
                 context.insert(new)
                 return new
             }()
-            guard report.contentHash != hash else { continue }
-            report.title = entry.title ?? entry.file
+            guard report.contentHash != hash || report.title != title else { continue }
+            report.title = title
             report.agent = entry.agent ?? ""
             report.dateKey = entry.date ?? String(entry.file.prefix(10))
             report.summary = entry.summary ?? ""
-            report.html = html
+            report.html = displayHTML
             report.contentHash = hash
             report.modifiedAt = entry.modified.map { Date(timeIntervalSince1970: TimeInterval($0)) } ?? Date()
             changed = true

@@ -164,14 +164,16 @@ struct MacCalendarPane: View {
     private func monthGrid(_ days: [Date: [PlannerItem]]) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                ForEach(weekdaySymbols, id: \.self) { symbol in
+                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { index, symbol in
+                    let weekday = (cal.firstWeekday - 1 + index) % 7 + 1
                     Text(symbol.uppercased())
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background([1, 7].contains(weekday) ? Color.gray.opacity(0.08) : Color.clear)
                 }
             }
-            .padding(.vertical, 6)
             Divider()
             ForEach(weeks, id: \.first) { week in
                 HStack(spacing: 0) {
@@ -190,6 +192,7 @@ struct MacCalendarPane: View {
         let inMonth = cal.isDate(day, equalTo: month, toGranularity: .month)
         let isToday = cal.isDateInToday(day)
         let isSelected = cal.isDate(day, inSameDayAs: selectedDay)
+        let isWeekend = [1, 7].contains(cal.component(.weekday, from: day))
         let holiday = SingaporeHolidays.name(on: day)
         return GeometryReader { geo in
             // How many appointment lines fit under the day number (and holiday name).
@@ -235,6 +238,7 @@ struct MacCalendarPane: View {
         .background(isSelected ? Theme.accent.opacity(0.12)
                     : (holiday != nil ? Color.red.opacity(0.06)
                        : (inMonth ? Color.clear : Color.primary.opacity(0.035))))
+        .background(isWeekend ? Color.gray.opacity(0.08) : Color.clear)
         .opacity(inMonth ? 1 : 0.6)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { addAppointment(on: day) }

@@ -1,14 +1,26 @@
 import SwiftUI
 import SwiftData
 
-/// The main planner screen: two top tabs — To-Do and Appointment — each with its own pair
-/// of sub-tabs (To-Do: All Tasks / Pinned Tasks; Appointment: Today / Upcoming). A page
-/// never mixes both kinds. Includes the **voice add** mic button and a manual add button.
+/// Planner opens to daily briefs, with Tasks and Appointments one top tab away.
 struct TodoListView: View {
-    /// Which top tab is open — To-Do or Appointment.
+    private enum PlannerSection: String, CaseIterable, Identifiable {
+        case updates = "Updates", tasks = "Tasks", appointments = "Appointments"
+        var id: String { rawValue }
+        var symbol: String {
+            switch self {
+            case .updates: return "doc.richtext"
+            case .tasks: return "checklist"
+            case .appointments: return "calendar"
+            }
+        }
+    }
+
+    @State private var section: PlannerSection = .updates
     @State private var mode: PlannerKind = .task
 
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var openedDay = ReportPresentation.dayKey()
 
     // Active items only; checked items auto-archive and disappear from here.
     @Query(
@@ -30,6 +42,9 @@ struct TodoListView: View {
     @State private var speech: SpeechRecognizer?
     @State private var input = ""
     @State private var isThinking = false
+    /// The assistant's answer to an edit ("Moved … to Thu 8 PM") or a miss — shown briefly
+    /// above the bar. Plain adds stay silent: the new row is the feedback.
+    @State private var reply: String?
     @State private var deletingItem: PlannerItem?
     @FocusState private var inputFocused: Bool
 
@@ -46,8 +61,15 @@ struct TodoListView: View {
         #if DEBUG
         // Screenshot helper: `-openUpcoming` opens Appointment ▸ Upcoming at launch.
         if CommandLine.arguments.contains("-openUpcoming") {
+            _section = State(initialValue: .appointments)
             _mode = State(initialValue: .appointment)
             _filter = State(initialValue: .category(.scheduled))
+        } else if CommandLine.arguments.contains("-openAppointments") {
+            _section = State(initialValue: .appointments)
+            _mode = State(initialValue: .appointment)
+            _filter = State(initialValue: .category(.today))
+        } else if CommandLine.arguments.contains("-openTasks") {
+            _section = State(initialValue: .tasks)
         }
         #endif
     }
@@ -61,7 +83,7 @@ struct TodoListView: View {
     private var modeTitle: String { mode == .task ? "To-Dos" : "Appointments" }
 
     private var navigationTitle: String {
-        if case .list = filter, let list = currentList { return list.name }
+        if section != .updates, case .list = filter, let list = currentList { return list.name }
         return "Planner"
     }
 
@@ -99,7 +121,7 @@ struct TodoListView: View {
     /// shows the same arrangement); never-placed rows keep their date order, after the
     /// placed ones. Same for the list chips below.
     /// Visible rows in manual drag order, pinned first.
-    /// To-dos also sort by priority (Critical → Low) inside each pinned partition.
+    /// To-dos sort by priority (Critical → Low) first, pinned first within each priority.
     private var rows: [PlannerItem] {
         mode == .task
             ? ManualOrder.sortedPinnedByPriority(visibleItems, pinned: { $0.isPinned },
@@ -119,42 +141,51 @@ struct TodoListView: View {
             VStack(spacing: 0) {
                 modeTabBar
                 Divider()
-                subTabBar
-                Divider()
-                duplicateBanner
-                if visibleItems.isEmpty {
-                    emptyState
+                if section == .updates {
+                    UpdatesContentView(search: $searchText)
+                        .id(openedDay)
                 } else {
-                    itemList
+                    subTabBar
+                    Divider()
+                    duplicateBanner
+                    if visibleItems.isEmpty {
+                        emptyState
+                    } else {
+                        itemList
+                    }
                 }
             }
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText,
                         placement: .navigationBarDrawer(displayMode: .always),
-                        prompt: mode == .task ? "Search to-dos" : "Search appointments")
+                        prompt: section == .updates ? "Search updates" : (mode == .task ? "Search tasks" : "Search appointments"))
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showingLists = true } label: {
-                        Image(systemName: "folder.badge.gearshape")
+                if section != .updates {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { showingLists = true } label: {
+                            Image(systemName: "folder.badge.gearshape")
+                        }
+                        .accessibilityLabel("Manage lists")
                     }
-                    .accessibilityLabel("Manage lists")
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { withAnimation { undoManager?.undo() } } label: {
-                        Image(systemName: "arrow.uturn.backward")
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { withAnimation { undoManager?.undo() } } label: {
+                            Image(systemName: "arrow.uturn.backward")
+                        }
+                        .disabled(!(undoManager?.canUndo ?? false))
+                        .accessibilityLabel("Undo")
                     }
-                    .disabled(!(undoManager?.canUndo ?? false))
-                    .accessibilityLabel("Undo")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingAdd = true } label: {
-                        Image(systemName: "plus")
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showingAdd = true } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel("Add item")
                     }
-                    .accessibilityLabel("Add item")
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) { captureBar }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if section != .updates { captureBar }
+            }
             .sheet(isPresented: $showingAdd) {
                 // Default the form to this tab's kind.
                 AddItemView(prefill: ParsedEntry(title: "", kind: mode, date: nil),
@@ -180,10 +211,17 @@ struct TodoListView: View {
                     filter = .category(.all)
                 }
             }
+            .onChange(of: scenePhase) { _, phase in
+                let today = ReportPresentation.dayKey()
+                if phase == .active && openedDay != today {
+                    openedDay = today
+                    select(.updates)
+                }
+            }
         }
     }
 
-    // MARK: - Top tabs (To-Do | Appointment) and their sub-tabs
+    // MARK: - Top tabs and their sub-tabs
 
     /// The sub-views of the open top tab. To-Do offers All Tasks and Pinned Tasks;
     /// Appointment offers Today and Upcoming ("scheduled" = anything with a date, broken
@@ -194,27 +232,32 @@ struct TodoListView: View {
             : [(.today, "Today"), (.scheduled, "Upcoming")]
     }
 
-    private func select(_ kind: PlannerKind) {
+    private func select(_ selected: PlannerSection) {
         withAnimation {
-            mode = kind
-            filter = .category(kind == .task ? .all : .today)
+            section = selected
+            searchText = ""
+            if selected != .updates {
+                mode = selected == .tasks ? .task : .appointment
+                filter = .category(mode == .task ? .all : .today)
+            }
         }
     }
 
     private var modeTabBar: some View {
         HStack(spacing: 0) {
-            ForEach(PlannerKind.allCases) { kind in
-                Button { select(kind) } label: {
+            ForEach(PlannerSection.allCases) { tab in
+                Button { select(tab) } label: {
                     VStack(spacing: 7) {
                         HStack(spacing: 6) {
-                            Image(systemName: kind.symbol)
-                            Text(kind == .task ? "To-Do" : "Appointment")
+                            Image(systemName: tab.symbol)
+                            Text(tab.rawValue)
+                                .lineLimit(1).minimumScaleFactor(0.8)
                         }
-                        .font(.subheadline.weight(mode == kind ? .semibold : .regular))
-                        .foregroundStyle(mode == kind ? Theme.accent : Color.secondary)
+                        .font(.subheadline.weight(section == tab ? .semibold : .regular))
+                        .foregroundStyle(section == tab ? Theme.accent : Color.secondary)
                         // Underline indicator marks the open tab.
                         Capsule()
-                            .fill(mode == kind ? Theme.accent : Color.clear)
+                            .fill(section == tab ? Theme.accent : Color.clear)
                             .frame(height: 3)
                             .padding(.horizontal, 24)
                     }
@@ -223,7 +266,8 @@ struct TodoListView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityAddTraits(mode == kind ? .isSelected : [])
+                .accessibilityIdentifier("planner.\(tab.id.lowercased())")
+                .accessibilityAddTraits(section == tab ? .isSelected : [])
             }
         }
         .background(Theme.bg)
@@ -396,13 +440,7 @@ struct TodoListView: View {
         .contextMenu {
             if item.kind == .task {
                 Menu("Priority") {
-                    ForEach(PlannerPriority.ordered) { p in
-                        Button {
-                            withAnimation { item.setPriority(p) }
-                        } label: {
-                            Label(p.title, systemImage: item.priority == p ? "checkmark" : p.symbol)
-                        }
-                    }
+                    PriorityMenuItems(item: item)
                 }
             }
             // iPhone equivalent of the Mac's drag-to-sidebar: same move, same
@@ -446,6 +484,20 @@ struct TodoListView: View {
             }
             // No per-add confirmation: the new row appearing in the list above IS the
             // feedback, and the toolbar's global Undo (↺) reverts it like any other change.
+            if let reply, !isThinking {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "sparkles").foregroundStyle(Theme.accent)
+                    Text(reply).font(.footnote)
+                    Spacer(minLength: 0)
+                    Button { withAnimation { self.reply = nil } } label: {
+                        Image(systemName: "xmark").font(.caption2.weight(.bold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Dismiss")
+                }
+                .transition(.opacity)
+            }
 
             HStack(spacing: 10) {
                 TextField(isListening ? "Listening…" : "e.g. “Lunch with Sam tomorrow 1pm”",
@@ -512,20 +564,24 @@ struct TodoListView: View {
         input = ""
         isThinking = true
 
+        reply = nil
+
         Task {
-            let draft = await IntentAssistant.draft(from: text)
-            // Feedback is the new row itself appearing in the list;
-            // reverting it is the toolbar's global Undo (↺), like any other change.
-            if !draft.entry.title.isEmpty {
-                let item = draft.entry.makeItem()
-                item.list = currentList   // capture into the open list, if any
-                // ...and assign it to that list's owner, same as the add form and the
-                // assistant router do. Without this, items captured inside someone's
-                // list land unassigned and vanish from their queue.
-                if let owner = currentList?.derivedAssignee { item.assignedTo = owner }
-                context.insert(item)
+            // Same router as the Mac's agent bridge: "Lunch with Sam tomorrow 1pm" adds,
+            // "move the Claude exam to 8pm" edits the existing appointment. New items land
+            // in the open list (and its owner); reverting is the toolbar's Undo (↺).
+            let result = await PlannerCommand.handle(text, context: context,
+                                                     ownerName: ownerName,
+                                                     defaultList: currentList)
+            await PlannerCommand.commit(result, context: context)
+            withAnimation {
+                isThinking = false
+                if result.action != .add || !result.didMutate { reply = result.reply }
             }
-            withAnimation { isThinking = false }
+            if let shown = reply {
+                try? await Task.sleep(for: .seconds(6))
+                if reply == shown { withAnimation { reply = nil } }
+            }
         }
     }
 

@@ -7,6 +7,9 @@ import SwiftData
 /// replying inline like a chat. Entries captured while a user list is open join that list.
 struct MacPlannerPane: View {
     let selection: SidebarSelection
+    /// Opens another user list (org-chart clicks on an agent).
+    var onOpenList: ((UUID) -> Void)? = nil
+    var onOpenAgent: ((String) -> Void)? = nil
 
     @Environment(\.modelContext) private var context
 
@@ -26,6 +29,8 @@ struct MacPlannerPane: View {
     @State private var speech: SpeechRecognizer?
     @State private var input = ""
     @State private var isThinking = false
+    /// The assistant's answer to an edit or a miss, shown briefly above the bar.
+    @State private var reply: String?
     @State private var showingAdd = false
     @State private var editingItem: PlannerItem?
     @State private var deletingItem: PlannerItem?
@@ -35,8 +40,111 @@ struct MacPlannerPane: View {
 
     private var isListening: Bool { speech?.isListening ?? false }
 
+    // Digital Workforce: lists named after an agent in ~/.claude/agents show its profile; a list
+    // of such lists shows the org chart. Items stay one click away on the To-Dos tab.
+    @State private var roster: [String: AgentProfile] = [:]
+    @State private var agentJobs: [ScheduledJob] = []
+    @AppStorage("agentPaneShowsItems") private var agentShowsItems = false
+    @State private var agentShowsChat = false
+
+    /// The agent behind the open list, if it's named after one.
+    private var currentAgent: AgentProfile? {
+        if case .digitalStaff(let id) = selection { return roster[id] }
+        return currentList.flatMap { roster[$0.name.lowercased()] }
+    }
+
+    /// The open list groups agent lists (e.g. "Digital Workforce").
+    private var isWorkforceGroup: Bool {
+        guard currentAgent == nil, let list = currentList else { return false }
+        return list.name.caseInsensitiveCompare("Digital Workforce") == .orderedSame
+            || !OrgChartBuilder.agentChildren(of: list, roster: roster).isEmpty
+    }
+
+    private var hasAgentView: Bool { currentAgent != nil || isWorkforceGroup }
+    private var showsCaptureBar: Bool {
+        !(hasAgentView && !isSearching && !agentShowsItems)
+    }
+
+    private func jobs(for agent: AgentProfile) -> [ScheduledJob] {
+        agentJobs.filter { $0.detail?.lowercased() == agent.id }
+    }
+
+    /// Team chart: principal → agent lists above this one → this agent → its sub-agents.
+    private func teamChart(for agent: AgentProfile, list: PlannerList?) -> OrgNode {
+        if AgentRoster.staffIDs.contains(agent.id),
+           let group = lists.first(where: { $0.name.caseInsensitiveCompare("Digital Workforce") == .orderedSame }) {
+            let nodes = OrgChartBuilder.staff(of: group, roster: roster).map { member in
+                OrgChartBuilder.node(for: member.profile, list: lists.first { $0.id == member.listID },
+                                     roster: roster, focus: agent.id)
+            }
+            return OrgChartBuilder.workforce(fallback: ownerName, nodes: nodes)
+        }
+        var team = OrgChartBuilder.node(for: agent, list: list, roster: roster, focus: agent.id)
+        if agent.id == "atlas", let group = list?.parent,
+           group.name.caseInsensitiveCompare("Digital Workforce") == .orderedSame {
+            team.children = OrgChartBuilder.staff(of: group, roster: roster)
+                .filter { !AgentRoster.principalReportIDs.contains($0.profile.id) }
+                .map { member in OrgChartBuilder.node(for: member.profile, list: lists.first { $0.id == member.listID }, roster: roster) }
+            return OrgChartBuilder.principalNode(fallback: ownerName, children: [team])
+        }
+        if AgentRoster.staffIDs.contains(agent.id), !AgentRoster.principalReportIDs.contains(agent.id),
+           let atlas = roster["atlas"] {
+            var boss = OrgChartBuilder.node(for: atlas, list: nil, roster: [:])
+            boss.listID = lists.first { $0.name.caseInsensitiveCompare("Atlas") == .orderedSame }?.id
+            boss.children = [team]
+            return OrgChartBuilder.principalNode(fallback: ownerName, children: [boss])
+        }
+        var parent = list?.parent
+        while let p = parent, let boss = roster[p.name.lowercased()] {
+            var node = OrgChartBuilder.node(for: boss, list: nil, roster: [:])
+            node.listID = p.id
+            node.children = [team]
+            team = node
+            parent = p.parent
+        }
+        return OrgChartBuilder.principalNode(fallback: ownerName, children: [team])
+    }
+
+    @ViewBuilder
+    private var agentContent: some View {
+        if let agent = currentAgent {
+            AgentProfileView(agent: agent,
+                             team: teamChart(for: agent, list: currentList),
+                             jobs: jobs(for: agent), onOpenList: onOpenList,
+                             onOpenChat: { agentShowsItems = false; agentShowsChat = true })
+        } else if let list = currentList {
+            let members = OrgChartBuilder.staff(of: list, roster: roster)
+            let nodes = members.map { member in
+                OrgChartBuilder.node(for: member.profile, list: lists.first { $0.id == member.listID }, roster: roster)
+            }
+            DigitalWorkforceArtifactView(
+                chart: OrgChartBuilder.workforce(fallback: ownerName, nodes: nodes),
+                jobs: agentJobs,
+                onOpenAgent: { onOpenAgent?($0) })
+        }
+    }
+
+    private var agentModeBar: some View {
+        Picker("View", selection: Binding<Int>(
+            get: { agentShowsChat && currentAgent != nil ? 2 : (agentShowsItems ? 1 : 0) },
+            set: { agentShowsChat = $0 == 2; agentShowsItems = $0 == 1 }
+        )) {
+            Text(currentAgent != nil ? "Profile" : "Org Chart").tag(0)
+            if currentAgent != nil { Text("Chat").tag(2) }
+            Text("To-Dos (\(items.count))").tag(1)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: currentAgent != nil ? 380 : 280)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+    }
+
     /// The open user list, when the selection is one.
     private var currentList: PlannerList? {
+        if case .digitalStaff(let id) = selection {
+            return lists.first { $0.name.lowercased() == id }
+        }
         guard case .userList(let id) = selection else { return nil }
         return lists.first { $0.id == id }
     }
@@ -45,6 +153,7 @@ struct MacPlannerPane: View {
         switch selection {
         case .category(let c): return c.title
         case .userList:        return currentList?.name ?? "List"
+        case .digitalStaff(let id): return currentAgent?.displayName ?? id.capitalized
         }
     }
 
@@ -61,7 +170,7 @@ struct MacPlannerPane: View {
             // you) only. Work delegated to someone else is hidden here — open that
             // person's list to see theirs. Matches the iPhone app.
             scoped = activeItems.filter { c.contains($0) && $0.isMine(ownerName: ownerName) }
-        case .userList:
+        case .userList, .digitalStaff:
             // A parent list shows its own items plus everything in its sub-lists.
             let ids = currentList?.subtreeIDs ?? []
             scoped = activeItems.filter { item in
@@ -82,7 +191,7 @@ struct MacPlannerPane: View {
 
     /// Rows in manual drag order (synced via CloudKit through `PlannerItem.sortOrder`),
     /// pinned rows first; never-placed rows keep their date order, after the placed ones.
-    /// To-dos: pinned first, then by priority (Critical → Low), then manual order.
+    /// To-dos: by priority (Critical → Low), pinned first within a priority, then manual order.
     private var tasks: [PlannerItem] {
         ManualOrder.sortedPinnedByPriority(items.filter { $0.kind == .task },
                                            pinned: { $0.isPinned },
@@ -174,16 +283,30 @@ struct MacPlannerPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            searchBar
-            Divider()
+            if !agentShowsChat || currentAgent == nil {
+                searchBar
+                Divider()
+            }
             duplicateBanner
-            if items.isEmpty {
+            if hasAgentView && !isSearching {
+                agentModeBar
+                Divider()
+            }
+            if let agent = currentAgent, agentShowsChat && !isSearching {
+                MacAgentChatView(agent: agent).id(agent.id)
+                    .frame(maxHeight: .infinity)
+            } else if hasAgentView && !isSearching && !agentShowsItems {
+                agentContent
+                    .frame(maxHeight: .infinity)
+            } else if items.isEmpty {
                 emptyState
             } else {
                 itemList
             }
-            Divider()
-            captureBar
+            if showsCaptureBar {
+                Divider()
+                captureBar
+            }
         }
         .navigationTitle(isSearching ? "Search" : title)
         .navigationSubtitle(subtitle)
@@ -195,6 +318,19 @@ struct MacPlannerPane: View {
                 .help("New item")
                 .accessibilityLabel("Add item")
             }
+        }
+        .task(id: selection) {
+            // Re-read on every list switch so edits to the agent .md files show up.
+            roster = AgentRoster.load()
+            if case .digitalStaff = selection {
+                searchText = ""
+                agentShowsItems = false
+                agentShowsChat = true
+            } else {
+                agentShowsChat = false
+                if isWorkforceGroup { searchText = "" }
+            }
+            if hasAgentView { agentJobs = ScheduleLoader.workforce() }
         }
         .sheet(isPresented: $showingAdd) { AddItemView(defaultList: currentList) }
         .sheet(item: $editingItem) { AddItemView(item: $0) }
@@ -316,13 +452,7 @@ struct MacPlannerPane: View {
         .contextMenu {
             if item.kind == .task {
                 Menu("Priority") {
-                    ForEach(PlannerPriority.ordered) { p in
-                        Button {
-                            withAnimation { item.setPriority(p) }
-                        } label: {
-                            Label(p.title, systemImage: item.priority == p ? "checkmark" : p.symbol)
-                        }
-                    }
+                    PriorityMenuItems(item: item)
                 }
             }
             Button(item.isPinned ? "Unpin" : "Pin to Top") {
@@ -362,6 +492,20 @@ struct MacPlannerPane: View {
                     ProgressView().controlSize(.small)
                     Text("Drafting…").font(.footnote).foregroundStyle(.secondary)
                 }
+            }
+            if let reply, !isThinking {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "sparkles").foregroundStyle(Theme.accent)
+                    Text(reply).font(.callout)
+                    Spacer(minLength: 0)
+                    Button { withAnimation { self.reply = nil } } label: {
+                        Image(systemName: "xmark").font(.caption2.weight(.bold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Dismiss")
+                }
+                .transition(.opacity)
             }
             // No per-add confirmation: the new row appearing in the list above IS the
             // feedback, and ⌘Z (Edit ▸ Undo) reverts it like any other change.
@@ -425,20 +569,23 @@ struct MacPlannerPane: View {
         input = ""
         isThinking = true
 
+        reply = nil
+
         Task {
-            let draft = await IntentAssistant.draft(from: text)
-            // Feedback is the new row itself appearing in the list;
-            // reverting it is ⌘Z (Edit ▸ Undo), like any other change.
-            if !draft.entry.title.isEmpty {
-                let item = draft.entry.makeItem()
-                item.list = currentList   // capture into the open user list, if any
-                // ...and assign it to that list's owner, same as the add form and the
-                // assistant router do. Without this, items captured inside someone's
-                // list land unassigned and vanish from their queue.
-                if let owner = currentList?.derivedAssignee { item.assignedTo = owner }
-                context.insert(item)
+            // Same router as the iPhone bar: new entries are added (into the open list and
+            // its owner), "move X to 8pm" edits the existing item. Reverting is ⌘Z.
+            let result = await PlannerCommand.handle(text, context: context,
+                                                     ownerName: ownerName,
+                                                     defaultList: currentList)
+            await PlannerCommand.commit(result, context: context)
+            withAnimation {
+                isThinking = false
+                if result.action != .add || !result.didMutate { reply = result.reply }
             }
-            withAnimation { isThinking = false }
+            if let shown = reply {
+                try? await Task.sleep(for: .seconds(6))
+                if reply == shown { withAnimation { reply = nil } }
+            }
         }
     }
 }

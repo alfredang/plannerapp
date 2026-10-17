@@ -92,9 +92,9 @@ enum CalendarSync {
         event.title = item.title
         event.notes = item.notes.isEmpty ? nil : item.notes
         event.startDate = date
-        // No duration is modelled, so default to an hour — a zero-length event is invisible
-        // in most calendar UIs.
-        event.endDate = date.addingTimeInterval(3600)
+        // End read from the title/notes ("(9am–6pm)", "duration: 90m"), else an hour — a
+        // zero-length event is invisible in most calendar UIs.
+        event.endDate = item.endDate ?? date.addingTimeInterval(3600)
 
         do {
             try store.save(event, span: .thisEvent, commit: true)

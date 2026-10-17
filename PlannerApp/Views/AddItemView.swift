@@ -142,6 +142,14 @@ struct AddItemView: View {
                     }
                 }
 
+                if kind == .appointment, let appointment = itemToEdit {
+                    Section {
+                        FollowUpActionsView(appointment: appointment)
+                    } footer: {
+                        Text("Follow-up actions save directly to To-Do.")
+                    }
+                }
+
                 // Priority is a to-do thing; appointments are ordered by time.
                 if kind == .task {
                     Section {
@@ -221,7 +229,7 @@ struct AddItemView: View {
         defer { Task { @MainActor in autoKindEnabled = true } }
         if let itemToEdit {
             title = itemToEdit.title
-            notes = itemToEdit.notes
+            notes = itemToEdit.displayNotes
             kind = itemToEdit.kind
             selectedListID = itemToEdit.list?.id
             assignedTo = itemToEdit.assignedTo
@@ -260,7 +268,7 @@ struct AddItemView: View {
         let saved: PlannerItem
         if let itemToEdit {
             itemToEdit.title = trimmedTitle
-            itemToEdit.notes = trimmedNotes
+            itemToEdit.notes = FollowUpActions.notes(trimmedNotes, preservingReferenceFrom: itemToEdit.notes)
             itemToEdit.kind = kind
             itemToEdit.date = includeDate ? date : nil
             itemToEdit.list = list
@@ -283,6 +291,8 @@ struct AddItemView: View {
         // Mirror the appointment into the system Calendar (and onward to Google, if that
         // account is set up there). No-op unless the user enabled calendar sync.
         if let eventID = CalendarSync.sync(saved) { saved.calendarEventID = eventID }
+        // Save now so the edit goes to iCloud (and the Mac) straight away.
+        try? context.save()
 
         // Re-arm the advance alerts so a new/changed date takes effect immediately.
         let ctx = context

@@ -2,22 +2,42 @@ import SwiftUI
 import SwiftData
 import WebKit
 
-/// The Digital Workforce's report pages, synced from the Mac through iCloud — newest day
-/// first, past days collapsed — with the same per-card Reply as the Mac app.
+/// Standalone wrapper; Planner embeds the same content below its three top tabs.
 struct UpdatesView: View {
+    @State private var search = ""
+
+    var body: some View {
+        NavigationStack {
+            UpdatesContentView(search: $search)
+                .searchable(text: $search, prompt: "Search updates")
+                .navigationTitle("Updates")
+                .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+struct UpdatesContentView: View {
+    private enum Scope: String, CaseIterable, Identifiable {
+        case morning = "Morning Brief", other = "Other Updates"
+        var id: String { rawValue }
+    }
+
     @Query(sort: [SortDescriptor(\AgentReport.dateKey, order: .reverse),
                   SortDescriptor(\AgentReport.modifiedAt, order: .reverse)])
     private var reports: [AgentReport]
 
+    @Binding var search: String
+    @State private var scope: Scope = .morning
     @State private var toggledDays: Set<String> = []
-    @State private var search = ""
-
-    private static let todayKey = Date().formatted(.iso8601.year().month().day())
 
     private var filtered: [AgentReport] {
-        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return reports }
-        return reports.filter { ($0.title + " " + $0.agent + " " + $0.summary).lowercased().contains(q) }
+        let q = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return reports.filter { report in
+            let matchesScope = scope == .morning ? report.isMorningBrief : !report.isMorningBrief
+            let matchesSearch = q.isEmpty || (report.displayTitle + " " + report.agent + " " + report.summary)
+                .lowercased().contains(q)
+            return matchesScope && matchesSearch
+        }
     }
 
     private var days: [(String, [AgentReport])] {
@@ -31,17 +51,31 @@ struct UpdatesView: View {
     }
 
     private func isExpanded(_ key: String) -> Bool {
-        if !search.trimmingCharacters(in: .whitespaces).isEmpty { return true }
-        let openByDefault = key >= Self.todayKey
+        if !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        // Daily briefs stay visible throughout the history. Other reports open for today.
+        let openByDefault = scope == .morning || key >= ReportPresentation.dayKey()
         return toggledDays.contains(key) ? !openByDefault : openByDefault
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            Picker("Updates", selection: $scope) {
+                ForEach(Scope.allCases) { item in Text(item.rawValue).tag(item) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("updates.scope")
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            Divider()
             List {
-                if reports.isEmpty {
-                    Text("No updates yet. Reports your agents publish on the Mac appear here once they sync through iCloud.")
-                        .foregroundStyle(.secondary)
+                if filtered.isEmpty {
+                    ContentUnavailableView {
+                        Label(scope == .morning ? "No morning brief yet" : "No other updates", systemImage: "doc.richtext")
+                    } description: {
+                        Text(search.isEmpty
+                             ? "Reports published on your Mac appear here through iCloud."
+                             : "No reports match your search.")
+                    }
+                    .listRowBackground(Color.clear)
                 }
                 ForEach(days, id: \.0) { key, items in
                     Section {
@@ -68,18 +102,16 @@ struct UpdatesView: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .background(Theme.bg)
-            .searchable(text: $search, prompt: "Search updates")
-            .navigationTitle("Updates")
-            .navigationBarTitleDisplayMode(.inline)
         }
+        .background(Theme.bg)
+        .onChange(of: scope) { toggledDays = [] }
     }
 
     private func row(_ report: AgentReport) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(report.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
+            Text(report.displayTitle).font(.body.weight(.semibold)).foregroundStyle(.primary)
             if !report.summary.isEmpty {
-                Text(report.summary).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                Text(report.summary).font(.callout).foregroundStyle(.secondary).lineLimit(3)
             }
             HStack(spacing: 8) {
                 if !report.agent.isEmpty {
@@ -89,7 +121,7 @@ struct UpdatesView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
     private static func label(_ iso: String) -> String {
@@ -119,14 +151,14 @@ struct ReportPageView: View {
 
     var body: some View {
         ReportWebView(
-            html: report.html, page: report.file,
+            html: report.displayHTML, page: report.file,
             saved: replies.map { ["item": $0.item, "text": $0.text] },
             onReply: { item, text in
                 context.insert(ReportReply(page: report.file, item: item, text: text, source: "iphone"))
                 try? context.save()
             })
         .ignoresSafeArea(edges: .bottom)
-        .navigationTitle(report.title)
+        .navigationTitle(report.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
     }
 }

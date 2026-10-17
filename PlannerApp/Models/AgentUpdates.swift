@@ -20,6 +20,10 @@ final class AgentReport {
     var modifiedAt: Date = Date()
 
     init(file: String) { self.file = file }
+
+    var displayTitle: String { ReportPresentation.title(title) }
+    var isMorningBrief: Bool { ReportPresentation.isMorningBrief(file: file, title: title) }
+    var displayHTML: String { ReportPresentation.title(html) }
 }
 
 /// Alfred's reply under one card of a report. The Mac appends every reply (its own and the

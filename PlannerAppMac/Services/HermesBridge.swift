@@ -288,7 +288,7 @@ enum HermesBridge {
 
         case "note":
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
-            item.notes = params["notes"] ?? ""
+            item.notes = FollowUpActions.notes(params["notes"] ?? "", preservingReferenceFrom: item.notes)
             return "OK: notes of “\(item.title)” updated"
 
         case "link":

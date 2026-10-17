@@ -27,6 +27,9 @@ enum PlannerAction: String, CaseIterable {
     case newList        // "create a list called Errands"
     case renameList     // "rename the Clients list to Accounts"
     case unknown        // anything else — answered conversationally, nothing changes
+
+    /// Actions that edit one existing item, named by `target`.
+    var targetsItem: Bool { ![.add, .unknown, .newList, .renameList].contains(self) }
 }
 
 /// The outcome of running a command: what to say, and the item it touched (if any).
@@ -35,20 +38,60 @@ struct CommandResult {
     var item: PlannerItem?
     /// True when the store was modified — the caller re-arms reminders / calendar sync.
     var didMutate: Bool
+    /// What was actually done (an edit the model misread falls back to `.add`).
+    var action: PlannerAction = .add
 }
 
 enum PlannerCommand {
 
     /// Interpret `text` and carry it out. Never throws; anything unparseable falls back to
     /// "add", which is the overwhelmingly common intent and is always safe (it only creates).
+    /// `defaultList` is where a plain add lands when the user didn't name a list — the
+    /// capture bar passes the list that is open on screen.
     @MainActor
-    static func handle(_ text: String, context: ModelContext, ownerName: String) async -> CommandResult {
+    static func handle(_ text: String, context: ModelContext, ownerName: String,
+                       defaultList: PlannerList? = nil) async -> CommandResult {
         let active = (try? context.fetch(
             FetchDescriptor<PlannerItem>(predicate: #Predicate { !$0.isArchived }))) ?? []
         let lists = (try? context.fetch(FetchDescriptor<PlannerList>())) ?? []
 
-        let parsed = await classify(text, items: active, lists: lists)
+        var parsed = await classify(text, items: active, lists: lists)
 
+        // An edit must clearly name an existing item. When it doesn't, the user was most
+        // likely describing something new — "Update the website by Friday", or a fresh
+        // entry the model misread as an edit — so add it rather than drop their words or
+        // move an unrelated item that shares one word with it. Verbs like "mark … done"
+        // or "delete …" make no sense as a new item, so those still answer "couldn't find".
+        if parsed.action.targetsItem,
+           parsed.action == .reschedule || (parsed.fromModel && !startsWithEditVerb(text)),
+           matchItem(parsed.target,
+                     in: parsed.action == .uncomplete ? allItems(context) : active,
+                     confident: true) == nil {
+            parsed.action = .add
+        }
+
+        var result = await run(parsed, text: text, context: context,
+                               active: active, lists: lists, defaultList: defaultList)
+        result.action = parsed.action == .unknown ? .add : parsed.action
+        return result
+    }
+
+    /// Follow-through after `handle` changed something: mirror the item to Calendar, SAVE
+    /// right away — that is what hands the change to iCloud, so the other devices see it
+    /// without waiting on autosave (which never runs if the phone is locked straight after
+    /// dictating) — and re-arm the alerts for the new date.
+    @MainActor
+    static func commit(_ result: CommandResult, context: ModelContext) async {
+        guard result.didMutate else { return }
+        if let item = result.item, let id = CalendarSync.sync(item) { item.calendarEventID = id }
+        try? context.save()
+        await ReminderScheduler.rescheduleAll(context: context)
+    }
+
+    @MainActor
+    private static func run(_ parsed: ParsedCommand, text: String, context: ModelContext,
+                            active: [PlannerItem], lists: [PlannerList],
+                            defaultList: PlannerList?) async -> CommandResult {
         switch parsed.action {
         case .add, .unknown:
             let draft = await IntentAssistant.draft(from: text)
@@ -56,8 +99,9 @@ enum PlannerCommand {
                 return CommandResult(reply: draft.reply, item: nil, didMutate: false)
             }
             let item = draft.entry.makeItem()
-            // Adding while a list is named files it there and inherits that list's owner.
-            if let list = matchList(parsed.listName, in: lists) {
+            // Adding while a list is named (or open) files it there and inherits that
+            // list's owner.
+            if let list = matchList(parsed.listName, in: lists) ?? defaultList {
                 item.list = list
                 if let owner = list.derivedAssignee { item.assignedTo = owner }
             }
@@ -77,13 +121,14 @@ enum PlannerCommand {
                 return miss(parsed.target)
             }
             // Dates ALWAYS come from the deterministic parser, never the model.
-            guard let date = SmartParser.parse(text).date else {
+            guard let (date, hasTime) = newDate(for: item, from: text, target: parsed.target) else {
                 return CommandResult(
                     reply: "I couldn't read a date in that. Try “move \(item.title) to Friday 9am”.",
                     item: item, didMutate: false)
             }
             item.date = date
-            if item.kind == .task { item.kind = .appointment }
+            // A clock time makes it an appointment; a new deadline day keeps a to-do a to-do.
+            if item.kind == .task, hasTime { item.kind = .appointment }
             let when = date.formatted(.dateTime.weekday().month().day().hour().minute())
             return CommandResult(reply: "Moved “\(item.title)” to \(when).",
                                  item: item, didMutate: true)
@@ -225,6 +270,45 @@ enum PlannerCommand {
         }
     }
 
+    /// The new slot for `item`. "to 8pm" keeps the item's day; "to Friday" keeps its time.
+    /// The date is read from the words around the title, so a time inside the title itself
+    /// ("Exam (7:30pm–9:45pm)") isn't mistaken for the new slot.
+    static func newDate(for item: PlannerItem, from text: String,
+                        target: String) -> (date: Date, hasTime: Bool)? {
+        var phrase = text
+        if !target.isEmpty, let r = phrase.range(of: target, options: .caseInsensitive) {
+            phrase.replaceSubrange(r, with: " ")
+        }
+        guard let when = SmartParser.when(in: phrase) ?? SmartParser.when(in: text) else { return nil }
+        let cal = Calendar.current
+        guard let old = item.date else { return (when.date, when.hasTime) }
+        if when.hasTime, !when.hasDay {
+            let t = cal.dateComponents([.hour, .minute], from: when.date)
+            guard let d = cal.date(bySettingHour: t.hour ?? 0, minute: t.minute ?? 0,
+                                   second: 0, of: old) else { return nil }
+            return (d, true)
+        }
+        if when.hasDay, !when.hasTime {
+            let t = cal.dateComponents([.hour, .minute], from: old)
+            guard let d = cal.date(bySettingHour: t.hour ?? 0, minute: t.minute ?? 0,
+                                   second: 0, of: when.date) else { return nil }
+            return (d, t.hour != 0 || t.minute != 0)
+        }
+        return (when.date, when.hasTime)
+    }
+
+    /// Leading words that make an utterance unmistakably an edit of an existing item.
+    private static let editVerbs: Set<String> = [
+        "mark", "complete", "move", "reschedule", "change", "update", "shift", "postpone",
+        "push", "bring", "rename", "assign", "delete", "remove", "archive", "pin", "unpin",
+        "restore", "uncheck", "put", "cancel"
+    ]
+
+    static func startsWithEditVerb(_ text: String) -> Bool {
+        let first = text.lowercased().split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
+        return editVerbs.contains(first)
+    }
+
     /// Every item including archived ones — needed to restore something already checked off.
     @MainActor
     private static func allItems(_ context: ModelContext) -> [PlannerItem] {
@@ -240,7 +324,9 @@ enum PlannerCommand {
 
     /// Find the item the user meant: exact title first, then a contains match, then the
     /// best word-overlap score. Returns nil rather than guessing when nothing is close.
-    static func matchItem(_ target: String, in items: [PlannerItem]) -> PlannerItem? {
+    /// `confident` additionally requires the overlap to cover at least half the words named.
+    static func matchItem(_ target: String, in items: [PlannerItem],
+                          confident: Bool = false) -> PlannerItem? {
         let needle = target.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return nil }
         if let exact = items.first(where: { $0.title.lowercased() == needle }) { return exact }
@@ -255,7 +341,9 @@ enum PlannerCommand {
             }
             .filter { $0.1 > 0 }
             .sorted { $0.1 > $1.1 }
-        return scored.first?.0
+        guard let best = scored.first else { return nil }
+        if confident, best.1 * 2 < terms.count { return nil }
+        return best.0
     }
 
     static func matchList(_ name: String, in lists: [PlannerList]) -> PlannerList? {
@@ -276,6 +364,8 @@ enum PlannerCommand {
         var notes: String = ""
         var kind: String = ""
         var parentList: String = ""
+        /// Classified by Apple Intelligence (vs. the keyword rules).
+        var fromModel = false
     }
 
     #if canImport(FoundationModels)
@@ -320,10 +410,30 @@ enum PlannerCommand {
                 You route planner requests to one action. Choose "add" when the user \
                 describes something new to do. Choose "complete", "reschedule", "move", \
                 "assign" or "rename" only when they clearly refer to an item that already \
-                exists. Copy names and titles from the user's own words — never invent them. \
-                Never guess a date; the app parses dates separately.
+                exists. Choose "reschedule" when they change the date or time of an existing \
+                item — "change", "update", "move", "shift", "postpone", "push back", \
+                "bring forward", "is now at", "instead". For target, copy the existing item's \
+                title from the list when the request clearly refers to one; otherwise copy \
+                the user's own words — never invent them. Never guess a date; the app \
+                parses dates separately.
                 """)
-            if let response = try? await session.respond(to: "Request: \"\(text)\"",
+            // The items it may refer to — upcoming ones first, since edits are mostly
+            // about what's coming up.
+            let startOfToday = Calendar.current.startOfDay(for: Date())
+            let known = items
+                .sorted { a, b in
+                    let ka = a.date.map { $0 >= startOfToday ? 0 : 1 } ?? 2
+                    let kb = b.date.map { $0 >= startOfToday ? 0 : 1 } ?? 2
+                    if ka != kb { return ka < kb }
+                    return (a.date ?? .distantFuture) < (b.date ?? .distantFuture)
+                }
+                .prefix(60)
+                .map { "- \($0.title)" }
+                .joined(separator: "\n")
+            let prompt = known.isEmpty
+                ? "Request: \"\(text)\""
+                : "Existing items:\n\(known)\n\nRequest: \"\(text)\""
+            if let response = try? await session.respond(to: prompt,
                                                          generating: CommandDraft.self) {
                 let d = response.content
                 // Match the raw value case-insensitively ("setkind" → .setKind).
@@ -335,7 +445,8 @@ enum PlannerCommand {
                     action: action,
                     target: d.target, listName: d.listName,
                     assignee: d.assignee, newTitle: d.newTitle,
-                    notes: d.notes, kind: d.kind, parentList: d.parentList)
+                    notes: d.notes, kind: d.kind, parentList: d.parentList,
+                    fromModel: true)
             }
         }
         #endif
@@ -376,6 +487,32 @@ enum PlannerCommand {
                                  target: parts.first?.trimmingCharacters(in: .whitespaces) ?? "",
                                  assignee: parts.count > 1 ? parts[1] : "")
         }
+        // "change X to 8pm", "postpone X to Friday", "push back X to 3pm", "update X to Y".
+        for verb in ["change ", "update ", "shift ", "postpone ", "push back ", "push ",
+                     "bring forward ", "bring ", "reschedule "] where lower.hasPrefix(verb) {
+            var rest = String(text.dropFirst(verb.count))
+            for filler in ["the ", "my "] where rest.lowercased().hasPrefix(filler) {
+                rest = String(rest.dropFirst(filler.count))
+            }
+            let restLower = rest.lowercased()
+            let cut = [" to ", " at ", " on ", " till ", " until ", " for ", " from "]
+                .compactMap { restLower.range(of: $0)?.lowerBound }
+                .min()
+            let target = (cut.map { String(rest[..<$0]) } ?? rest)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if SmartParser.when(in: rest) != nil || verb == "reschedule " || verb.hasPrefix("postpone")
+                || verb.hasPrefix("push") || verb.hasPrefix("bring") || verb.hasPrefix("shift") {
+                return ParsedCommand(action: .reschedule, target: target)
+            }
+            // "change X to Y" with no date in it is a rename.
+            let parts = rest.components(separatedBy: " to ")
+            if parts.count > 1 {
+                return ParsedCommand(action: .rename,
+                                     target: parts[0].trimmingCharacters(in: .whitespaces),
+                                     newTitle: parts.dropFirst().joined(separator: " to "))
+            }
+            return ParsedCommand(action: .reschedule, target: target)
+        }
         if lower.hasPrefix("move ") || lower.hasPrefix("put ") {
             let rest = after(["move ", "put "])
             let parts = rest.components(separatedBy: [" to ", " in "].first { rest.lowercased().contains($0) } ?? " to ")
@@ -386,9 +523,6 @@ enum PlannerCommand {
                 return ParsedCommand(action: .reschedule, target: target)
             }
             return ParsedCommand(action: .move, target: target, listName: dest)
-        }
-        if lower.hasPrefix("reschedule ") {
-            return ParsedCommand(action: .reschedule, target: after(["reschedule "]))
         }
         if lower.hasPrefix("delete ") || lower.hasPrefix("remove ") || lower.hasPrefix("archive ") {
             return ParsedCommand(action: .delete, target: after(["delete ", "remove ", "archive "]))

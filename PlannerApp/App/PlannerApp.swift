@@ -27,13 +27,21 @@ struct PlannerApp: App {
     let container: ModelContainer = {
         let schema = Schema([PlannerItem.self, PlannerList.self, AgentReport.self, ReportReply.self])
         do {
+            var database: ModelConfiguration.CloudKitDatabase = .automatic
+            var demo = false
+            #if DEBUG
+            if CommandLine.arguments.contains("-seedSampleData") {
+                database = .none
+                demo = true
+            }
+            #endif
             let config = ModelConfiguration(
                 schema: schema,
-                isStoredInMemoryOnly: false,
-                cloudKitDatabase: .automatic
+                isStoredInMemoryOnly: demo,
+                cloudKitDatabase: database
             )
             let container = try ModelContainer(for: schema, configurations: config)
-            Task { @MainActor in CloudSyncStatus.shared.containerUsesCloudKit = true }
+            Task { @MainActor in CloudSyncStatus.shared.containerUsesCloudKit = !demo }
             return container
         } catch {
             // Fall back to a local-only store so the app never fails to launch.
@@ -74,6 +82,10 @@ struct PlannerApp: App {
         }
         .modelContainer(container)
         .onChange(of: scenePhase) { _, phase in
+            // Leaving the app: flush pending edits so they're handed to iCloud before iOS
+            // suspends us — otherwise a change made just before locking the phone waits
+            // until the next launch to reach the Mac.
+            if phase == .background { try? container.mainContext.save() }
             guard phase == .active else { return }
             Task { await ReminderScheduler.rescheduleAll(context: container.mainContext) }
         }
@@ -170,6 +182,28 @@ struct PlannerApp: App {
         #if DEBUG
         guard CommandLine.arguments.contains("-seedSampleData") else { return }
         let ctx = container.mainContext
+        if ((try? ctx.fetch(FetchDescriptor<AgentReport>())) ?? []).isEmpty {
+            for offset in [0, -1, -2] {
+                let day = Calendar.current.date(byAdding: .day, value: offset, to: Date()) ?? Date()
+                let key = ReportPresentation.dayKey(day)
+                let report = AgentReport(file: "\(key)-oracle-updates.html")
+                // Legacy title verifies that already-synced pages use the new wording.
+                report.title = offset == 0 ? "Morning Updates Today" : "Morning Updates \(key)"
+                report.agent = "Oracle"
+                report.dateKey = key
+                report.summary = "Prepare today's workshop, confirm client meetings, and review the team's priorities."
+                report.html = "<html><head><title>\(report.title)</title></head><body style='font-family:-apple-system;padding:20px'><h1>\(report.title)</h1><p>\(report.summary)</p><div class='item'>Confirm the workshop materials before the session.</div></body></html>"
+                ctx.insert(report)
+            }
+            let review = AgentReport(file: "\(ReportPresentation.dayKey())-nova.html")
+            review.title = "Weekly Strategy Review"
+            review.agent = "Nova"
+            review.dateKey = ReportPresentation.dayKey()
+            review.summary = "Review the corporate training pipeline and prepare next week's course plan."
+            review.html = "<html><body><h1>Weekly Strategy Review</h1><p>\(review.summary)</p></body></html>"
+            ctx.insert(review)
+            try? ctx.save()
+        }
         let existing = (try? ctx.fetch(FetchDescriptor<PlannerItem>())) ?? []
         guard existing.isEmpty else { return }
         let cal = Calendar.current
@@ -179,6 +213,8 @@ struct PlannerApp: App {
             return cal.date(bySettingHour: h, minute: m, second: 0, of: base) ?? base
         }
         let items: [PlannerItem] = [
+            // Yesterday and never ticked, so "Did this happen?" + Reply / comment show.
+            PlannerItem(title: "Partner check-in", kind: .appointment, date: at(10, 0, addDays: -1)),
             PlannerItem(title: "Lunch with Sam", kind: .appointment, date: at(13, 0)),
             PlannerItem(title: "Client call", notes: "Meeting link: meet.google.com/abc-defg-hij",
                         kind: .appointment, date: at(16, 0)),

@@ -131,7 +131,8 @@ final class PlannerItem {
     var isAppointment: Bool { kind == .appointment }
 
     /// An appointment that is over without being checked off. Date-only appointments
-    /// (stored at midnight) count as over once their day has passed.
+    /// (stored at midnight) count as over once their day has passed; timed ones once their
+    /// end (see `endDate`) has passed, so a class still in progress is not flagged.
     var isMissed: Bool {
         guard isAppointment, !isDone, let date else { return false }
         let cal = Calendar.current
@@ -139,7 +140,56 @@ final class PlannerItem {
         if parts.hour == 0 && parts.minute == 0 {
             return cal.startOfDay(for: date) < cal.startOfDay(for: Date())
         }
-        return date < Date()
+        return (endDate ?? date) < Date()
+    }
+
+    /// When a timed appointment ends. No end time is stored, so it is read from the title
+    /// or notes — "(9am–6pm)", "14:00–15:30", "Ends at 18:00", "duration: 90m" (the same
+    /// conventions the agents' guardian.py uses) — falling back to one hour after the start.
+    var endDate: Date? {
+        guard let date else { return nil }
+        for text in [title, notes] where !text.isEmpty {
+            if let end = Self.parseEnd(text, start: date), end > date { return end }
+        }
+        return date.addingTimeInterval(3600)
+    }
+
+    private static let durationPattern = try! NSRegularExpression(
+        pattern: #"duration:\s*(\d+)\s*(h|m)"#, options: .caseInsensitive)
+    private static let ampmRangePattern = try! NSRegularExpression(
+        pattern: #"(\d{1,2})(?:[:.](\d{2}))?\s*([ap])?\.?m?\.?\s*(?:–|—|-|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?m\b"#,
+        options: .caseInsensitive)
+    private static let h24RangePattern = try! NSRegularExpression(
+        pattern: #"\b(\d{1,2}):(\d{2})\s*(?:–|—|-|to)\s*(\d{1,2}):(\d{2})\b"#)
+    private static let endsAtPattern = try! NSRegularExpression(
+        pattern: #"\bends? at (\d{1,2}):(\d{2})\b"#, options: .caseInsensitive)
+
+    private static func parseEnd(_ text: String, start: Date) -> Date? {
+        let range = NSRange(text.startIndex..., in: text)
+        func group(_ m: NSTextCheckingResult, _ i: Int) -> String? {
+            Range(m.range(at: i), in: text).map { String(text[$0]) }
+        }
+        func at(_ hour: Int, _ minute: Int) -> Date? {
+            Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: start)
+        }
+        if let m = durationPattern.firstMatch(in: text, range: range),
+           let n = group(m, 1).flatMap(Double.init) {
+            return start.addingTimeInterval(group(m, 2)?.lowercased() == "h" ? n * 3600 : n * 60)
+        }
+        if let m = ampmRangePattern.firstMatch(in: text, range: range),
+           let h = group(m, 4).flatMap(Int.init), let ampm = group(m, 6) {
+            let hour = h % 12 + (ampm.lowercased() == "p" ? 12 : 0)
+            return at(hour, group(m, 5).flatMap(Int.init) ?? 0)
+        }
+        for pattern in [h24RangePattern, endsAtPattern] {
+            if let m = pattern.firstMatch(in: text, range: range) {
+                let n = m.numberOfRanges
+                if let h = group(m, n - 2).flatMap(Int.init), let mm = group(m, n - 1).flatMap(Int.init) {
+                    return at(h, mm)
+                }
+            }
+        }
+        return nil
     }
 
     var priority: PlannerPriority {

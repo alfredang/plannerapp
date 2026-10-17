@@ -90,6 +90,28 @@ enum SmartParser {
 
     // MARK: - Date detection
 
+    /// What a phrase says about *when*, for edits to an existing item: "8pm" names only a
+    /// time (keep the item's day), "Friday" only a day (keep the item's time).
+    struct When {
+        let date: Date
+        let hasTime: Bool
+        let hasDay: Bool
+    }
+
+    static func when(in text: String) -> When? {
+        guard let d = detectDate(in: text) else { return nil }
+        let matched = (text as NSString).substring(with: d.range).lowercased()
+        let hasDay = matched.range(of: dayPattern, options: .regularExpression) != nil
+        return When(date: d.date, hasTime: d.hasTime, hasDay: hasDay || !d.hasTime)
+    }
+
+    /// Words / shapes that pin a phrase to a particular day.
+    private static let dayPattern = #"\b(today|tonight|tomorrow|tmr|tmrw|yesterday|next|this|"#
+        + #"mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun|(mon|tues|wednes|thurs|fri|satur|sun)day|"#
+        + #"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|"#
+        + #"january|february|march|april|june|july|august|september|october|november|december)\b"#
+        + #"|\b\d{1,2}(st|nd|rd|th)\b|\b\d{1,4}[/-]\d{1,2}([/-]\d{1,4})?\b"#
+
     private struct DateDetection {
         let date: Date
         let range: NSRange
