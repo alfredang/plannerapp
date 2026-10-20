@@ -256,12 +256,12 @@ struct MacCalendarPane: View {
                     .fixedSize()
             }
             Text(item.title)
-                .strikethrough(item.isDone)
+                .strikethrough(item.isDone || item.isCancelled)
                 .layoutPriority(1)
         }
         .font(.caption)
         .lineLimit(1)
-        .foregroundStyle(item.isDone ? Color.secondary : (item.isMissed ? Color.red : Color.primary))
+        .foregroundStyle(item.isDone || item.isCancelled ? Color.secondary : (item.isMissed ? Color.red : Color.primary))
         .padding(.horizontal, 4)
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)

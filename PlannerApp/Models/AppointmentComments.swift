@@ -90,3 +90,46 @@ extension PlannerItem {
         return last
     }
 }
+
+/// "Cancelled" and "Rescheduled", the other answers to "Did this happen?". Each is posted as
+/// one of Alfred's comments, so it syncs like any comment and Atlas answers it.
+extension PlannerItem {
+    static let cancelledComment = "Cancelled. It did not happen."
+
+    /// Marked "Cancelled": no longer missed, struck through, and can be undone.
+    var isCancelled: Bool {
+        isAppointment && comments.contains { $0.author == nil && $0.text == Self.cancelledComment }
+    }
+
+    func markCancelled() {
+        guard !isCancelled else { return }
+        addComment(Self.cancelledComment)
+    }
+
+    /// Takes the "Cancelled" comment back out (any answer to it stays).
+    func undoCancelled() {
+        notes = notes.components(separatedBy: .newlines)
+            .filter { line in
+                guard let c = AppointmentComments.parse(line) else { return true }
+                return !(c.author == nil && c.text == Self.cancelledComment)
+            }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Moves the appointment to `newDate` and notes where it came from.
+    func reschedule(to newDate: Date) {
+        if let old = date {
+            addComment("Rescheduled from \(Self.slotText(old)) to \(Self.slotText(newDate)).")
+        }
+        date = newDate
+    }
+
+    /// "Fri 16 Oct, 3:00 PM", or just the day for a date-only (midnight) appointment.
+    private static func slotText(_ date: Date) -> String {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let day = date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        guard parts.hour != 0 || parts.minute != 0 else { return day }
+        return "\(day), \(date.formatted(.dateTime.hour().minute()))"
+    }
+}

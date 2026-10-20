@@ -14,6 +14,9 @@ struct ItemRow: View {
     @State private var isCommenting = false
     @State private var commentDraft = ""
     @FocusState private var commentFocused: Bool
+    /// "Rescheduled" opens an inline date picker for the new slot.
+    @State private var isRescheduling = false
+    @State private var rescheduleDate = Date()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -43,10 +46,11 @@ struct ItemRow: View {
             .accessibilityLabel(item.isDone ? "Mark as not done" : "Mark as done")
 
             VStack(alignment: .leading, spacing: 4) {
+                let closed = item.isDone || item.isCancelled
                 Text(item.title)
                     .font(.body)
-                    .strikethrough(item.isDone, color: .secondary)
-                    .foregroundStyle(item.isDone ? .secondary : .primary)
+                    .strikethrough(closed, color: .secondary)
+                    .foregroundStyle(closed ? .secondary : .primary)
 
                 // One wrapping Text (not an HStack): on narrow rows it flows like prose
                 // instead of squeezing each label into a one-character-wide column.
@@ -99,7 +103,8 @@ struct ItemRow: View {
     }
 
     /// Past appointments: ticked = completed. Unticked ones ask instead of judging — the
-    /// app can't know it happened — with one-tap answers. Then any comments, and the box.
+    /// app can't know it happened — with one-tap answers (happened, cancelled, rescheduled,
+    /// or a comment). Then any comments, and the box.
     @ViewBuilder
     private var appointmentStatus: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -107,6 +112,17 @@ struct ItemRow: View {
                 Label("Completed", systemImage: "checkmark.circle")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Theme.accent)
+            } else if item.isCancelled {
+                HStack(spacing: 10) {
+                    Label("Cancelled", systemImage: "xmark.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                    Button("Undo") { setCancelled(false) }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Undo cancelled")
+                        .accessibilityIdentifier("appointment.undoCancelled")
+                }
             } else if item.isMissed {
                 // Once he has replied, the question is answered — stop shouting it.
                 if item.comments.isEmpty {
@@ -118,12 +134,21 @@ struct ItemRow: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
-                // Side by side when they fit, stacked on a narrow iPhone row.
+                // One row when they fit, two on a narrower row, stacked on a narrow iPhone.
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { yesButton; replyButton }
-                    VStack(alignment: .leading, spacing: 6) { yesButton; replyButton }
+                    HStack(spacing: 8) { yesButton; cancelledButton; rescheduledButton; replyButton }
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) { yesButton; cancelledButton }
+                        HStack(spacing: 8) { rescheduledButton; replyButton }
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        yesButton; cancelledButton; rescheduledButton; replyButton
+                    }
                 }
                 .buttonStyle(.borderless)
+                if isRescheduling {
+                    rescheduleComposer
+                }
             }
             // Comments posted from "Reply / comment", oldest first, with the agent's answers.
             ForEach(item.comments, id: \.self) { comment in
@@ -173,6 +198,34 @@ struct ItemRow: View {
         .accessibilityIdentifier("appointment.happened")
     }
 
+    private var cancelledButton: some View {
+        Button { setCancelled(true) } label: {
+            Label("Cancelled", systemImage: "xmark")
+                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Color.red.opacity(0.12), in: Capsule())
+                .foregroundStyle(.red)
+        }
+        .fixedSize()
+        .accessibilityIdentifier("appointment.cancelled")
+    }
+
+    private var rescheduledButton: some View {
+        Button(action: startReschedule) {
+            Label("Rescheduled", systemImage: "calendar.badge.clock")
+                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Color.orange.opacity(isRescheduling ? 0.25 : 0.12), in: Capsule())
+                .foregroundStyle(.orange)
+        }
+        .fixedSize()
+        .accessibilityIdentifier("appointment.rescheduled")
+    }
+
     private var replyButton: some View {
         Button(action: startComment) {
             Label("Reply / comment", systemImage: "text.bubble")
@@ -210,8 +263,72 @@ struct ItemRow: View {
         .tint(Theme.accent)
     }
 
+    private var rescheduleComposer: some View {
+        HStack(spacing: 8) {
+            DatePicker("Moved to", selection: $rescheduleDate,
+                       displayedComponents: [.date, .hourAndMinute])
+                .accessibilityIdentifier("appointment.rescheduleDate")
+            Button("Move", action: confirmReschedule)
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("appointment.confirmReschedule")
+            Button("Close") {
+                withAnimation { isRescheduling = false }
+            }
+            .buttonStyle(.borderless)
+        }
+        .font(.callout)
+        .tint(Theme.accent)
+    }
+
+    private func setCancelled(_ cancelled: Bool) {
+        withAnimation {
+            if cancelled { item.markCancelled() } else { item.undoCancelled() }
+            isRescheduling = false
+        }
+        saveAndSync()
+        #if os(macOS)
+        if cancelled { AppointmentAgent.shared.ask(item) }
+        #endif
+    }
+
+    private func startReschedule() {
+        // Starts from the same time tomorrow, so usually only the day needs changing.
+        if !isRescheduling, let date = item.date {
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+            let time = Calendar.current.dateComponents([.hour, .minute], from: date)
+            rescheduleDate = Calendar.current.date(bySettingHour: time.hour ?? 9, minute: time.minute ?? 0,
+                                                   second: 0, of: tomorrow) ?? tomorrow
+        }
+        withAnimation {
+            isRescheduling.toggle()
+            isCommenting = false
+        }
+    }
+
+    private func confirmReschedule() {
+        withAnimation {
+            item.reschedule(to: rescheduleDate)
+            isRescheduling = false
+        }
+        saveAndSync()
+        #if os(macOS)
+        AppointmentAgent.shared.ask(item)
+        #endif
+    }
+
+    /// Saves straight away (so the iPhone and the agents see it), moves the mirrored
+    /// calendar event, and re-arms the reminders for the new slot.
+    private func saveAndSync() {
+        if let eventID = CalendarSync.sync(item) { item.calendarEventID = eventID }
+        try? context.save()
+        Task { await ReminderScheduler.rescheduleAll(context: context) }
+    }
+
     private func startComment() {
-        withAnimation { isCommenting.toggle() }
+        withAnimation {
+            isCommenting.toggle()
+            isRescheduling = false
+        }
         if isCommenting {
             // Focus once the field exists.
             DispatchQueue.main.async { commentFocused = true }

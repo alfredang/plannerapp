@@ -291,11 +291,11 @@ struct CalendarView: View {
                     .fixedSize()
             }
             Text(item.title)
-                .strikethrough(item.isDone)
+                .strikethrough(item.isDone || item.isCancelled)
         }
         .font(.system(size: showTime ? 11 : 9.5))
         .lineLimit(1)
-        .foregroundStyle(item.isDone ? Color.secondary : (item.isMissed ? Color.red : Color.primary))
+        .foregroundStyle(item.isDone || item.isCancelled ? Color.secondary : (item.isMissed ? Color.red : Color.primary))
         .padding(.horizontal, 2)
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)

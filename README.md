@@ -91,7 +91,9 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - 📆 **Mirror to your system Calendar** — optionally copy dated appointments into any calendar
   you pick, including a Google account added in iOS Settings; EventKit only, off until enabled.
 - ❓ **"Did this happen?"** — an appointment that's over but never ticked asks instead of
-  judging, with **Yes, it happened** and **Reply / comment**. A comment opens right under the
+  judging, with **Yes, it happened**, **Cancelled**, **Rescheduled** and **Reply / comment**.
+  Cancelled crosses it out (with Undo); Rescheduled picks a new date and time, moves the
+  appointment and its calendar event, and notes where it moved from. A comment opens right under the
   row, is saved in the appointment's notes and syncs to every device. On the Mac, **Atlas**
   (the Digital Workforce schedule agent) answers each comment on the spot: it checks Gmail,
   Calendar and Planner, says what to do next and saves any message as an unsent Gmail draft.

@@ -133,8 +133,9 @@ final class PlannerItem {
     /// An appointment that is over without being checked off. Date-only appointments
     /// (stored at midnight) count as over once their day has passed; timed ones once their
     /// end (see `endDate`) has passed, so a class still in progress is not flagged.
+    /// One marked "Cancelled" is answered, so it isn't missed either.
     var isMissed: Bool {
-        guard isAppointment, !isDone, let date else { return false }
+        guard isAppointment, !isDone, let date, !isCancelled else { return false }
         let cal = Calendar.current
         let parts = cal.dateComponents([.hour, .minute], from: date)
         if parts.hour == 0 && parts.minute == 0 {
