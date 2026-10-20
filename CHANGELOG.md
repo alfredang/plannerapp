@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.4] — 2026-10-20
 
 - "Did this happen?" on a past appointment now has Cancelled and Rescheduled buttons next to Yes, it happened
 - Cancelled crosses the appointment out and stops asking; you can undo it
