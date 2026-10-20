@@ -26,6 +26,7 @@ struct UpdatesContentView: View {
                   SortDescriptor(\AgentReport.modifiedAt, order: .reverse)])
     private var reports: [AgentReport]
 
+    @Environment(\.modelContext) private var context
     @Binding var search: String
     @State private var scope: Scope = .morning
     @State private var toggledDays: Set<String> = []
@@ -102,6 +103,8 @@ struct UpdatesContentView: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
+            // Pull down to fetch new briefs and replies from iCloud.
+            .refreshable { await CloudSyncStatus.shared.syncNow(context: context) }
         }
         .background(Theme.bg)
         .onChange(of: scope) { toggledDays = [] }
@@ -141,6 +144,7 @@ struct UpdatesContentView: View {
 struct ReportPageView: View {
     let report: AgentReport
     @Environment(\.modelContext) private var context
+    @ObservedObject private var sync = CloudSyncStatus.shared
     @Query private var replies: [ReportReply]
 
     init(report: AgentReport) {
@@ -156,10 +160,27 @@ struct ReportPageView: View {
             onReply: { item, text in
                 context.insert(ReportReply(page: report.file, item: item, text: text, source: "iphone"))
                 try? context.save()
-            })
+            },
+            onRefresh: { await sync.syncNow(context: context) })
         .ignoresSafeArea(edges: .bottom)
         .navigationTitle(report.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await sync.syncNow(context: context) }
+                } label: {
+                    if sync.isSyncing {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .disabled(sync.isSyncing)
+                .accessibilityLabel("Sync with iCloud")
+                .accessibilityIdentifier("report.sync")
+            }
+        }
     }
 }
 
@@ -168,6 +189,7 @@ private struct ReportWebView: UIViewRepresentable {
     let page: String
     let saved: [[String: String]]
     let onReply: (String, String) -> Void
+    let onRefresh: () async -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -183,17 +205,36 @@ private struct ReportWebView: UIViewRepresentable {
         let web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = context.coordinator
         context.coordinator.parent = self
+        // Pull down to fetch the latest brief and replies from iCloud.
+        let refresh = UIRefreshControl()
+        refresh.addTarget(context.coordinator, action: #selector(Coordinator.pulled(_:)), for: .valueChanged)
+        web.scrollView.refreshControl = refresh
+        context.coordinator.loadedHTML = html
         web.loadHTMLString(html, baseURL: nil)
         return web
     }
 
     func updateUIView(_ web: WKWebView, context: Context) {
         context.coordinator.parent = self
-        context.coordinator.show(in: web)
+        // The Mac re-publishes a brief under the same file; reload when its HTML changes.
+        if context.coordinator.loadedHTML != html {
+            context.coordinator.loadedHTML = html
+            web.loadHTMLString(html, baseURL: nil)
+        } else {
+            context.coordinator.show(in: web)
+        }
     }
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var parent: ReportWebView?
+        var loadedHTML = ""
+
+        @MainActor @objc func pulled(_ control: UIRefreshControl) {
+            Task { @MainActor in
+                await parent?.onRefresh()
+                control.endRefreshing()
+            }
+        }
 
         func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
             guard let body = m.body as? [String: String], let item = body["item"],

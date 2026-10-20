@@ -104,8 +104,8 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - ↩️ **Undo everywhere** — ⌘Z on the Mac, the Undo toolbar button on iPhone.
 - ☁️ **iCloud sync** — SwiftData + CloudKit mirrors your data to your private iCloud database
   across iPhone, iPad and Mac, with a live sync status, last-sync time and **Sync Now** in
-  Settings, plus a refresh button on the iPhone Calendar and pull-to-refresh on the Planner
-  and Calendar tabs. The Calendar shows when the phone last synced, so stale data is easy to spot.
+  Settings, plus a refresh button on the iPhone Calendar and report pages and pull-to-refresh
+  on the Planner, Calendar and Updates tabs. The Calendar shows when the phone last synced, so stale data is easy to spot.
 - 🖥 **macOS desktop edition** — a two-column Mac app: smart views (To-Do, Pinned, Today,
   Upcoming, Appointments, Calendar) and your lists in the sidebar, the item list with the
   capture bar on the right. Distributed as a
@@ -125,7 +125,9 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - 📰 **Updates (iPhone + Mac)** — read the Digital Workforce agents' reports (Morning Brief,
   daily previews, weekly reviews) in Planner ▸ Updates, newest first and grouped by day. Reply
   under any card, from either device; on the Mac the agent that wrote the report answers right
-  away, and every reply is handed to the agents' next run.
+  away, and every reply is handed to the agents' next run. Replies synced in from the other
+  device appear under their card, and a brief re-published on the Mac reloads on the iPhone;
+  pull down (or tap ↻) on a report to fetch the latest from iCloud.
 - 🧑‍💼 **Digital Workforce (Mac)** — each agent's profile and org chart, a chat with any agent,
   and a **Schedule** view of every background job on the Mac (workforce LaunchAgents, Hermes
   and OpenClaw cron, WhatsApp reminders). The agent panel has a built-in **Browser** tab for

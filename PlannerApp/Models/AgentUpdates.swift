@@ -59,13 +59,22 @@ enum ReportReplyScript {
       function key(el) { return (el.innerText || '').replace(/\\\\s+/g, ' ').trim().slice(0, 90); }
       window.__plShow = function (saved) {
         document.querySelectorAll('.item').forEach(function (el) {
-          if (el.querySelector('.pl-reply') || el.closest('.exec')) return;
-          var k = key(el), box = document.createElement('div'); box.className = 'pl-reply';
+          if (el.closest('.exec')) return;
+          var old = el.querySelector('.pl-reply');
+          // Already wired: just redraw the saved replies, so ones synced in later show up.
+          if (old) {
+            var o = old.querySelector('.pl-out'), k0 = old.dataset.key; o.textContent = '';
+            saved.filter(function (r) { return r.item === k0; }).forEach(function (r) {
+              var d = document.createElement('div'); d.className = 'pl-saved'; d.textContent = '✓ You: ' + r.text; o.appendChild(d);
+            });
+            return;
+          }
+          var k = key(el), box = document.createElement('div'); box.className = 'pl-reply'; box.dataset.key = k;
           var link = document.createElement('button'); link.className = 'pl-link'; link.textContent = '💬 Reply';
           var form = document.createElement('div'); form.className = 'pl-form';
           var ta = document.createElement('input'); ta.placeholder = 'Reply to the agents…';
           var btn = document.createElement('button'); btn.textContent = 'Send';
-          var out = document.createElement('div');
+          var out = document.createElement('div'); out.className = 'pl-out';
           link.onclick = function () { form.classList.toggle('open'); if (form.classList.contains('open')) ta.focus(); };
           function note(t) { var d = document.createElement('div'); d.className = 'pl-saved'; d.textContent = '✓ You: ' + t; out.appendChild(d); }
           saved.filter(function (r) { return r.item === k; }).forEach(function (r) { note(r.text); });
