@@ -5,6 +5,7 @@
 - "Did this happen?" on a past appointment now has Cancelled and Rescheduled buttons next to Yes, it happened
 - Cancelled crosses the appointment out and stops asking; you can undo it
 - Rescheduled lets you pick the new date and time, moves the appointment (and its calendar event), and notes where it moved from
+- Calendar: new refresh button, and pull down anywhere on the calendar to sync with iCloud; the month title shows when the iPhone last synced
 
 ## [2.3] — 2026-10-18
 

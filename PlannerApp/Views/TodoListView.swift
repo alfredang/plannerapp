@@ -383,7 +383,7 @@ struct TodoListView: View {
             }
         }
         // Pull down to nudge iCloud: pushes pending changes up and re-checks the account.
-        .refreshable { CloudSyncStatus.shared.nudge(context: context) }
+        .refreshable { await CloudSyncStatus.shared.syncNow(context: context) }
     }
 
     private func row(_ item: PlannerItem, showsGrip: Bool = true) -> some View {

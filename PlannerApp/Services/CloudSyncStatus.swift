@@ -17,13 +17,18 @@ import SwiftData
 final class CloudSyncStatus: ObservableObject {
     static let shared = CloudSyncStatus()
 
-    /// Set by each app right after the ModelContainer is created.
-    @Published var containerUsesCloudKit = false
+    /// Set by each app right after the ModelContainer is created. iCloud is only asked about
+    /// once this is true, so local-only runs (demo / screenshot data) never touch CloudKit.
+    @Published var containerUsesCloudKit = false {
+        didSet { if containerUsesCloudKit && !oldValue { refresh() } }
+    }
     @Published var accountStatus: CKAccountStatus = .couldNotDetermine
 
     /// When the most recent CloudKit import/export finished, and whether it failed.
     @Published var lastSyncDate: Date?
     @Published var lastSyncError: String?
+    /// True while a "Sync now" (refresh button / pull-to-refresh) is waiting on iCloud.
+    @Published private(set) var isSyncing = false
 
     var isOn: Bool { containerUsesCloudKit && accountStatus == .available }
 
@@ -64,10 +69,28 @@ final class CloudSyncStatus: ObservableObject {
     }
 
     func refresh() {
+        guard containerUsesCloudKit else { return }
         CKContainer(identifier: "iCloud.com.tertiaryinfotech.plannerapp")
             .accountStatus { status, _ in
                 Task { @MainActor in self.accountStatus = status }
             }
+    }
+
+    /// "Sync now" for the refresh button and pull-to-refresh: nudges (below), then waits —
+    /// at most `timeout` — for iCloud to report its next import or export, so the spinner
+    /// tracks real activity. iOS still decides when the download itself runs (there is no
+    /// API to force a CloudKit import); anything it brings in shows up on its own.
+    func syncNow(context: ModelContext, timeout: Duration = .seconds(8)) async {
+        guard !isSyncing else { return }
+        isSyncing = true
+        defer { isSyncing = false }
+        let started = Date()
+        nudge(context: context)
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if let last = lastSyncDate, last >= started { return }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
     }
 
     /// Best-effort "sync now". There is no public API to force a CloudKit import, but

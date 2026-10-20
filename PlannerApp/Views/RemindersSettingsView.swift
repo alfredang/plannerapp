@@ -75,7 +75,8 @@ struct RemindersSettingsView: View {
                         }
                     }
                 }
-                Button("Sync Now") { sync.nudge(context: context) }
+                Button(sync.isSyncing ? "Syncing…" : "Sync Now") { Task { await sync.syncNow(context: context) } }
+                    .disabled(sync.isSyncing)
             } header: {
                 Text("iCloud")
             } footer: {

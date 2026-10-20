@@ -104,7 +104,8 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - ↩️ **Undo everywhere** — ⌘Z on the Mac, the Undo toolbar button on iPhone.
 - ☁️ **iCloud sync** — SwiftData + CloudKit mirrors your data to your private iCloud database
   across iPhone, iPad and Mac, with a live sync status, last-sync time and **Sync Now** in
-  Settings (plus pull-to-refresh on iPhone).
+  Settings, plus a refresh button on the iPhone Calendar and pull-to-refresh on the Planner
+  and Calendar tabs. The Calendar shows when the phone last synced, so stale data is easy to spot.
 - 🖥 **macOS desktop edition** — a two-column Mac app: smart views (To-Do, Pinned, Today,
   Upcoming, Appointments, Calendar) and your lists in the sidebar, the item list with the
   capture bar on the right. Distributed as a

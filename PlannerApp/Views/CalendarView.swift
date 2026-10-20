@@ -9,6 +9,8 @@ import SwiftData
 /// Planner's smart views which only show the owner's own queue.
 struct CalendarView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.modelContext) private var context
+    @ObservedObject private var sync = CloudSyncStatus.shared
 
     @Query(
         filter: #Predicate<PlannerItem> { $0.kindRaw == "appointment" },
@@ -84,13 +86,20 @@ struct CalendarView: View {
 
                 switch mode {
                 case .month:
-                    monthHeader
-                    monthGrid(days)
-                    Divider()
-                    dayAgenda(days[selectedDay] ?? [])
+                    // One scrolling page, so pulling down anywhere syncs with iCloud.
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            monthHeader
+                            monthGrid(days)
+                            Divider()
+                            dayAgenda(days[selectedDay] ?? [])
+                        }
+                    }
+                    .refreshable { await sync.syncNow(context: context) }
                 case .list:
                     Divider()
                     agendaList(days)
+                        .refreshable { await sync.syncNow(context: context) }
                 }
             }
             .background(Theme.bg)
@@ -99,6 +108,20 @@ struct CalendarView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Today") { goToToday() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await sync.syncNow(context: context) }
+                    } label: {
+                        if sync.isSyncing {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                    .disabled(sync.isSyncing)
+                    .accessibilityLabel("Sync with iCloud")
+                    .accessibilityIdentifier("calendar.sync")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -126,8 +149,11 @@ struct CalendarView: View {
 
     private var monthHeader: some View {
         HStack {
-            Text(month.formatted(.dateTime.month(.wide).year()))
-                .font(.title3.weight(.semibold))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(month.formatted(.dateTime.month(.wide).year()))
+                    .font(.title3.weight(.semibold))
+                syncCaption
+            }
             Spacer()
             Button { shiftMonth(-1) } label: {
                 Image(systemName: "chevron.left").frame(width: 36, height: 32)
@@ -141,6 +167,25 @@ struct CalendarView: View {
         .font(.body.weight(.semibold))
         .padding(.horizontal, 16)
         .padding(.bottom, 4)
+    }
+
+    /// When this iPhone last heard from iCloud, so a stale calendar is easy to spot.
+    @ViewBuilder
+    private var syncCaption: some View {
+        Group {
+            if sync.isSyncing {
+                Text("Syncing with iCloud…")
+            } else if let error = sync.lastSyncError {
+                Text("iCloud: \(error)").foregroundStyle(.red)
+            } else if let last = sync.lastSyncDate {
+                Text("Synced \(last.formatted(Calendar.current.isDateInToday(last) ? .dateTime.hour().minute() : .dateTime.day().month(.abbreviated).hour().minute()))")
+            } else if !sync.isOn {
+                Text(sync.label)
+            }
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
 
     private func shiftMonth(_ delta: Int) {
@@ -210,8 +255,9 @@ struct CalendarView: View {
             }
         }
         .background(Color(.systemBackground))
-        // Swipe left/right to change month, like the system Calendar.
-        .gesture(
+        // Swipe left/right to change month, like the system Calendar. Simultaneous, so a
+        // vertical drag on the grid still scrolls the page (and pulls to refresh).
+        .simultaneousGesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     guard abs(value.translation.width) > abs(value.translation.height) else { return }
@@ -309,32 +355,49 @@ struct CalendarView: View {
 
     // MARK: - Selected-day agenda
 
+    /// The selected day's appointments, drawn as an inset-grouped card (not a List) so it
+    /// scrolls with the grid as one page.
     private func dayAgenda(_ items: [PlannerItem]) -> some View {
-        List {
-            Section {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(DaySections.title(for: selectedDay))
+                if let holiday = SingaporeHolidays.name(on: selectedDay) {
+                    Spacer()
+                    Label(holiday, systemImage: "flag.fill")
+                        .foregroundStyle(.red)
+                }
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+
+            VStack(alignment: .leading, spacing: 0) {
                 if items.isEmpty {
                     Button {
                         addAppointment(on: selectedDay)
                     } label: {
                         Label("No appointments — tap to add one", systemImage: "plus.circle")
                             .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 12)
                     }
+                    .buttonStyle(.borderless)
+                    .padding(.horizontal, 16)
                 } else {
-                    ForEach(items) { row($0) }
-                }
-            } header: {
-                HStack {
-                    Text(DaySections.title(for: selectedDay))
-                    if let holiday = SingaporeHolidays.name(on: selectedDay) {
-                        Spacer()
-                        Label(holiday, systemImage: "flag.fill")
-                            .foregroundStyle(.red)
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 { Divider().padding(.leading, 16) }
+                        row(item)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
                     }
                 }
             }
+            .background(Color(.secondarySystemGroupedBackground),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, 16)
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .padding(.top, 16)
+        .padding(.bottom, 24)
     }
 
     private func row(_ item: PlannerItem) -> some View {
