@@ -90,13 +90,13 @@ struct MacSettingsPane: View {
 
             Section("Agent terminal panel") {
                 Toggle("Show the agent panel", isOn: $hermesVisible)
-                Picker("Terminal starts with", selection: $terminalAgentRaw) {
+                Picker("Agent in front at launch", selection: $terminalAgentRaw) {
                     ForEach(TerminalAgent.allCases) { agent in
                         Text(agent.title).tag(agent.rawValue)
                     }
                 }
                 .pickerStyle(.inline)
-                Text("The agent CLI must be on your PATH (e.g. ~/.local/bin). Changing this restarts the terminal panel. Shortcut: ⌥⌘T toggles the panel; drag its divider to resize.")
+                Text("The agent CLI must be on your PATH (e.g. ~/.local/bin). All four agents run from launch, each in its own tab with New Session and History buttons; + opens a browser tab. Shortcut: ⌥⌘T toggles the panel; drag its divider to resize.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

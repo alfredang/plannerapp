@@ -10,7 +10,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     // Smart lists
     case all, today, scheduled, pinned, todos, appointments
     // Browse
-    case calendar, jobs, updates, archive
+    case calendar, jobs, updates, dashboard, archive
     // Support
     case settings, feedback, about
 
@@ -27,6 +27,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .calendar:     return "Calendar"
         case .jobs:         return "Schedule"
         case .updates:      return "Updates"
+        case .dashboard:    return "Dashboard"
         case .archive:      return "Archive"
         case .settings:     return "Settings"
         case .feedback:     return "Feedback"
@@ -45,6 +46,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .calendar:     return "calendar.badge.clock"
         case .jobs:         return "clock.arrow.circlepath"
         case .updates:      return "doc.richtext.fill"
+        case .dashboard:    return "gauge.with.dots.needle.67percent"
         case .archive:      return "archivebox.fill"
         case .settings:     return "gearshape.fill"
         case .feedback:     return "bubble.left.and.bubble.right.fill"
@@ -233,6 +235,9 @@ struct MacRootView: View {
             staffRoster = AgentRoster.load()
             PowerSettings.registerLoginItemOnce()
             HermesBridge.prepareWorkspace()
+            // All four agents run from launch, so each is ready (and listening) even
+            // before the panel is opened.
+            AgentPanelTabs.shared.startAll()
             // One-time repair for items captured inside someone's list before the capture
             // bar filled in "Assign to". Runs at launch rather than behind a button so it
             // can't be missed; the flag keeps it to a single pass.
@@ -384,6 +389,9 @@ struct MacRootView: View {
                 Label(SidebarItem.updates.title, systemImage: SidebarItem.updates.symbol)
                     .badge(todaysUpdates)
                     .tag(SidebarSelection.category(.updates))
+                // The Hermes / OpenClaw web dashboards — cron jobs (the daily videos), sessions.
+                Label(SidebarItem.dashboard.title, systemImage: SidebarItem.dashboard.symbol)
+                    .tag(SidebarSelection.category(.dashboard))
             }
             Section {
                 ForEach(ListHierarchy.rows(lists, collapsed: collapsedLists)) { row in
@@ -690,6 +698,8 @@ struct MacRootView: View {
             MacSchedulePane()
         case .category(.updates):
             MacUpdatesPane()
+        case .category(.dashboard):
+            MacDashboardPane()
         case .category(.archive):
             ArchiveView()
         case .category(.settings):

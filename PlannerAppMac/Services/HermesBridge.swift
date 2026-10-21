@@ -360,7 +360,7 @@ enum HermesBridge {
             } else {
                 return "ERROR: missing file or url"
             }
-            Task { @MainActor in AgentBrowser.shared.open(target) }
+            Task { @MainActor in AgentPanelTabs.shared.currentBrowser.open(target) }
             return "OK: opened \(target.isFileURL ? target.lastPathComponent : target.absoluteString) in Planner's browser"
 
         case "orderlists":

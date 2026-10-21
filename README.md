@@ -107,16 +107,20 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   Settings, plus a refresh button on the iPhone Calendar and report pages and pull-to-refresh
   on the Planner, Calendar and Updates tabs. The Calendar shows when the phone last synced, so stale data is easy to spot.
 - 🖥 **macOS desktop edition** — a two-column Mac app: smart views (To-Do, Pinned, Today,
-  Upcoming, Appointments, Calendar) and your lists in the sidebar, the item list with the
+  Upcoming, Appointments, Calendar, Schedule, Updates, Dashboard) and your lists in the sidebar, the item list with the
   capture bar on the right. Distributed as a
   [DMG](https://github.com/alfredang/plannerapp/releases/latest/download/Planner.dmg); build it
   yourself with `./scripts/build-macos-dmg.sh`.
 - 💚 **WhatsApp digests (Mac)** — today's appointments at 8 am and tomorrow's at 3 pm (times
   adjustable), sent automatically through the Hermes WhatsApp bridge or opened in WhatsApp
   for you to send. Set the recipient number in Settings — none is built in.
-- 🤖 **Hermes agent terminal (Mac)** — a collapsible right-hand panel (⌥⌘T) embeds a real
-  terminal ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) that auto-starts the
-  [Hermes Agent](https://hermes-agent.nousresearch.com) CLI. Ask it in plain language —
+- 🤖 **Agent terminal (Mac)** — a collapsible right-hand panel (⌥⌘T) embeds real terminals
+  ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)) with one tab per agent —
+  **Claude Code, Codex, [Hermes Agent](https://hermes-agent.nousresearch.com) and OpenClaw**.
+  All four start when Planner launches and pick up their previous session, so restarting the
+  app (or an agent) doesn't lose the conversation; each tab has **New Session** and
+  **History** buttons. **+** opens extra browser tabs, and sign-in popups (Google, Microsoft)
+  open in their own window. Ask an agent in plain language —
   *"add buy milk tomorrow"*, *"move the n8n task to AI-LMS-TMS"*, *"mark it done"* — and it
   edits your planner through a local command bridge (a file inbox the open window answers),
   reading live state from an auto-maintained JSON snapshot. **The agent cannot delete your
@@ -132,6 +136,10 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   and a **Schedule** view of every background job on the Mac (workforce LaunchAgents, Hermes
   and OpenClaw cron, WhatsApp reminders). The agent panel has a built-in **Browser** tab for
   reports and claude.ai artifacts.
+- 📊 **Dashboard (Mac)** — Sidebar ▸ Dashboard embeds the **Hermes** web dashboard (cron jobs,
+  sessions, config — started automatically on `127.0.0.1:9119` if it isn't running) or the
+  **OpenClaw** Control UI (signed in with a fresh gateway token), so the agents' scheduled jobs
+  are always one click away.
 - 💬 **Feedback & About** — house-style tabs (WhatsApp feedback, developer info, version).
 
 ## Tech Stack
@@ -160,6 +168,7 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 
 ```
 PlannerApp/                             — iOS app + code shared with the Mac target
+├── CLAUDE.md                           — notes for AI coding agents (build, release, gotchas)
 ├── App/        PlannerApp.swift        — @main, SwiftData + CloudKit container,
 │                                         foreground notification presenter
 ├── Models/     PlannerItem.swift       — CloudKit-safe model (task | appointment)
@@ -194,6 +203,7 @@ PlannerApp/                             — iOS app + code shared with the Mac t
                 AboutView
 
 PlannerAppMac/                          — macOS desktop edition (DMG)
+├── CLAUDE.md                           — notes for AI coding agents (build, release, gotchas)
 ├── App/        PlannerMacApp.swift     — @main, same schema + iCloud container
 ├── Services/   HermesBridge.swift      — command bridge (file inbox/outbox) + JSON state
 │                                         snapshot + Hermes skill/AGENTS.md workspace
@@ -207,8 +217,10 @@ PlannerAppMac/                          — macOS desktop edition (DMG)
 └── Views/      MacRootView.swift       — sidebar: smart views + user lists + sync badge
                 MacPlannerPane.swift    — item list (Upcoming by date) + capture bar
                 MacCalendarPane.swift   — month grid / list calendar with holidays
-                MacTerminalPanel.swift  — collapsible SwiftTerm panel running hermes
-                MacBrowserPanel.swift   — agent panel's Browser tab (reports, replies)
+                MacTerminalPanel.swift  — agent panel: Claude Code / Codex / Hermes /
+                                          OpenClaw terminal tabs + browser tabs
+                MacBrowserPanel.swift   — browser tabs (reports, replies, sign-in popups)
+                MacDashboardPane.swift  — Hermes dashboard / OpenClaw Control UI
                 MacUpdatesPane.swift    — report history, grouped by day
                 MacSchedulePane.swift   — every scheduled background job on this Mac
                 MacAgentProfileView.swift, MacAgentChatView.swift,

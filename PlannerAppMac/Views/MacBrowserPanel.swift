@@ -3,12 +3,18 @@ import AppKit
 import WebKit
 import UniformTypeIdentifiers
 
-/// The agent panel's built-in browser. One long-lived web view shared by the Browser tab,
-/// links clicked in the terminal, and the agents' `planner://browse` command — so agent
-/// reports (self-contained HTML pages) and claude.ai artifacts open right next to the chat.
+/// One browser tab of the agent panel. `shared` is the first tab: it keeps the agents'
+/// reports list and is where the Updates pane opens reports; more tabs come from the panel's
+/// "+" menu and target="_blank" links (see `AgentPanelTabs`). All tabs share one cookie
+/// store, so a claude.ai sign-in works in every tab.
 @MainActor
-final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-    static let shared = AgentBrowser()
+final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+    static let shared = AgentBrowser(isMain: true)
+
+    /// A new, empty browser tab.
+    static func makeTab() -> AgentBrowser { AgentBrowser(isMain: false) }
+
+    let id = UUID()
 
     /// Which tab the agent panel shows ("terminal" / "browser"). AppStorage-backed, so
     /// `open(_:)` can bring the browser forward from anywhere.
@@ -41,21 +47,35 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     private var observations: [NSKeyValueObservation] = []
     private var folderWatch: DispatchSourceFileSystemObject?
 
-    private override init() {
+    /// Header title: the page's title, else its host or file name.
+    var tabTitle: String {
+        if !pageTitle.isEmpty { return pageTitle }
+        guard hasPage, let url = webView.url else { return isMain ? "Browser" : "New Tab" }
+        return url.isFileURL ? url.lastPathComponent : (url.host ?? url.absoluteString)
+    }
+
+    private let isMain: Bool
+
+    private init(isMain: Bool) {
+        self.isMain = isMain
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()   // persistent: a claude.ai sign-in sticks
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true   // sign-in popups
         // Reply boxes on report cards: the page script posts Alfred's answer here and the
-        // agents read it back on their next run (see `saveReply`).
+        // agents read it back on their next run (see `saveReply`). Script and handler live
+        // in a private content world: sign-in popups reuse this configuration, and Google
+        // stalls a sign-in that can see `window.webkit.messageHandlers` (an embedded app).
         config.userContentController.addUserScript(
-            WKUserScript(source: Self.replyScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+            WKUserScript(source: Self.replyScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true,
+                         in: Self.replyWorld))
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
-        config.userContentController.add(ReplyHandlerProxy(self), name: "reply")
+        config.userContentController.add(ReplyHandlerProxy(self), contentWorld: Self.replyWorld, name: "reply")
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         // Present as Safari so sign-in pages (claude.ai, Google) don't reject an embedded view.
-        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+        webView.customUserAgent = Self.safariUserAgent
         observations = [
             webView.observe(\.canGoBack) { [weak self] v, _ in Task { @MainActor in self?.canGoBack = v.canGoBack } },
             webView.observe(\.canGoForward) { [weak self] v, _ in Task { @MainActor in self?.canGoForward = v.canGoForward } },
@@ -69,6 +89,7 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                 }
             },
         ]
+        guard isMain else { return }
         try? FileManager.default.createDirectory(at: Self.reportsURL, withIntermediateDirectories: true)
         reloadReports()
         watchReportsFolder()
@@ -146,7 +167,8 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
               let data = try? JSONSerialization.data(withJSONObject: savedReplies(forPage: url.lastPathComponent)),
               let json = String(data: data, encoding: .utf8) else { return }
         let agent = Self.agentName(forPage: url.lastPathComponent)
-        webView.evaluateJavaScript("window.__plAgent = '\(agent)'; if (window.__plShow) window.__plShow(\(json));")
+        webView.evaluateJavaScript("window.__plAgent = '\(agent)'; if (window.__plShow) window.__plShow(\(json));",
+                                   in: nil, in: Self.replyWorld)
         resumeUnansweredReplies(forPage: url.lastPathComponent)
     }
 
@@ -234,8 +256,13 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                   "ts": replyTs, "agent": agent, "answer": answer ?? "", "note": note ?? "",
               ]),
               let json = String(data: data, encoding: .utf8) else { return }
-        webView.evaluateJavaScript("if (window.__plAnswer) window.__plAnswer(\(json));")
+        webView.evaluateJavaScript("if (window.__plAnswer) window.__plAnswer(\(json));",
+                                   in: nil, in: Self.replyWorld)
     }
+
+    /// The isolated JavaScript world the reply script runs in (it shares the page's DOM,
+    /// not its globals), so web pages never see Planner's message handler.
+    private static let replyWorld = WKContentWorld.world(name: "PlannerReplies")
 
     /// Adds a reply thread under every card (`.item`) of a report page: Alfred's replies,
     /// each followed by the agent's answer once it arrives.
@@ -293,9 +320,9 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     // MARK: - Opening
 
-    /// Opens a URL (web or file) and brings the Browser tab forward.
+    /// Opens a URL (web or file) in this tab and brings it forward.
     func open(_ url: URL) {
-        UserDefaults.standard.set("browser", forKey: Self.tabKey)
+        AgentPanelTabs.shared.selectBrowser(self)
         if url.isFileURL {
             // Agent reports are often HTML fragments with no <meta charset>; WebKit then
             // reads local files as Latin-1 and emoji/dashes turn into "ðŸ…" mojibake.
@@ -372,20 +399,57 @@ final class AgentBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         folderWatch = source
     }
 
+    /// Installed Safari's own user agent. A hard-coded old Safari version on a much newer
+    /// WebKit reads as a spoofed browser to Google, which then piles on sign-in challenges.
+    private static var safariUserAgent: String {
+        let plist = NSDictionary(contentsOfFile: "/Applications/Safari.app/Contents/Info.plist")
+        let version = (plist?["CFBundleShortVersionString"] as? String) ?? "26.0"
+        return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(version) Safari/605.1.15"
+    }
+
     // MARK: - WKUIDelegate
 
-    /// target="_blank" links open in this same view rather than vanishing.
+    /// Sign-in popups (window.open), kept alive until they close themselves.
+    private var popups: [NSWindow] = []
+
+    /// target="_blank" links (e.g. an artifact) open in a new browser tab. Script popups
+    /// (Google / Microsoft sign-in) get a real window instead: the login hands its result
+    /// back through `window.opener`, which a tab load would cut off.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = navigationAction.request.url { webView.load(URLRequest(url: url)) }
-        return nil
+        guard navigationAction.navigationType != .linkActivated else {
+            if let url = navigationAction.request.url { AgentPanelTabs.shared.newBrowser(url) }
+            return nil
+        }
+        let size = NSSize(width: windowFeatures.width?.doubleValue ?? 520, height: windowFeatures.height?.doubleValue ?? 680)
+        let popup = WKWebView(frame: NSRect(origin: .zero, size: size), configuration: configuration)
+        popup.customUserAgent = webView.customUserAgent
+        popup.uiDelegate = self
+        let window = NSWindow(contentRect: popup.frame, styleMask: [.titled, .closable, .resizable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.title = "Sign in"
+        window.contentView = popup
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        popups.append(window)
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated { self?.popups.removeAll { $0 === note.object as? NSWindow } }
+        }
+        return popup
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        popups.first { $0.contentView === webView }?.close()
     }
 }
 
 /// The Browser tab: a compact toolbar over the shared web view, with the agents' reports
 /// one click away.
 struct MacBrowserPanel: View {
-    @ObservedObject private var browser = AgentBrowser.shared
+    @ObservedObject var browser: AgentBrowser
+    /// The first tab owns the reports list every tab's menu and new-tab page show.
+    @ObservedObject private var main = AgentBrowser.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -427,10 +491,10 @@ struct MacBrowserPanel: View {
 
     private var reportsMenu: some View {
         Menu {
-            if browser.reports.isEmpty {
+            if main.reports.isEmpty {
                 Text("No reports yet")
             }
-            ForEach(browser.reports.prefix(30)) { report in
+            ForEach(main.reports.prefix(30)) { report in
                 Button(report.date.map { "\(report.displayTitle) — \($0)" } ?? report.displayTitle) {
                     browser.open(report: report)
                 }
@@ -452,12 +516,12 @@ struct MacBrowserPanel: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Reports")
                     .font(.headline)
-                if browser.reports.isEmpty {
+                if main.reports.isEmpty {
                     Text("Reports your agents publish appear here. Links you click in the terminal open in this tab too.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-                ForEach(browser.reports.prefix(20)) { report in
+                ForEach(main.reports.prefix(20)) { report in
                     Button { browser.open(report: report) } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(report.displayTitle).font(.callout.weight(.semibold))
