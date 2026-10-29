@@ -3,25 +3,28 @@ import SwiftData
 import EventKit
 import Combine
 
-/// Two-way sync between Planner appointments and one calendar in the system Calendar —
-/// typically a Google account (e.g. angch@…) added in Settings ▸ Apps ▸ Calendar ▸ Accounts
-/// (iOS) or System Settings ▸ Internet Accounts (macOS).
+/// Two-way sync between Planner appointments and one or more calendars in the system
+/// Calendar — typically Google accounts (e.g. personal angchewhoe@… and work angch@…) added in
+/// Settings ▸ Apps ▸ Calendar ▸ Accounts (iOS) or System Settings ▸ Internet Accounts (macOS).
 ///
 /// Design notes:
 /// - **On-device only.** EventKit reads and writes the local calendar database; the account
 ///   owner (Apple/Google) does the actual network sync. No OAuth, no stored secrets.
-/// - **Stable links.** An item stores its event's `calendarItemExternalIdentifier` (for
-///   Google this is the event's iCal UID). Unlike `eventIdentifier`, it is the same on the
-///   iPhone and the Mac, so both devices find the same event instead of each adding a copy.
-///   Events Planner creates also carry a final `Planner id: <uuid>` line in their notes —
-///   the same convention the agents use — so a link can be recovered from either side.
-/// - **Planner → Calendar:** dated appointments are created/updated in the chosen calendar.
-///   To-dos never are. Finishing an appointment leaves its event alone (the meeting still
-///   happened); events are only removed when Planner created them and the item stops being a
-///   dated appointment. Invites organised by someone else are never edited or removed.
-/// - **Calendar → Planner** (optional, on by default): events in the chosen calendar from
-///   today onward appear as Planner appointments. Declined and cancelled events are skipped.
-///   A Calendar-side change to a linked event (moved, renamed) is pulled into the item.
+/// - **Every chosen calendar holds every appointment.** A Planner appointment is added to each
+///   chosen calendar, and an event that appears in one of them comes into Planner and from
+///   there is copied to the others. So the personal and the work calendar both show everything.
+/// - **Stable links.** An item stores its first event's `calendarItemExternalIdentifier` (for
+///   Google this is the event's iCal UID — the same on the iPhone and the Mac). The copies
+///   Planner writes carry a final `Planner id: <uuid>` line in their notes — the convention
+///   the agents use too — so each device finds them in every calendar without new model
+///   fields. Each device also remembers which event it linked in which calendar.
+/// - **Planner → Calendar:** to-dos are never added. Finishing an appointment leaves its events
+///   alone (the meeting still happened); events are only removed when Planner created them and
+///   the item stops being a dated appointment. Invites organised by someone else are never
+///   edited or removed. An event deleted in a calendar is not put back there.
+/// - **Calendar → Planner** (optional, on by default): events from today onward appear as
+///   Planner appointments. Declined and cancelled events are skipped. A Calendar-side change to
+///   a linked event (moved, renamed) is pulled into the item, then pushed to the other copies.
 /// - **Conflicts:** per link we remember the last state both sides agreed on. Whichever side
 ///   differs from it changed; if both did, Planner wins — unless the event is an invite from
 ///   someone else, in which case the organiser's version wins.
@@ -29,10 +32,13 @@ import Combine
 enum CalendarSync {
 
     static let enabledKey = "calendar.syncEnabled"
+    static let calendarIDsKey = "calendar.syncCalendarIDs"
+    /// v2.5 single-calendar choice, still read when no list has been saved.
     static let calendarIDKey = "calendar.targetCalendarID"
     static let importKey = "calendar.importEvents"
     private static let agreedKey = "calendar.agreedState"
     private static let seenKey = "calendar.seenEvents"
+    private static let linksKey = "calendar.links"
 
     /// Whether appointments sync with the system Calendar. Off by default — writing to
     /// someone's real calendar is not something to do uninvited.
@@ -41,14 +47,17 @@ enum CalendarSync {
         set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
     }
 
-    /// Which calendar to sync with (an `EKCalendar.calendarIdentifier`). Empty = the system
-    /// default. Set this to the Google "angch@…" calendar to sync with Google.
-    static var targetCalendarID: String {
-        get { UserDefaults.standard.string(forKey: calendarIDKey) ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: calendarIDKey) }
+    /// The calendars to sync with (`EKCalendar.calendarIdentifier`s; device-local ids).
+    static var calendarIDs: [String] {
+        get {
+            if let ids = UserDefaults.standard.stringArray(forKey: calendarIDsKey) { return ids }
+            let legacy = UserDefaults.standard.string(forKey: calendarIDKey) ?? ""
+            return legacy.isEmpty ? [] : [legacy]
+        }
+        set { UserDefaults.standard.set(newValue, forKey: calendarIDsKey) }
     }
 
-    /// Whether events from the calendar are brought into Planner (on unless turned off).
+    /// Whether events from the calendars are brought into Planner (on unless turned off).
     static var importsEvents: Bool {
         get { UserDefaults.standard.object(forKey: importKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: importKey) }
@@ -56,13 +65,26 @@ enum CalendarSync {
 
     /// How far ahead calendar events are brought into Planner.
     private static let importDays = 60
+    /// How far ahead appointments are copied to the calendars and kept in step.
+    private static let horizonDays = 365
     /// Linked pairs this far back are still kept in step (a meeting moved to yesterday).
     private static let backfillDays = 7
-    /// An unlinked item is only pushed by the periodic sync once it is this old, giving the
-    /// device that created it time to push it and hand the link over iCloud first.
+    /// An item made on another device is only copied to a calendar once it is this old, giving
+    /// that device time to write its copies and Google time to bring them here first. The Mac
+    /// runs all day, so it does this first; the iPhone waits longer.
+    #if os(macOS)
     private static let adoptionGrace: TimeInterval = 10 * 60
+    #else
+    private static let adoptionGrace: TimeInterval = 30 * 60
+    #endif
+    /// Items created on this device while the app runs (e.g. by the agents' bridge on the Mac):
+    /// no other device can have written their events, so they skip the grace.
+    private static var localItems = Set<UUID>()
 
     private(set) static var store = EKEventStore()
+
+    /// Mark an item as created here, so the next sync copies it straight away.
+    static func markLocal(_ item: PlannerItem) { localItems.insert(item.id) }
 
     // MARK: - Authorization
 
@@ -99,48 +121,69 @@ enum CalendarSync {
         return false
     }
 
-    /// Calendars we're allowed to write into, for the picker in Settings.
+    /// Calendars we're allowed to write into, for the list in Settings.
     static func writableCalendars() -> [EKCalendar] {
         store.calendars(for: .event).filter(\.allowsContentModifications)
     }
 
+    /// The chosen calendars that exist and accept changes. Nothing chosen = nothing synced.
+    static func syncCalendars() -> [EKCalendar] {
+        var seen = Set<String>()
+        return calendarIDs.compactMap { store.calendar(withIdentifier: $0) }
+            .filter { $0.allowsContentModifications && seen.insert($0.calendarIdentifier).inserted }
+    }
+
     // MARK: - One item (called right after an edit)
 
-    /// Push one item's change to its event. Returns the link to store in `calendarEventID`.
+    /// Push one item's change to its events. Returns the link to store in `calendarEventID`.
     @discardableResult
     static func sync(_ item: PlannerItem) -> String? {
         guard isEnabled, isAuthorized else { return nil }
         guard hasFullAccess else { return writeOnlyCreate(item) }
-        let existing = linkedEvent(for: item)
+        let calendars = syncCalendars()
+        let id = itemKey(item)
+        var links = linksState()[id] ?? [:]
+        let found = calendars.compactMap { cal in knownEvent(for: item, in: cal, links: links).map { (cal, $0) } }
+        let primary = item.calendarEventID?.isEmpty == false ? item.calendarEventID : found.first.map { linkKey($0.1) }
         guard item.kind == .appointment, item.date != nil else {
-            if let existing, ownsEvent(existing, item: item) {
-                try? store.remove(existing, span: .thisEvent, commit: true)
+            for (_, event) in found where ownsEvent(event, item: item) {
+                try? store.remove(event, span: .thisEvent, commit: true)
             }
-            return existing == nil ? item.calendarEventID : nil
+            return found.isEmpty ? item.calendarEventID : nil
         }
-        // Finished or archived: leave the event as it is.
-        if item.isArchived || item.isDone { return existing.map(linkKey) ?? item.calendarEventID }
-        let event = existing ?? newEvent()
-        guard existing == nil || canEdit(event) else { return linkKey(event) }
-        guard write(item, to: event, created: existing == nil) else { return item.calendarEventID }
-        let key = linkKey(event)
-        agree(key, fingerprint(item))
-        markSeen([key])
-        return key
+        // Finished or archived: leave the events as they are.
+        if item.isArchived || item.isDone { return primary }
+        let now = fingerprint(item)
+        for (cal, event) in found {
+            links[cal.calendarIdentifier] = linkKey(event)
+            guard canEdit(event), write(item, to: event, created: false) else { continue }
+            agree(linkKey(event), now)
+        }
+        // A brand-new appointment goes to every calendar now. Copies missing for older items
+        // are left to `syncAll`, which can see whether another device already wrote them.
+        var created: [String] = []
+        if found.isEmpty, item.calendarEventID?.isEmpty ?? true {
+            for cal in calendars {
+                let event = newEvent(in: cal)
+                guard write(item, to: event, created: true) else { continue }
+                let key = linkKey(event)
+                links[cal.calendarIdentifier] = key
+                agree(key, now)
+                created.append(key)
+            }
+        }
+        setLinks(links, for: id)
+        markSeen(Set(links.values))
+        return primary ?? created.first ?? item.calendarEventID
     }
 
     /// Legacy path when only write access was granted: create once, never read back.
     private static func writeOnlyCreate(_ item: PlannerItem) -> String? {
         guard item.kind == .appointment, item.date != nil, !item.isArchived,
-              item.calendarEventID?.isEmpty ?? true else { return item.calendarEventID }
-        let event = newEvent()
+              item.calendarEventID?.isEmpty ?? true,
+              let calendar = syncCalendars().first ?? store.defaultCalendarForNewEvents else { return item.calendarEventID }
+        let event = newEvent(in: calendar)
         return write(item, to: event, created: true) ? event.eventIdentifier : nil
-    }
-
-    /// Remove the mirrored event for an item, if Planner created it.
-    static func removeEvent(for item: PlannerItem) {
-        guard hasFullAccess, let event = linkedEvent(for: item), ownsEvent(event, item: item) else { return }
-        try? store.remove(event, span: .thisEvent, commit: true)
     }
 
     // MARK: - Full sync
@@ -148,7 +191,24 @@ enum CalendarSync {
     /// What the last full sync did, for Settings.
     struct Summary { var imported = 0, pushed = 0, pulled = 0, created = 0, merged = 0 }
 
-    /// Reconcile every appointment with the chosen calendar, both ways. Safe to re-run.
+    /// One calendar's events in the sync window, indexed for linking.
+    private struct CalendarIndex {
+        let calendar: EKCalendar
+        var events: [EKEvent]
+        var byKey: [String: EKEvent] = [:]
+        var byMarker: [String: [EKEvent]] = [:]
+
+        init(calendar: EKCalendar, events: [EKEvent]) {
+            self.calendar = calendar
+            self.events = events
+            for event in events {
+                byKey[CalendarSync.linkKey(event)] = event
+                if let marker = CalendarSync.markerID(in: event.notes) { byMarker[String(marker.prefix(8)), default: []].append(event) }
+            }
+        }
+    }
+
+    /// Reconcile every appointment with every chosen calendar, both ways. Safe to re-run.
     @MainActor
     @discardableResult
     static func syncAll(context: ModelContext) -> Summary? {
@@ -157,7 +217,8 @@ enum CalendarSync {
             legacySyncAll(context: context)
             return nil
         }
-        guard let calendar = targetCalendar() else { return nil }
+        let calendars = syncCalendars()
+        guard !calendars.isEmpty else { return nil }
         var summary = Summary()
         let all = (try? context.fetch(FetchDescriptor<PlannerItem>())) ?? []
         let cal = Calendar.current
@@ -166,66 +227,120 @@ enum CalendarSync {
         summary.merged = mergeDuplicates(all, context: context)
         let items = all.filter { !$0.isDeleted }
 
-        // Events in the window, indexed by link key.
-        let windowEnd = cal.date(byAdding: .day, value: importDays, to: today) ?? today
         let windowStart = cal.date(byAdding: .day, value: -backfillDays, to: today) ?? today
-        let events = store.events(matching: store.predicateForEvents(
-            withStart: windowStart, end: windowEnd, calendars: [calendar]))
-        var eventsByKey: [String: EKEvent] = [:]
-        for event in events { eventsByKey[linkKey(event)] = event }
-        let markerOwners = Dictionary(grouping: events.compactMap { e in markerID(in: e.notes).map { ($0, e) } },
-                                      by: \.0).mapValues { $0[0].1 }
+        let windowEnd = cal.date(byAdding: .day, value: horizonDays, to: today) ?? today
+        let importEnd = cal.date(byAdding: .day, value: importDays, to: today) ?? today
+        var indexes = calendars.map { calendar in
+            CalendarIndex(calendar: calendar, events: store.events(matching: store.predicateForEvents(
+                withStart: windowStart, end: windowEnd, calendars: [calendar])))
+        }
+        for i in indexes.indices { summary.merged += removeDuplicateCopies(&indexes[i]) }
 
-        var linkedKeys = Set<String>()
-        for item in items where item.kind == .appointment {
+        var allLinks = linksState()
+        /// Events already tied to an item, as "calendar|key".
+        var claimed = Set<String>()
+        func claim(_ index: CalendarIndex, _ event: EKEvent) { claimed.insert(index.calendar.calendarIdentifier + "|" + linkKey(event)) }
+        func isClaimed(_ index: CalendarIndex, _ event: EKEvent) -> Bool {
+            claimed.contains(index.calendar.calendarIdentifier + "|" + linkKey(event))
+        }
+
+        // Pass 1: find every item's event in each calendar.
+        var pairsByItem: [UUID: [(Int, EKEvent)]] = [:]
+        let appointments = items.filter { $0.kind == .appointment && $0.date != nil }
+        for item in appointments {
+            let links = allLinks[itemKey(item)] ?? [:]
+            var pairs: [(Int, EKEvent)] = []
+            for (i, index) in indexes.enumerated() {
+                if let event = indexedEvent(for: item, in: index, links: links) {
+                    pairs.append((i, event))
+                    claim(index, event)
+                }
+            }
+            pairsByItem[item.id] = pairs
+        }
+
+        // Pass 2: keep linked pairs in step, then copy each item to the calendars it's missing from.
+        for item in appointments {
             guard let date = item.date else { continue }
-            let event = eventsByKey[item.calendarEventID ?? ""]
-                ?? markerOwners.first(where: { item.id.uuidString.lowercased().hasPrefix($0.key) })?.value
-                ?? linkedEvent(for: item)
-            if let event {
-                let key = linkKey(event)
-                linkedKeys.insert(key)
-                if item.calendarEventID != key { item.calendarEventID = key }
-                guard !item.isArchived, !item.isDone, date >= windowStart else { continue }
-                switch reconcile(item, event, key: key) {
+            let id = itemKey(item)
+            var links = allLinks[id] ?? [:]
+            var pairs = pairsByItem[item.id] ?? []
+            let wasLinked = !(item.calendarEventID?.isEmpty ?? true)
+            let live = !item.isArchived && !item.isDone
+
+            // An event added by hand for this item (e.g. by an agent) counts as its copy.
+            for (i, index) in indexes.enumerated() where !pairs.contains(where: { $0.0 == i }) && live && date >= today {
+                if let match = index.events.first(where: { sameAppointment(item, $0) && !isClaimed(index, $0) }) {
+                    pairs.append((i, match))
+                    claim(index, match)
+                }
+            }
+
+            for (i, event) in pairs { links[indexes[i].calendar.calendarIdentifier] = linkKey(event) }
+            if let first = pairs.first, !wasLinked { item.calendarEventID = linkKey(first.1) }
+
+            if live, date >= windowStart, !pairs.isEmpty {
+                switch reconcile(item, pairs.map(\.1)) {
                 case .pushed: summary.pushed += 1
                 case .pulled: summary.pulled += 1
                 case .none: break
                 }
-            } else if item.calendarEventID?.isEmpty ?? true,
-                      !item.isArchived, !item.isDone, date >= today,
-                      Date().timeIntervalSince(item.createdAt) > adoptionGrace {
-                // Not in the calendar yet — but first look for one the agents added by hand.
-                let match = events.first { sameAppointment(item, $0) && !linkedKeys.contains(linkKey($0)) }
-                let event = match ?? newEvent()
-                if match == nil {
+            }
+
+            // Missing copies. Not where this device already linked one (it was deleted there),
+            // nor for an item whose event vanished everywhere (deleted in the calendar).
+            let mayCopy = live && date >= today && date < windowEnd && (pairs.isEmpty ? !wasLinked : true)
+                && (localItems.contains(item.id) || Date().timeIntervalSince(item.createdAt) > adoptionGrace)
+            if mayCopy {
+                for (i, index) in indexes.enumerated()
+                where !pairs.contains(where: { $0.0 == i }) && links[index.calendar.calendarIdentifier] == nil {
+                    let event = newEvent(in: index.calendar)
                     guard write(item, to: event, created: true) else { continue }
+                    let key = linkKey(event)
+                    links[index.calendar.calendarIdentifier] = key
+                    if item.calendarEventID?.isEmpty ?? true { item.calendarEventID = key }
+                    indexes[i].events.append(event)
+                    claim(index, event)
+                    agree(key, fingerprint(item))
                     summary.created += 1
                 }
-                let key = linkKey(event)
-                item.calendarEventID = key
-                linkedKeys.insert(key)
-                agree(key, fingerprint(item))
             }
+            if !links.isEmpty { allLinks[id] = links }
         }
 
+        // Pass 3: bring new events into Planner. The same meeting in two calendars (one invite
+        // to both addresses, or entered twice) becomes one item linked to both.
         if importsEvents {
-            let seen = seenKeys().union(items.compactMap(\.calendarEventID))
-            for event in events where event.startDate >= today || event.endDate > Date() {
-                let key = linkKey(event)
-                guard !linkedKeys.contains(key), !seen.contains(key), shouldImport(event) else { continue }
-                let item = PlannerItem(title: event.title ?? "Untitled event",
-                                       notes: importedNotes(event), kind: .appointment,
-                                       date: event.isAllDay ? cal.startOfDay(for: event.startDate) : event.startDate)
-                item.calendarEventID = key
-                context.insert(item)
-                linkedKeys.insert(key)
-                agree(key, fingerprint(event))
-                summary.imported += 1
+            var known = seenKeys().union(items.compactMap(\.calendarEventID))
+            var imported: [PlannerItem] = []
+            for index in indexes {
+                for event in index.events
+                where (event.startDate >= today || event.endDate > Date()) && event.startDate < importEnd {
+                    let key = linkKey(event)
+                    guard !isClaimed(index, event), !known.contains(key), shouldImport(event) else { continue }
+                    if let twin = imported.first(where: { sameAppointment($0, event) && allLinks[itemKey($0)]?[index.calendar.calendarIdentifier] == nil }) {
+                        allLinks[itemKey(twin), default: [:]][index.calendar.calendarIdentifier] = key
+                        claim(index, event)
+                        known.insert(key)
+                        continue
+                    }
+                    let item = PlannerItem(title: event.title ?? "Untitled event",
+                                           notes: importedNotes(event), kind: .appointment,
+                                           date: event.isAllDay ? cal.startOfDay(for: event.startDate) : event.startDate)
+                    item.calendarEventID = key
+                    context.insert(item)
+                    allLinks[itemKey(item)] = [index.calendar.calendarIdentifier: key]
+                    imported.append(item)
+                    claim(index, event)
+                    known.insert(key)
+                    agree(key, fingerprint(event))
+                    summary.imported += 1
+                }
             }
         }
 
-        markSeen(linkedKeys)
+        saveLinks(allLinks)
+        markSeen(Set(claimed.map { String($0.split(separator: "|", maxSplits: 1).last ?? "") }))
         if context.hasChanges { try? context.save() }
         return summary
     }
@@ -240,35 +355,45 @@ enum CalendarSync {
         }
     }
 
-    // MARK: - Reconcile one linked pair
+    // MARK: - Reconcile one item with its copies
 
     private enum Outcome { case pushed, pulled, none }
 
-    private static func reconcile(_ item: PlannerItem, _ event: EKEvent, key: String) -> Outcome {
+    /// First take a change made in a calendar (the organiser's invite wins, then the most
+    /// recently edited copy), then write the item to every copy that differs.
+    private static func reconcile(_ item: PlannerItem, _ events: [EKEvent]) -> Outcome {
         let planner = fingerprint(item)
-        let calendar = fingerprint(event)
-        if planner == calendar {
-            // In step. Planner's own events also follow note edits (comments, links).
-            if ownsEvent(event, item: item), canEdit(event), event.notes != eventNotes(for: item) {
-                event.notes = eventNotes(for: item)
-                try? store.save(event, span: .thisEvent, commit: true)
+        let agreed = agreedState()
+        var outcome = Outcome.none
+        // An invite can't be edited here, so its version stands; otherwise only a copy that
+        // changed while Planner didn't. When both changed, Planner wins. Invites are always
+        // candidates, so two invites that disagree settle on one instead of taking turns.
+        let candidates = events.filter { event in
+            !canEdit(event) || (fingerprint(event) != planner && agreed[linkKey(event)] == planner)
+        }
+        if let source = candidates.max(by: { a, b in
+            (canEdit(a) ? 0 : 1, a.lastModifiedDate ?? .distantPast) < (canEdit(b) ? 0 : 1, b.lastModifiedDate ?? .distantPast)
+        }), fingerprint(source) != planner {
+            apply(source, to: item)
+            outcome = .pulled
+        }
+        let now = fingerprint(item)
+        for event in events {
+            let key = linkKey(event)
+            if fingerprint(event) == now {
+                // In step. Planner's own copies also follow note edits (comments, links).
+                if ownsEvent(event, item: item), canEdit(event), event.notes != eventNotes(for: item) {
+                    event.notes = eventNotes(for: item)
+                    try? store.save(event, span: .thisEvent, commit: true)
+                }
+                agree(key, now)
+                continue
             }
-            agree(key, planner)
-            return .none
+            guard canEdit(event), write(item, to: event, created: false) else { continue }
+            agree(key, now)
+            if outcome == .none { outcome = .pushed }
         }
-        let agreed = agreedState()[key]
-        let pull: Bool
-        if agreed == calendar { pull = false }            // only Planner changed
-        else if agreed == planner { pull = true }         // only the calendar changed
-        else { pull = !canEdit(event) }                   // both: Planner wins, except invites
-        if pull || !canEdit(event) {
-            apply(event, to: item)
-            agree(key, fingerprint(event))
-            return .pulled
-        }
-        guard write(item, to: event, created: false) else { return .none }
-        agree(key, fingerprint(item))
-        return .pushed
+        return outcome
     }
 
     /// Bring an event's title and time into its Planner item.
@@ -284,9 +409,9 @@ enum CalendarSync {
 
     // MARK: - Writing events
 
-    private static func newEvent() -> EKEvent {
+    private static func newEvent(in calendar: EKCalendar) -> EKEvent {
         let event = EKEvent(eventStore: store)
-        event.calendar = targetCalendar()
+        event.calendar = calendar
         return event
     }
 
@@ -322,7 +447,7 @@ enum CalendarSync {
     /// The item's notes plus the link line back to Planner.
     private static func eventNotes(for item: PlannerItem) -> String {
         let base = strippingMarker(item.notes)
-        return (base.isEmpty ? "" : base + "\n\n") + "Planner id: \(item.id.uuidString.lowercased())"
+        return (base.isEmpty ? "" : base + "\n\n") + "Planner id: \(itemKey(item))"
     }
 
     // MARK: - Importing events
@@ -332,7 +457,7 @@ enum CalendarSync {
         if let me = event.attendees?.first(where: \.isCurrentUser), me.participantStatus == .declined {
             return false
         }
-        // Planner's own events whose item was deleted stay deleted.
+        // Planner's own copies whose item was deleted stay deleted.
         return markerID(in: event.notes) == nil
     }
 
@@ -360,45 +485,69 @@ enum CalendarSync {
 
     // MARK: - Links
 
-    /// The key stored in `calendarEventID`: the event's cross-device identifier, plus the
-    /// occurrence date for one instance of a repeating event.
+    private static func itemKey(_ item: PlannerItem) -> String { item.id.uuidString.lowercased() }
+
+    /// The cross-device identifier of an event, plus the occurrence date for one instance of
+    /// a repeating event.
     private static func linkKey(_ event: EKEvent) -> String {
         let base = event.calendarItemExternalIdentifier ?? event.eventIdentifier ?? ""
         guard event.hasRecurrenceRules, let occurrence = event.occurrenceDate else { return base }
         return base + "#" + String(Int(occurrence.timeIntervalSince1970))
     }
 
-    /// Find an item's event outside the sync window, or from a legacy device-local id.
-    private static func linkedEvent(for item: PlannerItem) -> EKEvent? {
-        var candidates: [String] = []
-        if let id = item.calendarEventID, !id.isEmpty { candidates.append(id) }
-        // A link the agents wrote by hand: "GCal: <google event id>".
+    /// Keys that may name this item's event: this device's link for the calendar, the
+    /// item's stored link, and a link the agents wrote by hand ("GCal: <google event id>").
+    private static func candidateKeys(for item: PlannerItem, in calendar: EKCalendar,
+                                      links: [String: String]) -> [String] {
+        var keys: [String] = []
+        if let key = links[calendar.calendarIdentifier] { keys.append(key) }
+        if let id = item.calendarEventID, !id.isEmpty { keys.append(id) }
         if let gcal = firstMatch(#"(?im)^\s*GCal:\s*(\S+)"#, in: item.notes) {
-            candidates += [gcal + "@google.com", gcal]
+            keys += [gcal + "@google.com", gcal]
         }
-        for key in candidates {
+        return keys
+    }
+
+    /// The item's event among one calendar's events in the window.
+    private static func indexedEvent(for item: PlannerItem, in index: CalendarIndex,
+                                     links: [String: String]) -> EKEvent? {
+        for key in candidateKeys(for: item, in: index.calendar, links: links) {
+            if let event = index.byKey[key] { return event }
+        }
+        return index.byMarker[String(itemKey(item).prefix(8))]?.first { ownsEvent($0, item: item) }
+    }
+
+    /// The item's event in one calendar, looked up by id wherever it is in time.
+    private static func knownEvent(for item: PlannerItem, in calendar: EKCalendar,
+                                   links: [String: String]) -> EKEvent? {
+        let inCalendar = { (event: EKEvent) in event.calendar?.calendarIdentifier == calendar.calendarIdentifier }
+        for key in candidateKeys(for: item, in: calendar, links: links) {
             let parts = key.split(separator: "#", maxSplits: 1).map(String.init)
             let occurrence = parts.count == 2 ? Double(parts[1]).map(Date.init(timeIntervalSince1970:)) : nil
-            let found = store.calendarItems(withExternalIdentifier: parts[0]).compactMap { $0 as? EKEvent }
+            let found = store.calendarItems(withExternalIdentifier: parts[0]).compactMap { $0 as? EKEvent }.filter(inCalendar)
             if let occurrence {
                 if let match = found.first(where: { $0.occurrenceDate == occurrence }) { return match }
                 // Repeating events are listed once; find this instance near its date.
                 let window = store.predicateForEvents(withStart: occurrence.addingTimeInterval(-86_400),
                                                       end: occurrence.addingTimeInterval(86_400),
-                                                      calendars: found.first.flatMap { $0.calendar }.map { [$0] })
+                                                      calendars: [calendar])
                 if let match = store.events(matching: window).first(where: { linkKey($0) == key }) { return match }
             } else if let first = found.first {
                 return first
             }
-            if let legacy = store.event(withIdentifier: key) { return legacy }
+            if let legacy = store.event(withIdentifier: key), inCalendar(legacy) { return legacy }
         }
-        return nil
+        // A copy carrying the item's id line, near the item's date.
+        guard let date = item.date else { return nil }
+        let near = store.predicateForEvents(withStart: date.addingTimeInterval(-86_400),
+                                            end: date.addingTimeInterval(86_400), calendars: [calendar])
+        return store.events(matching: near).first { ownsEvent($0, item: item) }
     }
 
     /// Planner made this event (it carries the item's id line), so Planner may rewrite it.
     private static func ownsEvent(_ event: EKEvent, item: PlannerItem) -> Bool {
         guard let id = markerID(in: event.notes) else { return false }
-        return item.id.uuidString.lowercased().hasPrefix(id)
+        return itemKey(item).hasPrefix(id)
     }
 
     /// Editable here: the calendar allows changes and it isn't someone else's invite.
@@ -430,6 +579,25 @@ enum CalendarSync {
             }
         }
         return removed
+    }
+
+    /// Two devices can also both copy one item into a calendar before either sees the other's
+    /// copy. Copies with the same id line are Planner's own, so the extras are removed.
+    private static func removeDuplicateCopies(_ index: inout CalendarIndex) -> Int {
+        var removed = Set<String>()
+        for (_, group) in index.byMarker where group.count > 1 {
+            let copies = group.filter { !$0.hasRecurrenceRules && canEdit($0) }
+                .sorted { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
+            guard copies.count > 1, Set(copies.compactMap { markerID(in: $0.notes) }).count == 1 else { continue }
+            for extra in copies.dropFirst() {
+                let id = extra.eventIdentifier ?? ""
+                if (try? store.remove(extra, span: .thisEvent, commit: true)) != nil { removed.insert(id) }
+            }
+        }
+        guard !removed.isEmpty else { return 0 }
+        index = CalendarIndex(calendar: index.calendar,
+                              events: index.events.filter { !removed.contains($0.eventIdentifier ?? "") })
+        return removed.count
     }
 
     // MARK: - Remembered state
@@ -465,6 +633,22 @@ enum CalendarSync {
         UserDefaults.standard.set(state, forKey: agreedKey)
     }
 
+    /// Per item, the event this device linked in each calendar: item id → calendar id → key.
+    private static func linksState() -> [String: [String: String]] {
+        UserDefaults.standard.dictionary(forKey: linksKey) as? [String: [String: String]] ?? [:]
+    }
+
+    private static func saveLinks(_ links: [String: [String: String]]) {
+        UserDefaults.standard.set(links, forKey: linksKey)
+    }
+
+    private static func setLinks(_ links: [String: String], for item: String) {
+        guard !links.isEmpty else { return }
+        var all = linksState()
+        all[item] = links
+        saveLinks(all)
+    }
+
     /// Events that have been linked to an item here: once its item is deleted, an event is
     /// not imported again.
     private static func seenKeys() -> Set<String> {
@@ -474,7 +658,7 @@ enum CalendarSync {
     private static func markSeen(_ keys: Set<String>) {
         var all = UserDefaults.standard.stringArray(forKey: seenKey) ?? []
         let known = Set(all)
-        all += keys.filter { !known.contains($0) }
+        all += keys.filter { !$0.isEmpty && !known.contains($0) }
         UserDefaults.standard.set(Array(all.suffix(5000)), forKey: seenKey)
     }
 
@@ -508,14 +692,6 @@ enum CalendarSync {
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range(at: 1), in: text) else { return nil }
         return String(text[range])
-    }
-
-    private static func targetCalendar() -> EKCalendar? {
-        if !targetCalendarID.isEmpty,
-           let match = store.calendar(withIdentifier: targetCalendarID) {
-            return match
-        }
-        return store.defaultCalendarForNewEvents
     }
 }
 

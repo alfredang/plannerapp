@@ -195,6 +195,8 @@ enum HermesBridge {
 
         let result = execute(command: command, params: params, context: context)
         try? context.save()
+        // Agents' adds and edits reach the synced calendars within seconds.
+        if result.hasPrefix("OK") { Task { @MainActor in CalendarAutoSync.shared.schedule(after: 2) } }
         writeSnapshot(context: context)
         log("\(url.absoluteString) → \(result)")
         return result
@@ -231,6 +233,7 @@ enum HermesBridge {
                 item.list = findOrCreateList(named: listName, context: context)
             }
             context.insert(item)
+            CalendarSync.markLocal(item)
             let when = date.map { " on \(dateFormatter.string(from: $0))" } ?? ""
             return "OK: added \(kind.rawValue) “\(title)”\(when) (id \(shortID(item.id)))"
 

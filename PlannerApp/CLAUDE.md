@@ -14,7 +14,7 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   `AboutView`, `RemindersSettingsView`. Changes there must still build for macOS: keep
   UIKit-only code behind `#if os(iOS)` and check the Mac build too.
 - `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` live in `project.yml` `settings.base`
-  (currently 2.5 / 38). The Mac target overrides its own build number.
+  (currently 2.5 / 39). The Mac target overrides its own build number.
 
 ## Architecture
 
@@ -32,7 +32,7 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
 - Services: `PlannerCommand` (capture-bar command router — add vs. reschedule/rename/etc.;
   `keywordFallback` when no Apple Intelligence), `IntentAssistant` (FoundationModels, iOS 26+),
   `SmartParser` (deterministic dates), `ReminderScheduler` + `TodayAlerts` (local
-  notifications), `CalendarSync` (two-way EventKit sync with one chosen calendar, e.g. Google angch@; `CalendarAutoSync` runs it at launch, on `EKEventStoreChanged` and every 2 min; links by `calendarItemExternalIdentifier` + a `Planner id:` line in event notes; per-device agreed-state in UserDefaults decides push vs pull), `CloudSyncStatus` (`syncNow`, last sync),
+  notifications), `CalendarSync` (two-way EventKit sync with every ticked calendar, e.g. Google angchewhoe@ + angch@: each appointment is copied to all of them, events from any come into Planner; `CalendarAutoSync` runs it at launch, on `EKEventStoreChanged` and every 2 min; links by `calendarItemExternalIdentifier` in `calendarEventID` + a `Planner id:` line in each copy's notes + per-device `calendar.links`; per-device agreed-state in UserDefaults decides push vs pull; same-marker duplicate copies are removed), `CloudSyncStatus` (`syncNow`, last sync),
   `DuplicateAudit`, `ModelUndoSupport`, `SpeechRecognizer`, `WeekStart`.
 - UI (`Views/MainTabView.swift`): bottom tabs Planner, Calendar, Archive, Settings, Feedback,
   About. `TodoListView` (Planner) has top tabs **Updates | Tasks | Appointments**, opens on
@@ -42,7 +42,7 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   `AssistantChatView` is not currently shown.
 - AppStorage keys worth knowing: `ownerName` (who "me" is for smart views), `iosAppearance`,
   `accentTheme` (changing it rebuilds tabs via `.id`), `calendar.weekStart`, `calendar.mode`,
-  `calendar.syncEnabled`, `calendar.targetCalendarID`, `calendar.importEvents`, `collapsedLists` (device-local).
+  `calendar.syncEnabled`, `calendar.syncCalendarIDs` (legacy `calendar.targetCalendarID`), `calendar.importEvents`, `collapsedLists` (device-local).
 
 ## Build / run / test
 

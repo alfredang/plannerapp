@@ -2,10 +2,11 @@
 
 ## [2.5] — 2026-10-29
 
-- Two-way calendar sync: turn on Settings ▸ Calendar sync and pick your calendar (for example your Google work calendar). Planner appointments are added there, and that calendar's events now appear in Planner as appointments
-- Sync runs on its own when you open the app, whenever the calendar changes, and every couple of minutes while Planner is open; Sync Now runs it straight away
-- A meeting moved or renamed in Google is updated in Planner, and changes made in Planner go to the calendar; invites from other people are never changed, and declined or cancelled events are skipped
-- Your iPhone and Mac link to the same event, so you don't get duplicate copies
+- Two-way calendar sync: turn on Settings ▸ Calendar sync and tick the calendars to keep in step, for example your personal and your work Google calendars. Every Planner appointment is added to each of them, and their events appear in Planner as appointments
+- An event added in one ticked calendar is copied to the others, so every calendar shows your whole schedule
+- Sync runs on its own when you open the app, whenever a calendar changes, and every couple of minutes while Planner is open; Sync Now runs it straight away
+- A meeting moved or renamed in Google is updated in Planner and in your other calendars, and changes made in Planner go to all of them; invites from other people are never changed, and declined or cancelled events are skipped
+- Your iPhone and Mac link to the same events, so you don't get duplicate copies
 
 ## [2.4] — 2026-10-20
 

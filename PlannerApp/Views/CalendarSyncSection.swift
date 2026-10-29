@@ -3,15 +3,15 @@ import SwiftData
 import EventKit
 
 /// Settings ▸ Calendar sync, shared by the iPhone Settings tab and the Mac Settings pane:
-/// on/off, which calendar (e.g. the Google angch@… calendar), whether its events show in
-/// Planner, and what the last automatic sync did.
+/// on/off, which calendars (e.g. the personal and the work Google calendar), whether their
+/// events show in Planner, and what the last automatic sync did.
 struct CalendarSyncSection: View {
     @Environment(\.modelContext) private var context
 
-    // Off until explicitly enabled — it writes to a real calendar.
+    // Off until explicitly enabled — it writes to real calendars.
     @AppStorage(CalendarSync.enabledKey) private var syncEnabled = false
-    @AppStorage(CalendarSync.calendarIDKey) private var targetCalendarID = ""
     @AppStorage(CalendarSync.importKey) private var importsEvents = true
+    @State private var selectedIDs = CalendarSync.calendarIDs
     @State private var calendars: [EKCalendar] = []
     @State private var hasFullAccess = CalendarSync.hasFullAccess
     @ObservedObject private var autoSync = CalendarAutoSync.shared
@@ -20,10 +20,14 @@ struct CalendarSyncSection: View {
         Section {
             Toggle("Sync with Calendar", isOn: $syncEnabled)
             if syncEnabled, !calendars.isEmpty {
-                Picker("Calendar", selection: $targetCalendarID) {
-                    Text("Default").tag("")
-                    ForEach(calendars, id: \.calendarIdentifier) { cal in
-                        Text(label(cal)).tag(cal.calendarIdentifier)
+                ForEach(calendars, id: \.calendarIdentifier) { cal in
+                    Toggle(isOn: binding(for: cal)) {
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(Color(cgColor: cal.cgColor))
+                                .frame(width: 10, height: 10)
+                            Text(label(cal))
+                        }
                     }
                 }
                 Toggle("Show calendar events in Planner", isOn: $importsEvents)
@@ -43,21 +47,39 @@ struct CalendarSyncSection: View {
                 // Ask for Calendar access, then back-fill every existing appointment.
                 await CalendarSync.requestAccess()
                 refreshCalendars()
+                if selectedIDs.isEmpty, let fallback = CalendarSync.store.defaultCalendarForNewEvents {
+                    selectedIDs = [fallback.calendarIdentifier]
+                }
                 autoSync.runNow()
             }
         }
-        .onChange(of: targetCalendarID) { _, _ in autoSync.runNow() }
+        .onChange(of: selectedIDs) { _, ids in
+            CalendarSync.calendarIDs = ids
+            autoSync.runNow()
+        }
         .onChange(of: importsEvents) { _, _ in autoSync.runNow() }
     }
 
+    private func binding(for cal: EKCalendar) -> Binding<Bool> {
+        Binding {
+            selectedIDs.contains(cal.calendarIdentifier)
+        } set: { on in
+            selectedIDs.removeAll { $0 == cal.calendarIdentifier }
+            if on { selectedIDs.append(cal.calendarIdentifier) }
+        }
+    }
+
     private var footer: String {
-        var text = "Appointments sync both ways with the calendar you pick: Planner appointments are added there, and its events appear in Planner as appointments. Pick your Google calendar to sync with Google — add the account first in "
+        var text = "Appointments sync both ways with every calendar ticked: each Planner appointment is added to all of them, and their events appear in Planner and are copied to the other ticked calendars. To sync with Google, add the account first in "
         #if os(iOS)
         text += "Settings ▸ Apps ▸ Calendar ▸ Calendar Accounts."
         #else
         text += "System Settings ▸ Internet Accounts."
         #endif
         text += " To-dos are never added. Invites from other people are never changed."
+        if syncEnabled, !calendars.isEmpty, selectedIDs.isEmpty {
+            text += "\n\nTick at least one calendar to start syncing."
+        }
         if syncEnabled, !hasFullAccess {
             text += "\n\nCalendar access is limited to adding events, so events can't be shown in Planner. Allow Full Access for Planner in "
             #if os(iOS)
