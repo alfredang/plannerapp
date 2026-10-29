@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5] — 2026-10-29
+
+- Two-way calendar sync: turn on Settings ▸ Calendar sync and pick your calendar (for example your Google work calendar). Planner appointments are added there, and that calendar's events now appear in Planner as appointments
+- Sync runs on its own when you open the app, whenever the calendar changes, and every couple of minutes while Planner is open; Sync Now runs it straight away
+- A meeting moved or renamed in Google is updated in Planner, and changes made in Planner go to the calendar; invites from other people are never changed, and declined or cancelled events are skipped
+- Your iPhone and Mac link to the same event, so you don't get duplicate copies
+
 ## [2.4] — 2026-10-20
 
 - "Did this happen?" on a past appointment now has Cancelled and Rescheduled buttons next to Yes, it happened

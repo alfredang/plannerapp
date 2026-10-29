@@ -75,6 +75,8 @@ struct PlannerApp: App {
                     // Ask once, then arm the advance alerts for everything already due.
                     await ReminderScheduler.requestAuthorization()
                     await ReminderScheduler.rescheduleAll(context: container.mainContext)
+                    // Two-way Calendar (Google) sync: at launch, on calendar changes, every 2 min.
+                    CalendarAutoSync.shared.start(container: container)
                     #if DEBUG
                     await dumpPendingRemindersIfRequested()
                     #endif
@@ -88,6 +90,7 @@ struct PlannerApp: App {
             if phase == .background { try? container.mainContext.save() }
             guard phase == .active else { return }
             Task { await ReminderScheduler.rescheduleAll(context: container.mainContext) }
+            CalendarAutoSync.shared.schedule(after: 1)
         }
     }
 

@@ -100,6 +100,9 @@ struct PlannerMacApp: App {
                 .task {
                     UpdatesSync.shared.start(container: container)
                     AppointmentAgent.shared.start(container: container)
+                    // Two-way Calendar (Google) sync; also catches edits made by the agents
+                    // through the bridge and changes arriving from the iPhone via iCloud.
+                    CalendarAutoSync.shared.start(container: container)
                 }
                 // Route planner:// URL events (the Hermes bridge) into THIS window.
                 // Without this, every external URL spawns a brand-new window.

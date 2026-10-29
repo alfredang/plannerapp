@@ -37,6 +37,8 @@
 	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Planner syncs your appointments with the calendar you choose: they are added there, and that calendar's events appear in Planner.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Planner adds your appointments to the calendar you choose, so they appear alongside the rest of your schedule.</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>

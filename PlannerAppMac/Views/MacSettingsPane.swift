@@ -52,6 +52,8 @@ struct MacSettingsPane: View {
                 }
             }
 
+            CalendarSyncSection()
+
             backgroundSection
 
             whatsAppSection

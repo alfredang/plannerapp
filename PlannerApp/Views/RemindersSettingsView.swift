@@ -1,7 +1,6 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
-import EventKit
 
 /// Controls the advance alert for upcoming dated items: on/off plus how many days ahead
 /// it fires (3 days by default). Changing either setting re-arms every pending alert.
@@ -17,11 +16,6 @@ struct RemindersSettingsView: View {
 
     /// Live iCloud sync state, so "is it syncing?" has an answer right in Settings.
     @ObservedObject private var sync = CloudSyncStatus.shared
-
-    // Calendar mirroring (off until explicitly enabled — it writes to a real calendar).
-    @AppStorage("calendar.syncEnabled") private var calendarSyncEnabled = false
-    @AppStorage("calendar.targetCalendarID") private var targetCalendarID = ""
-    @State private var calendars: [EKCalendar] = []
 
     #if os(iOS)
     // Appearance (iPhone/iPad only — the Mac has its own Light/Dark control).
@@ -52,12 +46,6 @@ struct RemindersSettingsView: View {
     /// can't do anything until they re-enable it there.
     private var isBlockedBySystem: Bool {
         status == .denied
-    }
-
-    /// "Work (Google)" — the account name disambiguates same-named calendars.
-    private func calendarLabel(_ cal: EKCalendar) -> String {
-        let source = cal.source?.title ?? ""
-        return source.isEmpty ? cal.title : "\(cal.title) (\(source))"
     }
 
     var body: some View {
@@ -163,21 +151,7 @@ struct RemindersSettingsView: View {
                      ?? "Items captured inside someone's list before the assistant filled in “Assign to” have no assignee, so they never show up in that person's queue. This fills the blank ones from the list they're in; names you typed yourself are never overwritten.")
             }
 
-            Section {
-                Toggle("Add appointments to Calendar", isOn: $calendarSyncEnabled)
-                if calendarSyncEnabled, !calendars.isEmpty {
-                    Picker("Calendar", selection: $targetCalendarID) {
-                        Text("Default").tag("")
-                        ForEach(calendars, id: \.calendarIdentifier) { cal in
-                            Text(calendarLabel(cal)).tag(cal.calendarIdentifier)
-                        }
-                    }
-                }
-            } header: {
-                Text("Calendar")
-            } footer: {
-                Text("Appointments with a date are copied into the calendar you pick. Choose your Google calendar here to have them appear in Google — add the account first in Settings ▸ Apps ▸ Calendar ▸ Accounts. To-dos are never added.")
-            }
+            CalendarSyncSection()
 
             if isBlockedBySystem {
                 Section {
@@ -196,7 +170,6 @@ struct RemindersSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .task {
-            if calendarSyncEnabled { calendars = CalendarSync.writableCalendars() }
             status = await ReminderScheduler.authorizationStatus()
             // First visit with the feature on: ask, so the toggle isn't a no-op.
             if status == .notDetermined, isEnabled {
@@ -223,19 +196,6 @@ struct RemindersSettingsView: View {
         .onChange(of: summaryEnabled) { _, _ in rescheduleTodayAlerts() }
         .onChange(of: summaryMinutes) { _, _ in rescheduleTodayAlerts() }
         .onChange(of: alertLeadRaw) { _, _ in rescheduleTodayAlerts() }
-        .onChange(of: calendarSyncEnabled) { _, on in
-            guard on else { return }
-            Task {
-                // Ask for Calendar access, then back-fill every existing appointment.
-                await CalendarSync.requestAccess()
-                calendars = CalendarSync.writableCalendars()
-                CalendarSync.syncAll(context: context)
-            }
-        }
-        .onChange(of: targetCalendarID) { _, _ in
-            // Re-mirror into the newly chosen calendar.
-            CalendarSync.syncAll(context: context)
-        }
     }
 
     #if os(iOS)

@@ -16,8 +16,8 @@ packages:
 
 settings:
   base:
-    MARKETING_VERSION: "2.4"
-    CURRENT_PROJECT_VERSION: "37"
+    MARKETING_VERSION: "2.5"
+    CURRENT_PROJECT_VERSION: "38"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: GU9WTSTX9M
     CODE_SIGN_STYLE: Automatic
@@ -78,12 +78,13 @@ targets:
       - path: PlannerApp/Views/FeedbackView.swift
       - path: PlannerApp/Views/AboutView.swift
       - path: PlannerApp/Views/RemindersSettingsView.swift
+      - path: PlannerApp/Views/CalendarSyncSection.swift
     dependencies:
       - package: SwiftTerm
     settings:
       base:
         PRODUCT_NAME: Planner
-        CURRENT_PROJECT_VERSION: "36"
+        CURRENT_PROJECT_VERSION: "38"
         PRODUCT_BUNDLE_IDENTIFIER: com.tertiaryinfotech.plannerapp
         INFOPLIST_FILE: PlannerAppMac/Info.plist
         CODE_SIGN_ENTITLEMENTS: PlannerAppMac/PlannerAppMac.entitlements
