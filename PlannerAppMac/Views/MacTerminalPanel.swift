@@ -43,23 +43,30 @@ enum TerminalAgent: String, CaseIterable, Identifiable {
     }
 
     /// How a relaunch picks the workspace's last conversation back up: a shell test that's
-    /// true when there is one (run in the workspace), and the arguments that resume it.
+    /// true when there is one (run in the workspace), and the full arguments that resume it.
     /// OpenClaw needs none — its TUI always reconnects to the gateway's "main" session.
     var resume: (test: String, arguments: String)? {
         switch self {
         case .claude:
             return (#"ls "$HOME/.claude/projects/$(printf %s "$PWD" | sed 's/[^A-Za-z0-9]/-/g')" 2>/dev/null | grep -q '\.jsonl$'"#,
-                    " --continue")
+                    arguments + " --continue")
         case .codex:
             // `resume --last` is limited to this directory; check a session started here exists.
             return (#"find "$HOME/.codex/sessions" -name 'rollout-*.jsonl' 2>/dev/null | sort -r | head -200 | while read -r f; do head -n1 "$f" | grep -qF "\"cwd\":\"$PWD\"" && echo found && break; done | grep -q found"#,
-                    " resume --last")
+                    arguments + " resume --last")
         case .hermes:
-            return ("true", " --continue")   // starts fresh by itself when there's nothing to continue
+            // Hermes refuses `-s` on resume ("creation overrides are unsupported"), and a bare
+            // `--continue` picks the newest session anywhere (e.g. the WhatsApp gateway's), so
+            // resume the newest one in this workspace without it — the session keeps its skill.
+            return ("true", #" chat --continue --in "$PWD""#)
         case .openclaw:
             return nil
         }
     }
+
+    /// Whether a failed resume should fall through to a fresh session instead of ending the
+    /// tab. Hermes has no cheap "is there a session here?" test, so it just tries.
+    var resumeFallsBack: Bool { self == .hermes }
 
     /// Typed into the running agent to start a fresh conversation.
     var newSessionCommand: String {
@@ -489,7 +496,11 @@ final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate {
         // when present (picking its last conversation back up when asked to and there is
         // one), else drop to a plain shell.
         let cli = agent.executable
-        let resumeLine = resume ? agent.resume.map { "  if \($0.test); then exec \(cli)\(agent.arguments)\($0.arguments); fi\n" } ?? "" : ""
+        let resumeLine = resume ? agent.resume.map { r in
+            agent.resumeFallsBack
+                ? "  if \(r.test); then \(cli)\(r.arguments) && exit 0; fi\n"
+                : "  if \(r.test); then exec \(cli)\(r.arguments); fi\n"
+        } ?? "" : ""
         let bootstrap = """
         cd '\(workspace)' 2>/dev/null || cd ~
         if command -v \(cli) >/dev/null 2>&1; then
