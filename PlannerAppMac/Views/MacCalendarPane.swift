@@ -194,6 +194,7 @@ struct MacCalendarPane: View {
         let isSelected = cal.isDate(day, inSameDayAs: selectedDay)
         let isWeekend = [1, 7].contains(cal.component(.weekday, from: day))
         let holiday = SingaporeHolidays.name(on: day)
+        let onLeave = items.contains(where: \.isPersonalHoliday)
         return GeometryReader { geo in
             // How many appointment lines fit under the day number (and holiday name).
             let capacity = max(0, Int((geo.size.height - 24 - (holiday == nil ? 0 : 16)) / 16))
@@ -236,8 +237,9 @@ struct MacCalendarPane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(isSelected ? Theme.accent.opacity(0.12)
-                    : (holiday != nil ? Color.red.opacity(0.06)
-                       : (inMonth ? Color.clear : Color.primary.opacity(0.035))))
+                    : (onLeave ? Color.green.opacity(0.15)
+                       : (holiday != nil ? Color.red.opacity(0.06)
+                          : (inMonth ? Color.clear : Color.primary.opacity(0.035)))))
         .background(isWeekend ? Color.gray.opacity(0.08) : Color.clear)
         .opacity(inMonth ? 1 : 0.6)
         .contentShape(Rectangle())

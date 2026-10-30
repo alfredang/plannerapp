@@ -4,6 +4,7 @@
 
 - Calendar sync now also copies the appointments you already had before turning it on, not just new ones
 - Turning sync on no longer ticks a calendar for you: tick the ones you want (for example your personal and work Google calendars), so nothing lands in a calendar you didn't choose
+- Days you've booked as a holiday (an appointment titled "Holiday …") are shaded light green in the calendar, so time off stands out at a glance
 
 ## [2.5] — 2026-10-29
 

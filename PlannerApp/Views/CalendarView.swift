@@ -271,6 +271,7 @@ struct CalendarView: View {
         let isToday = cal.isDateInToday(day)
         let isSelected = cal.isDate(day, inSameDayAs: selectedDay)
         let holiday = SingaporeHolidays.name(on: day)
+        let onLeave = items.contains(where: \.isPersonalHoliday)
         return GeometryReader { geo in
             // How many appointment lines fit under the day number (and holiday name).
             let capacity = max(0, Int((geo.size.height - 26 - (holiday == nil ? 0 : 13)) / 15))
@@ -309,8 +310,9 @@ struct CalendarView: View {
         }
         .frame(maxWidth: .infinity)
         .background(isSelected ? Theme.accent.opacity(0.12)
-                    : (holiday != nil ? Color.red.opacity(0.06)
-                       : (inMonth ? Color.clear : Color.primary.opacity(0.035))))
+                    : (onLeave ? Color.green.opacity(0.15)
+                       : (holiday != nil ? Color.red.opacity(0.06)
+                          : (inMonth ? Color.clear : Color.primary.opacity(0.035)))))
         .opacity(inMonth ? 1 : 0.55)
         .contentShape(Rectangle())
         .onTapGesture {

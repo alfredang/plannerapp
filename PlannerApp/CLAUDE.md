@@ -14,7 +14,7 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   `AboutView`, `RemindersSettingsView`. Changes there must still build for macOS: keep
   UIKit-only code behind `#if os(iOS)` and check the Mac build too.
 - `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` live in `project.yml` `settings.base`
-  (currently 2.6 / 40). The Mac target overrides its own build number.
+  (currently 2.6 / 41). The Mac target overrides its own build number.
 
 ## Architecture
 

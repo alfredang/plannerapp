@@ -75,3 +75,11 @@ enum SingaporeHolidays {
         byDay[Calendar.current.startOfDay(for: date)]
     }
 }
+
+extension PlannerItem {
+    /// A personal holiday booked as an appointment ("Holiday (11–16 Dec)"); the calendar
+    /// tints its days light green.
+    var isPersonalHoliday: Bool {
+        !isCancelled && title.range(of: #"\bholiday\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+}
