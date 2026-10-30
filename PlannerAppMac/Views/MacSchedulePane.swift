@@ -33,9 +33,13 @@ struct ScheduledJob: Identifiable {
     var enabled: Bool
     var logURL: URL?
     var launchdLabel: String?  // Digital Workforce jobs can be started now via launchctl
+    var schedulerJob: String? = nil   // …or via `scheduler.py run <job>`
+
+    var canRunNow: Bool { launchdLabel != nil || schedulerJob != nil }
 }
 
-/// Reads every scheduler on this Mac: the Digital Workforce LaunchAgents
+/// Reads every scheduler on this Mac: the Digital Workforce scheduler's jobs
+/// (`~/DigitalWorkforce/state/jobs.json`) and its LaunchAgents
 /// (`~/Library/LaunchAgents/com.alfred.workforce.*`), Hermes cron (`~/.hermes/cron/jobs.json`),
 /// OpenClaw cron (`openclaw cron list --json`) and Planner's own WhatsApp reminders.
 /// Read-only apart from "Run Now".
@@ -48,9 +52,78 @@ enum ScheduleLoader {
         workforce() + hermes() + openclaw() + planner()
     }
 
-    // MARK: Digital Workforce (launchd)
+    // MARK: Digital Workforce
 
+    private static var workforceHome: URL { home.appendingPathComponent("DigitalWorkforce") }
+    static let workforcePython = "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
+
+    /// The agent jobs (`scheduler.py`'s table, which it writes to state/jobs.json every tick)
+    /// plus the LaunchAgents that drive it — launchd itself no longer runs agent jobs.
     static func workforce() -> [ScheduledJob] {
+        schedulerJobs() + workforceLaunchAgents()
+    }
+
+    private static func schedulerJobs() -> [ScheduledJob] {
+        let url = workforceHome.appendingPathComponent("state/jobs.json")
+        guard let data = try? Data(contentsOf: url),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let jobs = root["jobs"] as? [[String: Any]] else { return [] }
+        // state/scheduler.json: "<yyyy-MM-dd>/<job>" → {attempts, last, rc, done, gaveup}
+        let runs = (try? Data(contentsOf: workforceHome.appendingPathComponent("state/scheduler.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: [String: Any]] } ?? [:]
+        let logs = (try? FileManager.default.contentsOfDirectory(
+            at: workforceLogs, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let minuteStamp = DateFormatter()
+        minuteStamp.dateFormat = "yyyy-MM-dd'T'HH:mm"
+
+        return jobs.compactMap { j -> ScheduledJob? in
+            guard let job = j["job"] as? String, let time = j["time"] as? String else { return nil }
+            let agent = (j["agent"] as? String).flatMap { $0 == "script" ? nil : $0 }
+            let prompt = j["prompt"] as? String ?? job
+            let latest = runs.filter { $0.key.hasSuffix("/" + job) }.max { $0.key < $1.key }?.value
+            let rc = latest?["rc"]
+            let failed = latest?["done"] == nil && (latest?["gaveup"] != nil || (rc != nil && rc as? Int != 0))
+            let status: ScheduledJob.Status = latest?["done"] != nil ? .ok : (failed ? .failed : .unknown)
+            // Per-run log: logs/<yyyy-MM-dd>-<agent>-<prompt>.log
+            let log = agent.flatMap { agent in
+                logs.filter { $0.lastPathComponent.hasSuffix("-\(agent)-\(prompt).log") }.max { modified($0) < modified($1) }
+            }
+            return ScheduledJob(
+                id: "wf-job-" + job, source: .workforce,
+                name: job.replacingOccurrences(of: "-", with: " ").capitalized,
+                detail: agent?.capitalized, schedule: j["schedule"] as? String ?? time,
+                nextRun: nextRun(time: time, days: j["days"] as? [Int], biweeklyFrom: j["biweekly_from"] as? String),
+                lastRun: (latest?["last"] as? String).flatMap(minuteStamp.date(from:)) ?? log.map(modified),
+                status: status,
+                lastError: failed ? (rc.map { "Last exit code \($0)" } ?? "Gave up after repeated failures") : nil,
+                enabled: true, logURL: log, launchdLabel: nil, schedulerJob: job)
+        }
+    }
+
+    /// Next "HH:mm" on one of `days` (Mon=0 … Sun=6; nil = daily), every other week when
+    /// `biweeklyFrom` (a yyyy-MM-dd run date) is set.
+    private static func nextRun(time: String, days: [Int]?, biweeklyFrom: String?) -> Date? {
+        let parts = time.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2 else { return nil }
+        let calendar = Calendar.current
+        let dayFormat = DateFormatter()
+        dayFormat.dateFormat = "yyyy-MM-dd"
+        let anchor = biweeklyFrom.flatMap(dayFormat.date(from:)).map { calendar.startOfDay(for: $0) }
+        let now = Date()
+        for offset in 0..<21 {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)),
+                  let run = calendar.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: day),
+                  run > now else { continue }
+            let weekday = (calendar.component(.weekday, from: day) + 5) % 7   // Sun=1 → 6, Mon=2 → 0
+            if let days, !days.contains(weekday) { continue }
+            if let anchor, let weeks = calendar.dateComponents([.day], from: anchor, to: day).day,
+               (weeks / 7) % 2 != 0 { continue }
+            return run
+        }
+        return nil
+    }
+
+    private static func workforceLaunchAgents() -> [ScheduledJob] {
         let dir = home.appendingPathComponent("Library/LaunchAgents")
         let files = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.lastPathComponent.hasPrefix(workforcePrefix) && $0.pathExtension == "plist" }
@@ -228,6 +301,13 @@ enum ScheduleLoader {
     }
 
     @discardableResult
+    /// `scheduler.py run <job>`, detached so it outlives this call (and the app).
+    static func runSchedulerJob(_ job: String) {
+        let script = workforceHome.appendingPathComponent("bin/scheduler.py").path
+        let quoted = [workforcePython, script, "run", job].map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        _ = run("/bin/zsh", ["-c", "nohup " + quoted.joined(separator: " ") + " >/dev/null 2>&1 &"])
+    }
+
     static func run(_ path: String, _ args: [String], timeout: TimeInterval = 10) -> String? {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: path)
@@ -372,15 +452,15 @@ struct MacSchedulePane: View {
             get: { selectedID == job.id },
             set: { if !$0, selectedID == job.id { selectedID = nil } }
         ), arrowEdge: .trailing) {
-            JobDetailView(job: job, runNow: { runNow($0, name: job.name) })
+            JobDetailView(job: job, runNow: { runNow(job) })
         }
         .contextMenu { actions(job) }
     }
 
     @ViewBuilder
     private func actions(_ job: ScheduledJob) -> some View {
-        if let label = job.launchdLabel {
-            Button("Run Now") { runNow(label, name: job.name) }
+        if job.canRunNow {
+            Button("Run Now") { runNow(job) }
         }
         if let log = job.logURL {
             Button("Open Last Log") { NSWorkspace.shared.open(log) }
@@ -409,11 +489,18 @@ struct MacSchedulePane: View {
         loading = false
     }
 
-    /// Starts a Digital Workforce job immediately (`launchctl kickstart`).
-    private func runNow(_ label: String, name: String) {
-        let target = "gui/\(getuid())/\(label)"
+    /// Starts a Digital Workforce job immediately: a LaunchAgent via `launchctl kickstart`,
+    /// an agent job via `scheduler.py run <job>` (in the background — runs take minutes).
+    private func runNow(_ job: ScheduledJob) {
+        let name = job.name
+        let launchdLabel = job.launchdLabel
+        let schedulerJob = job.schedulerJob
         Task.detached {
-            ScheduleLoader.run("/bin/launchctl", ["kickstart", target])
+            if let label = launchdLabel {
+                ScheduleLoader.run("/bin/launchctl", ["kickstart", "gui/\(getuid())/\(label)"])
+            } else if let schedulerJob {
+                ScheduleLoader.runSchedulerJob(schedulerJob)
+            }
             await MainActor.run { message = "Started “\(name)” — refresh in a moment for its result." }
         }
     }
@@ -428,7 +515,7 @@ private func copy(_ text: String) {
 /// last error and the actions available for its source.
 private struct JobDetailView: View {
     let job: ScheduledJob
-    let runNow: (String) -> Void
+    let runNow: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -450,6 +537,7 @@ private struct JobDetailView: View {
                 field("Last run", job.lastRun.map(dateText) ?? "No run recorded")
                 field("Status", statusText)
                 if let label = job.launchdLabel { field("launchd", label) }
+                if let schedulerJob = job.schedulerJob { field("Scheduler job", schedulerJob) }
             }
             .font(.callout)
             if let error = job.lastError {
@@ -466,8 +554,8 @@ private struct JobDetailView: View {
                 }
             }
             HStack {
-                if let label = job.launchdLabel {
-                    Button("Run Now") { runNow(label); dismiss() }
+                if job.canRunNow {
+                    Button("Run Now") { runNow(); dismiss() }
                         .keyboardShortcut(.defaultAction)
                 }
                 if let log = job.logURL {
@@ -478,7 +566,7 @@ private struct JobDetailView: View {
                 }
                 Spacer()
             }
-            if job.launchdLabel == nil {
+            if !job.canRunNow {
                 Text(hint).font(.caption).foregroundStyle(.secondary)
             }
         }

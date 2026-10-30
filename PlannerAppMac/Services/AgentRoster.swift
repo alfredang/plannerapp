@@ -65,6 +65,35 @@ enum AgentRoster {
         return ids.isEmpty ? ["atlas", "oracle", "nova"] : Set(ids)
     }
 
+    /// Staff id → the staff lead they report to, from COMPANY.md lines such as
+    /// "- Mercury (Sales & BD Director) and Forge (CIO/CTO) report to Nova (since …)".
+    /// Staff who report directly to the principal are absent. Anyone the file doesn't place
+    /// falls back to Atlas, which is also the whole answer when nothing parses.
+    static var reportingLines: [String: String] {
+        let direct = principalReportIDs
+        var leads: [String: String] = [:]
+        if let company = try? String(contentsOf: companyURL, encoding: .utf8) {
+            for line in company.lowercased().components(separatedBy: .newlines) where line.hasPrefix("- ") {
+                guard !line.contains("directly to"),
+                      let range = line.range(of: " reports to ") ?? line.range(of: " report to ") else { continue }
+                let lead = line[range.upperBound...].prefix { $0.isLetter }
+                guard staffIDs.contains(String(lead)) else { continue }
+                for id in staffIDs where id != lead && mentions(line[..<range.lowerBound], id) {
+                    leads[id] = String(lead)
+                }
+            }
+        }
+        for id in staffIDs where !direct.contains(id) && leads[id] == nil && id != "atlas" {
+            leads[id] = "atlas"
+        }
+        return leads.filter { !direct.contains($0.key) }
+    }
+
+    /// Whether `text` names `id` as a whole word ("forge", not "forged").
+    private static func mentions(_ text: Substring, _ id: String) -> Bool {
+        text.split { !$0.isLetter }.contains { $0 == id }
+    }
+
     /// Every agent, keyed by lowercased name.
     static func load() -> [String: AgentProfile] {
         let files = ((try? FileManager.default.contentsOfDirectory(at: agentsDir, includingPropertiesForKeys: nil)) ?? [])

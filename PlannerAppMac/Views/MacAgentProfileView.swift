@@ -43,16 +43,43 @@ enum OrgChartBuilder {
         return members
     }
 
-    /// Match the reporting lines in COMPANY.md; Atlas leads the operational staff.
+    /// Match the reporting lines in COMPANY.md: each lead (Atlas, Nova…) gets the staff who
+    /// report to it; everyone else reports directly to the principal.
     static func workforce(fallback: String, nodes: [OrgNode]) -> OrgNode {
-        guard var atlas = nodes.first(where: { $0.id == "atlas" }) else {
-            return principalNode(fallback: fallback, children: nodes)
+        let lines = AgentRoster.reportingLines
+        let ids = Set(nodes.map(\.id))
+        // Staff whose lead isn't on the chart stay at the top rather than disappear.
+        let top = nodes.filter { node in
+            guard let lead = lines[node.id] else { return true }
+            return !ids.contains(lead)
         }
-        let direct = AgentRoster.principalReportIDs
-        atlas.children = nodes.filter { !direct.contains($0.id) }
-        let leaders = [atlas] + nodes.filter { $0.id != "atlas" && direct.contains($0.id) }
-        return principalNode(fallback: fallback, children: leaders)
+        let leaders = top.map { lead -> OrgNode in
+            let team = nodes.filter { lines[$0.id] == lead.id }
+            guard !team.isEmpty else { return lead }
+            var lead = lead
+            // Staff can also appear among a lead's helpers (named in its instructions); list them once.
+            lead.children = team + lead.children.filter { !AgentRoster.staffIDs.contains($0.id) }
+            return lead
+        }
+        // Atlas (Chief of Staff) leads the row, as before.
+        return principalNode(fallback: fallback,
+                             children: leaders.filter { $0.id == "atlas" } + leaders.filter { $0.id != "atlas" })
     }
+
+    /// The staff under each lead of a `workforce` chart, in chart order.
+    static func teams(of chart: OrgNode) -> [(lead: OrgNode, staff: [OrgNode])] {
+        chart.children.compactMap { (lead: OrgNode) -> (lead: OrgNode, staff: [OrgNode])? in
+            let staff = lead.children.filter { AgentRoster.staffIDs.contains($0.id) }
+            if staff.isEmpty { return nil }
+            return (lead: lead, staff: staff)
+        }
+    }
+
+    /// Display name of the lead `id` reports to on `chart`, or the principal's name.
+    static func managerName(of id: String, in chart: OrgNode) -> String {
+        teams(of: chart).first { team in team.staff.contains { $0.id == id } }?.lead.name ?? chart.name
+    }
+
     /// Agent lists directly under `list`, in sidebar order.
     static func agentChildren(of list: PlannerList, roster: [String: AgentProfile]) -> [PlannerList] {
         ManualOrder.sortedPinnedFirst(list.children ?? [], pinned: { $0.isPinned }, position: { $0.sortOrder })
@@ -411,7 +438,7 @@ struct AgentProfileView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             if !direct.isEmpty {
-                Text(agent.id == "atlas" ? "Direct reports" : "Support agents")
+                Text(direct.contains { AgentRoster.staffIDs.contains($0.id) } ? "Direct reports" : "Support agents")
                     .font(.caption).foregroundStyle(.secondary)
                 FlowLayout(spacing: 6) {
                     ForEach(direct) { node in
@@ -535,9 +562,7 @@ struct WorkforceOverviewView: View {
     var onOpenList: ((UUID) -> Void)?
     @State private var detailAgent: AgentProfile?
 
-    private var operationalStaff: [OrgNode] {
-        chart.children.first { $0.id == "atlas" }?.children ?? []
-    }
+    private var teams: [(lead: OrgNode, staff: [OrgNode])] { OrgChartBuilder.teams(of: chart) }
 
     var body: some View {
         ScrollView { overview }
@@ -574,12 +599,12 @@ struct WorkforceOverviewView: View {
                     staffCard(node).frame(maxWidth: 320)
                 }
             }
-            if !operationalStaff.isEmpty {
-                Text("Reports to Atlas").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            ForEach(teams, id: \.lead.id) { team in
+                Text("Reports to \(team.lead.name)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     .padding(.top, 2)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 165), spacing: 10, alignment: .top)],
                           alignment: .leading, spacing: 10) {
-                    ForEach(operationalStaff) { node in staffCard(node) }
+                    ForEach(team.staff) { node in staffCard(node) }
                 }
             }
         }
@@ -590,10 +615,9 @@ struct WorkforceOverviewView: View {
 
     private func detailTeam(for agent: AgentProfile) -> OrgNode {
         var node = OrgChartBuilder.node(for: agent, list: nil, roster: AgentRoster.load(), focus: agent.id)
-        if !AgentRoster.principalReportIDs.contains(agent.id),
-           var atlas = chart.children.first(where: { $0.id == "atlas" }) {
-            atlas.children = [node]
-            node = atlas
+        if var lead = OrgChartBuilder.teams(of: chart).first(where: { team in team.staff.contains { $0.id == agent.id } })?.lead {
+            lead.children = [node]
+            node = lead
         }
         var root = chart
         root.children = [node]
@@ -615,7 +639,7 @@ struct WorkforceOverviewView: View {
                 }.frame(height: 28, alignment: .top)
                 if let agent = node.agent {
                     fact("Model", agent.modelName)
-                    fact("Reports to", AgentRoster.principalReportIDs.contains(agent.id) ? chart.name : "Atlas")
+                    fact("Reports to", OrgChartBuilder.managerName(of: agent.id, in: chart))
                     fact("Agents", node.children.isEmpty ? "None" : node.children.map(\.name).joined(separator: ", "))
                     fact("Skills", agent.skills.isEmpty ? "None listed" : "\(agent.skills.count) · " + agent.skills.joined(separator: ", "))
                     fact("Tools", agent.tools.isEmpty ? "Inherited session tools" : agent.tools.joined(separator: ", "))

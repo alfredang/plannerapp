@@ -59,10 +59,14 @@ struct DigitalWorkforceArtifactView: NSViewRepresentable {
 
 enum WorkforceArtifactHTML {
     static func render(chart: OrgNode, jobs: [ScheduledJob], dark: Bool) -> String {
-        let atlas = chart.children.first { $0.id == "atlas" }
-        let staff = atlas?.children.filter { AgentRoster.staffIDs.contains($0.id) } ?? []
         let leads = chart.children.map { card($0, manager: chart.name, jobs: jobs) }.joined()
-        let team = staff.map { card($0, manager: "Atlas", jobs: jobs) }.joined()
+        // One "Reports to <Lead>" section per lead with a team (Atlas, Nova…).
+        let teams = OrgChartBuilder.teams(of: chart).map { team in
+            """
+            <div class="line" aria-hidden="true"></div><p class="reporting">Reports to \(escape(team.lead.name))</p>
+            <section class="grid team" aria-label="Staff reporting to \(escape(team.lead.name))">\(team.staff.map { card($0, manager: team.lead.name, jobs: jobs) }.joined())</section>
+            """
+        }.joined()
         let background = dark ? "#171b21" : "#f4f5f7"
         let surface = dark ? "#242a33" : "#ffffff"
         let foreground = dark ? "#eef1f5" : "#202833"
@@ -94,8 +98,7 @@ enum WorkforceArtifactHTML {
         <section class="principal" aria-label="Principal"><h2>\(escape(chart.name))</h2><p>\(escape(chart.title))</p></section>
         <div class="line" aria-hidden="true"></div><p class="reporting">Reports directly to \(escape(chart.name))</p>
         <section class="grid" aria-label="Direct reports">\(leads)</section>
-        <div class="line" aria-hidden="true"></div><p class="reporting">Reports to Atlas</p>
-        <section class="grid team" aria-label="Staff reporting to Atlas">\(team)</section>
+        \(teams)
         <footer class="footer">Each staff member has a separate saved chat. Specialist helpers support their assigned lead.</footer>
         </main><script>
         document.querySelectorAll('[data-agent]').forEach(function(button){

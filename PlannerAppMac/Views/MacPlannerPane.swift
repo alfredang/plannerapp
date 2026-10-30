@@ -80,17 +80,17 @@ struct MacPlannerPane: View {
             return OrgChartBuilder.workforce(fallback: ownerName, nodes: nodes)
         }
         var team = OrgChartBuilder.node(for: agent, list: list, roster: roster, focus: agent.id)
-        if agent.id == "atlas", let group = list?.parent,
+        let reportingLines = AgentRoster.reportingLines
+        if reportingLines.values.contains(agent.id), let group = list?.parent,
            group.name.caseInsensitiveCompare("Digital Workforce") == .orderedSame {
             team.children = OrgChartBuilder.staff(of: group, roster: roster)
-                .filter { !AgentRoster.principalReportIDs.contains($0.profile.id) }
+                .filter { reportingLines[$0.profile.id] == agent.id }
                 .map { member in OrgChartBuilder.node(for: member.profile, list: lists.first { $0.id == member.listID }, roster: roster) }
             return OrgChartBuilder.principalNode(fallback: ownerName, children: [team])
         }
-        if AgentRoster.staffIDs.contains(agent.id), !AgentRoster.principalReportIDs.contains(agent.id),
-           let atlas = roster["atlas"] {
-            var boss = OrgChartBuilder.node(for: atlas, list: nil, roster: [:])
-            boss.listID = lists.first { $0.name.caseInsensitiveCompare("Atlas") == .orderedSame }?.id
+        if AgentRoster.staffIDs.contains(agent.id), let leadID = reportingLines[agent.id], let lead = roster[leadID] {
+            var boss = OrgChartBuilder.node(for: lead, list: nil, roster: [:])
+            boss.listID = lists.first { $0.name.caseInsensitiveCompare(lead.displayName) == .orderedSame }?.id
             boss.children = [team]
             return OrgChartBuilder.principalNode(fallback: ownerName, children: [boss])
         }

@@ -27,7 +27,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .calendar:     return "Calendar"
         case .jobs:         return "Schedule"
         case .updates:      return "Updates"
-        case .dashboard:    return "Dashboard"
+        case .dashboard:    return "Hermes Dashboard"
         case .archive:      return "Archive"
         case .settings:     return "Settings"
         case .feedback:     return "Feedback"

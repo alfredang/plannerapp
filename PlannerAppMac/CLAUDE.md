@@ -31,7 +31,7 @@ notes are in `../PlannerApp/CLAUDE.md`.
   About) + user lists (`ListHierarchy`) + Digital Workforce staff.
 - Panes: `MacPlannerPane` (items + capture bar), `MacCalendarPane`, `MacUpdatesPane`,
   `MacSchedulePane` (workforce LaunchAgents `com.alfred.workforce.*`, Hermes/OpenClaw cron),
-  `MacDashboardPane` (Sidebar ▸ Dashboard: Hermes web UI on http://127.0.0.1:9119, started
+  `MacDashboardPane` (Sidebar ▸ Hermes Dashboard: Hermes web UI on http://127.0.0.1:9119, started
   on demand and kept up by `~/DigitalWorkforce/bin/hermes-watchdog.py`; or the OpenClaw
   Control UI via `~/.openclaw/bin/openclaw dashboard --json`),
   `MacSettingsPane` (Settings scene, ⌘,), `MacAgentProfileView`/`MacAgentChatView`/

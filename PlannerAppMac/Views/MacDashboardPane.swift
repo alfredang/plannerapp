@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import WebKit
 
-/// Which agent's web dashboard Sidebar ▸ Dashboard shows.
+/// Which agent's web dashboard Sidebar ▸ Hermes Dashboard shows.
 enum DashboardAgent: String, CaseIterable, Identifiable {
     case hermes, openclaw
     var id: String { rawValue }
@@ -140,7 +140,7 @@ final class AgentDashboard: ObservableObject {
     }
 }
 
-/// Sidebar ▸ Dashboard: the Hermes Agent dashboard (cron jobs, sessions, config) or the
+/// Sidebar ▸ Hermes Dashboard: the Hermes Agent dashboard (cron jobs, sessions, config) or the
 /// OpenClaw Control UI, embedded so the video crons and agent health are one click away.
 struct MacDashboardPane: View {
     @AppStorage("dashboardAgent") private var agentRaw = DashboardAgent.hermes.rawValue
@@ -150,7 +150,7 @@ struct MacDashboardPane: View {
     var body: some View {
         DashboardView(dashboard: AgentDashboard.shared[agent]!)
             .id(agent)
-            .navigationTitle("Dashboard")
+            .navigationTitle("Hermes Dashboard")
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Picker("Dashboard", selection: $agentRaw) {
