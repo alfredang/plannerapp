@@ -1,11 +1,14 @@
 import SwiftUI
 
 /// A single planner row with a tappable checkbox. Checking the box auto-archives the item.
-/// Tapping the row content opens the edit form (when `onEdit` is provided).
+/// Tapping the row content opens the edit form (when `onEdit` is provided) — on the Mac it
+/// runs `onOpen` instead when given, or opens the item's page when it has one.
 struct ItemRow: View {
     @Bindable var item: PlannerItem
     var onToggle: () -> Void
     var onEdit: (() -> Void)? = nil
+    /// Mac: what clicking the row does instead of editing (e.g. show the item as a page).
+    var onOpen: (() -> Void)? = nil
 
     @Environment(\.openURL) private var openURL
     @Environment(\.modelContext) private var context
@@ -85,7 +88,26 @@ struct ItemRow: View {
                     .accessibilityHint(url.absoluteString)
                 }
 
-                let notesPreview = AppointmentComments.withoutComments(item.displayNotes)
+                // The page this item points at (e.g. a client overview report).
+                if let url = pageURL {
+                    Button {
+                        openPage(url)
+                    } label: {
+                        Label("Open page", systemImage: "globe")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Theme.accent.opacity(0.15), in: Capsule())
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .buttonStyle(.borderless)
+                    #if os(macOS)
+                    .help(url.isFileURL ? url.lastPathComponent : url.absoluteString)
+                    #endif
+                    .accessibilityLabel("Open page")
+                }
+
+                let notesPreview = PageLink.withoutLink(AppointmentComments.withoutComments(item.displayNotes))
                 if !notesPreview.isEmpty {
                     Text(notesPreview)
                         .font(.caption)
@@ -97,9 +119,38 @@ struct ItemRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture { onEdit?() }
+        .onTapGesture {
+            // On the Mac a row with a page opens it (Edit… stays in the row's menu).
+            #if os(macOS)
+            if let onOpen { onOpen(); return }
+            if let url = pageURL { openPage(url); return }
+            #endif
+            onEdit?()
+        }
         .accessibilityElement(children: .combine)
         .accessibilityHint(onEdit != nil ? "Double tap to edit" : "")
+    }
+
+    /// The item's page as a URL. On the iPhone only web pages open — reports live on the Mac.
+    private var pageURL: URL? {
+        #if os(macOS)
+        guard let link = item.pageTarget,
+              let url = PageLink.url(for: link, workspace: HermesBridge.workspaceURL),
+              !url.isFileURL || FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+        #else
+        guard let link = item.pageLink else { return nil }
+        return PageLink.url(for: link, workspace: nil).flatMap { $0.isFileURL ? nil : $0 }
+        #endif
+    }
+
+    /// Mac: Planner's built-in browser (panel shown, Browser tab in front). iPhone: Safari.
+    private func openPage(_ url: URL) {
+        #if os(macOS)
+        ItemPageViewer.show(url)
+        #else
+        openURL(url)
+        #endif
     }
 
     /// Past appointments: ticked = completed. Unticked ones ask instead of judging — the

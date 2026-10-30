@@ -320,8 +320,9 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
 
     // MARK: - Opening
 
-    /// Opens a URL (web or file) in this tab and brings it forward.
-    func open(_ url: URL) {
+    /// Opens a URL (web or file) in this tab and brings it forward. `readAccess` widens what
+    /// a local page may load or link to (default: its own folder).
+    func open(_ url: URL, readAccess: URL? = nil) {
         AgentPanelTabs.shared.selectBrowser(self)
         if url.isFileURL {
             // Agent reports are often HTML fragments with no <meta charset>; WebKit then
@@ -332,7 +333,7 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
                !String(decoding: data.prefix(2048), as: UTF8.self).lowercased().contains("charset") {
                 webView.load(data, mimeType: "text/html", characterEncodingName: "utf-8", baseURL: url)
             } else {
-                webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+                webView.loadFileURL(url, allowingReadAccessTo: readAccess ?? url.deletingLastPathComponent())
             }
         } else {
             webView.load(URLRequest(url: url))

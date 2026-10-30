@@ -108,6 +108,9 @@ enum HermesBridge {
         let priority: String?
         /// Video-meeting link of an appointment (kept in its notes).
         let meetingLink: String?
+        /// Page the item opens when clicked ("Page:" line in its notes): `reports/<file>.html`,
+        /// an absolute file path or an https URL.
+        let pageLink: String?
         let done: Bool
         let archived: Bool
     }
@@ -156,6 +159,7 @@ enum HermesBridge {
                     assignedTo: item.assignedTo.isEmpty ? nil : item.assignedTo,
                     priority: item.kind == .task ? item.priority.title.lowercased() : nil,
                     meetingLink: item.meetingLink,
+                    pageLink: item.pageLink,
                     done: item.isDone,
                     archived: item.isArchived
                 )
@@ -229,6 +233,11 @@ enum HermesBridge {
             if let link = params["link"], !link.isEmpty, kind == .appointment {
                 item.notes = MeetingLink.notes(item.notes, settingLink: link)
             }
+            // A to-do's `link=` is its page; `page=` works for either kind.
+            if let page = params["page"] ?? (kind == .task ? params["link"] : nil), !page.isEmpty {
+                if let problem = pageProblem(page) { return problem + "; nothing was added" }
+                item.notes = PageLink.notes(item.notes, setting: page)
+            }
             if let listName = params["list"], !listName.isEmpty {
                 item.list = findOrCreateList(named: listName, context: context)
             }
@@ -294,9 +303,17 @@ enum HermesBridge {
             item.notes = FollowUpActions.notes(params["notes"] ?? "", preservingReferenceFrom: item.notes)
             return "OK: notes of “\(item.title)” updated"
 
+        case "link" where findItem(params, context: context)?.kind == .task, "page":
+            // A to-do's link is the page a click opens (e.g. a client overview report).
+            guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
+            let page = params["url"] ?? params["file"] ?? ""
+            if !page.isEmpty, let problem = pageProblem(page) { return problem }
+            item.notes = PageLink.notes(item.notes, setting: page)
+            return page.isEmpty ? "OK: removed the page link from “\(item.title)”"
+                                : "OK: “\(item.title)” opens \(item.pageLink ?? page) when clicked"
+
         case "link":
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
-            guard item.kind == .appointment else { return "ERROR: “\(item.title)” is a to-do — meeting links are for appointments" }
             let link = params["url"] ?? ""
             item.notes = MeetingLink.notes(item.notes, settingLink: link)
             return link.isEmpty ? "OK: removed the meeting link from “\(item.title)”"
@@ -526,6 +543,19 @@ enum HermesBridge {
 
     /// Finds an item by `id` (the 8-char short id from the snapshot, or a full UUID) or,
     /// failing that, by case-insensitive `title` substring.
+    /// Why a page link can't be used (nil when it's fine): files must exist; web pages
+    /// must be http(s).
+    private static func pageProblem(_ raw: String) -> String? {
+        let link = PageLink.normalized(raw)
+        guard let url = PageLink.url(for: link, workspace: workspaceURL) else {
+            return "ERROR: bad page “\(raw)” — use reports/<file>.html, an absolute file path or an https URL"
+        }
+        if url.isFileURL, !FileManager.default.fileExists(atPath: url.path) {
+            return "ERROR: page file not found: \(url.path)"
+        }
+        return nil
+    }
+
     private static func findItem(_ params: [String: String], context: ModelContext) -> PlannerItem? {
         let items = (try? context.fetch(FetchDescriptor<PlannerItem>())) ?? []
         if let ref = params["id"]?.lowercased(), !ref.isEmpty {
@@ -652,6 +682,7 @@ enum HermesBridge {
     | Set notes | `planner://note?id=ab12cd34&notes=…` |
     | Assign | `planner://assign?title=Setup%20exams&to=Ngooi` (empty `to` unassigns) |
     | Meeting link (appointments) | `planner://link?id=ab12cd34&url=meet.google.com/abc-defg-hij` (empty `url` removes it; `add` also takes `link=`) |
+    | Page link (to-dos) | `planner://link?id=ab12cd34&url=2026-10-30-acme-overview.html` — clicking the to-do on the Mac then opens that page in Planner's browser (Edit… is in its right-click menu). `url` = a report in `reports/` (bare `<file>.html` or `reports/<file>.html`), an absolute file path, or an https URL; empty removes it. `planner://page?id=…&url=…` does the same for any item; `add` takes `page=` (or `link=` on a to-do). Shown as `pageLink` in the snapshot. |
     | Priority (to-dos) | `planner://priority?id=ab12cd34&level=high` (`critical`, `high`, `medium`, `low`; Critical/High auto-pin) |
     | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
     | Rename list | `planner://renamelist?name=Errands&to=Chores` (items and sub-lists are kept) |

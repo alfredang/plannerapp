@@ -401,10 +401,14 @@ struct MacPlannerPane: View {
 
     private func row(_ item: PlannerItem) -> some View {
         HStack(spacing: 10) {
+            // Clicking the item shows it as a page (its report, or the item rendered as HTML);
+            // the pencil button edits it.
             ItemRow(item: item) {
                 withAnimation { item.toggleDone() }   // checking auto-archives
             } onEdit: {
                 editingItem = item
+            } onOpen: {
+                ItemPageViewer.open(item)
             }
             // Priority flag on to-dos: click to set Critical / High / Medium / Low.
             if item.kind == .task {
@@ -422,13 +426,23 @@ struct MacPlannerPane: View {
             .buttonStyle(.plain)
             .help(item.isPinned ? "Unpin" : "Pin to top")
             .accessibilityLabel(item.isPinned ? "Unpin" : "Pin to top")
+            Button {
+                editingItem = item
+            } label: {
+                Image(systemName: "pencil")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.accent)
+            }
+            .buttonStyle(.plain)
+            .help("Edit")
+            .accessibilityLabel("Edit")
             // Deleting is permanent, so the click asks first.
             Button {
                 deletingItem = item
             } label: {
                 Image(systemName: "trash")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary.opacity(0.5))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.red.opacity(0.8))
             }
             .buttonStyle(.plain)
             .help("Delete")
@@ -458,6 +472,7 @@ struct MacPlannerPane: View {
             Button(item.isPinned ? "Unpin" : "Pin to Top") {
                 withAnimation { item.isPinned.toggle() }
             }
+            Button("Open") { ItemPageViewer.open(item) }
             Button("Edit…") { editingItem = item }
             Divider()
             Button("Delete", role: .destructive) { context.delete(item) }
