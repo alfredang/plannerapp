@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.6] — 2026-10-30
+
+- Calendar sync now also copies the appointments you already had before turning it on, not just new ones
+- Turning sync on no longer ticks a calendar for you: tick the ones you want (for example your personal and work Google calendars), so nothing lands in a calendar you didn't choose
+
 ## [2.5] — 2026-10-29
 
 - Two-way calendar sync: turn on Settings ▸ Calendar sync and tick the calendars to keep in step, for example your personal and your work Google calendars. Every Planner appointment is added to each of them, and their events appear in Planner as appointments

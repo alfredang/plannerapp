@@ -47,9 +47,6 @@ struct CalendarSyncSection: View {
                 // Ask for Calendar access, then back-fill every existing appointment.
                 await CalendarSync.requestAccess()
                 refreshCalendars()
-                if selectedIDs.isEmpty, let fallback = CalendarSync.store.defaultCalendarForNewEvents {
-                    selectedIDs = [fallback.calendarIdentifier]
-                }
                 autoSync.runNow()
             }
         }

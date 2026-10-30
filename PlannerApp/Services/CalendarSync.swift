@@ -144,7 +144,8 @@ enum CalendarSync {
         let id = itemKey(item)
         var links = linksState()[id] ?? [:]
         let found = calendars.compactMap { cal in knownEvent(for: item, in: cal, links: links).map { (cal, $0) } }
-        let primary = item.calendarEventID?.isEmpty == false ? item.calendarEventID : found.first.map { linkKey($0.1) }
+        let stored = item.calendarEventID?.isEmpty == false && !isLegacyLink(item.calendarEventID) ? item.calendarEventID : nil
+        let primary = stored ?? found.first.map { linkKey($0.1) }
         guard item.kind == .appointment, item.date != nil else {
             for (_, event) in found where ownsEvent(event, item: item) {
                 try? store.remove(event, span: .thisEvent, commit: true)
@@ -162,7 +163,7 @@ enum CalendarSync {
         // A brand-new appointment goes to every calendar now. Copies missing for older items
         // are left to `syncAll`, which can see whether another device already wrote them.
         var created: [String] = []
-        if found.isEmpty, item.calendarEventID?.isEmpty ?? true {
+        if found.isEmpty, item.calendarEventID?.isEmpty ?? true || isLegacyLink(item.calendarEventID) {
             for cal in calendars {
                 let event = newEvent(in: cal)
                 guard write(item, to: event, created: true) else { continue }
@@ -196,6 +197,7 @@ enum CalendarSync {
         let calendar: EKCalendar
         var events: [EKEvent]
         var byKey: [String: EKEvent] = [:]
+        var byEventID: [String: EKEvent] = [:]
         var byMarker: [String: [EKEvent]] = [:]
 
         init(calendar: EKCalendar, events: [EKEvent]) {
@@ -203,6 +205,7 @@ enum CalendarSync {
             self.events = events
             for event in events {
                 byKey[CalendarSync.linkKey(event)] = event
+                if let id = event.eventIdentifier { byEventID[id] = event }
                 if let marker = CalendarSync.markerID(in: event.notes) { byMarker[String(marker.prefix(8)), default: []].append(event) }
             }
         }
@@ -265,7 +268,8 @@ enum CalendarSync {
             let id = itemKey(item)
             var links = allLinks[id] ?? [:]
             var pairs = pairsByItem[item.id] ?? []
-            let wasLinked = !(item.calendarEventID?.isEmpty ?? true)
+            // Pre-2.5 links were device-local event ids; they don't stop an item being copied.
+            let wasLinked = !(item.calendarEventID?.isEmpty ?? true) && !isLegacyLink(item.calendarEventID)
             let live = !item.isArchived && !item.isDone
 
             // An event added by hand for this item (e.g. by an agent) counts as its copy.
@@ -277,7 +281,9 @@ enum CalendarSync {
             }
 
             for (i, event) in pairs { links[indexes[i].calendar.calendarIdentifier] = linkKey(event) }
-            if let first = pairs.first, !wasLinked { item.calendarEventID = linkKey(first.1) }
+            if let first = pairs.first, !wasLinked, item.calendarEventID != linkKey(first.1) {
+                item.calendarEventID = linkKey(first.1)
+            }
 
             if live, date >= windowStart, !pairs.isEmpty {
                 switch reconcile(item, pairs.map(\.1)) {
@@ -298,7 +304,7 @@ enum CalendarSync {
                     guard write(item, to: event, created: true) else { continue }
                     let key = linkKey(event)
                     links[index.calendar.calendarIdentifier] = key
-                    if item.calendarEventID?.isEmpty ?? true { item.calendarEventID = key }
+                    if item.calendarEventID?.isEmpty ?? true || isLegacyLink(item.calendarEventID) { item.calendarEventID = key }
                     indexes[i].events.append(event)
                     claim(index, event)
                     agree(key, fingerprint(item))
@@ -495,6 +501,13 @@ enum CalendarSync {
         return base + "#" + String(Int(occurrence.timeIntervalSince1970))
     }
 
+    /// A pre-2.5 link: `EKEvent.eventIdentifier` ("<calendar uuid>:<event uuid>"), which only
+    /// means something on the device that wrote it.
+    private static func isLegacyLink(_ key: String?) -> Bool {
+        guard let key else { return false }
+        return key.range(of: #"^[0-9A-Fa-f-]{36}:[0-9A-Fa-f-]{36}$"#, options: .regularExpression) != nil
+    }
+
     /// Keys that may name this item's event: this device's link for the calendar, the
     /// item's stored link, and a link the agents wrote by hand ("GCal: <google event id>").
     private static func candidateKeys(for item: PlannerItem, in calendar: EKCalendar,
@@ -512,7 +525,7 @@ enum CalendarSync {
     private static func indexedEvent(for item: PlannerItem, in index: CalendarIndex,
                                      links: [String: String]) -> EKEvent? {
         for key in candidateKeys(for: item, in: index.calendar, links: links) {
-            if let event = index.byKey[key] { return event }
+            if let event = index.byKey[key] ?? index.byEventID[key] { return event }
         }
         return index.byMarker[String(itemKey(item).prefix(8))]?.first { ownsEvent($0, item: item) }
     }
