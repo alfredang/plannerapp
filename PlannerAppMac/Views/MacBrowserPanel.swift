@@ -408,6 +408,39 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
         return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(version) Safari/605.1.15"
     }
 
+    // MARK: - Local links
+
+    /// Clicked file:// links: folders open in Finder and documents (pdf, docx, xlsx…) in
+    /// their default app. HTML files load here, with read access to their own folder —
+    /// a page in reports/ may link to one anywhere (e.g. a client's working folder).
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        guard navigationAction.navigationType == .linkActivated,
+              let url = navigationAction.request.url, url.isFileURL else { return .allow }
+        // Same page (an #anchor): let WebKit scroll.
+        if url.path == webView.url?.path { return .allow }
+        if openOutside(url) { return .cancel }
+        guard ["html", "htm"].contains(url.pathExtension.lowercased()),
+              FileManager.default.fileExists(atPath: url.path) else { return .allow }
+        open(url)
+        return .cancel
+    }
+
+    /// Opens a local folder in Finder or a non-HTML file in its app. False when it's an
+    /// HTML page (or not a local item), which the browser shows itself.
+    @discardableResult
+    func openOutside(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return false }
+        if isDirectory.boolValue {
+            NSWorkspace.shared.open(url)
+            return true
+        }
+        guard !["html", "htm"].contains(url.pathExtension.lowercased()) else { return false }
+        NSWorkspace.shared.open(url)
+        return true
+    }
+
     // MARK: - WKUIDelegate
 
     /// Sign-in popups (window.open), kept alive until they close themselves.
@@ -419,7 +452,7 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard navigationAction.navigationType != .linkActivated else {
-            if let url = navigationAction.request.url { AgentPanelTabs.shared.newBrowser(url) }
+            if let url = navigationAction.request.url, !openOutside(url) { AgentPanelTabs.shared.newBrowser(url) }
             return nil
         }
         let size = NSSize(width: windowFeatures.width?.doubleValue ?? 520, height: windowFeatures.height?.doubleValue ?? 680)
