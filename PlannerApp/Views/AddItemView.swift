@@ -15,6 +15,9 @@ struct AddItemView: View {
     /// Pre-selected list for new items (e.g. the list currently open in the UI).
     var defaultList: PlannerList?
 
+    /// Called after a successful save (the appointment chat closes itself too).
+    var onSave: (() -> Void)?
+
     @Query(sort: \PlannerList.createdAt) private var lists: [PlannerList]
 
     @State private var title = ""
@@ -31,9 +34,11 @@ struct AddItemView: View {
     /// the user, not to loading an existing dated to-do into the form.
     @State private var autoKindEnabled = false
 
-    init(prefill: ParsedEntry? = nil, defaultList: PlannerList? = nil) {
+    init(prefill: ParsedEntry? = nil, defaultList: PlannerList? = nil,
+         onSave: (() -> Void)? = nil) {
         self.prefill = prefill
         self.defaultList = defaultList
+        self.onSave = onSave
     }
 
     init(item: PlannerItem) {
@@ -248,6 +253,8 @@ struct AddItemView: View {
         guard let prefill else { return }
         title = prefill.title
         kind = prefill.kind
+        notes = prefill.notes
+        meetingLink = prefill.meetingLink
         if let d = prefill.date {
             date = d
             includeDate = true
@@ -297,6 +304,7 @@ struct AddItemView: View {
         // Re-arm the advance alerts so a new/changed date takes effect immediately.
         let ctx = context
         Task { await ReminderScheduler.rescheduleAll(context: ctx) }
+        onSave?()
         dismiss()
     }
 }

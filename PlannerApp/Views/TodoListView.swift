@@ -187,9 +187,14 @@ struct TodoListView: View {
                 if section != .updates { captureBar }
             }
             .sheet(isPresented: $showingAdd) {
-                // Default the form to this tab's kind.
-                AddItemView(prefill: ParsedEntry(title: "", kind: mode, date: nil),
-                            defaultList: currentList)
+                // Appointments are added by chat (paste an invite or screenshot, or say it);
+                // to-dos keep the form, defaulted to this tab's kind.
+                if mode == .appointment {
+                    AppointmentChatView(defaultList: currentList)
+                } else {
+                    AddItemView(prefill: ParsedEntry(title: "", kind: mode, date: nil),
+                                defaultList: currentList)
+                }
             }
             .sheet(isPresented: $showingLists) { ListsManagerView() }
             .sheet(item: $editingItem) { AddItemView(item: $0) }

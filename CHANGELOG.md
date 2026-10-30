@@ -2,6 +2,9 @@
 
 ## [2.6] — 2026-10-30
 
+- New appointments by chat: tap + and paste a screenshot of an email or invite, pick one from Photos, or just say or type it. Apple Intelligence on your iPhone reads it and drafts the appointment — title, date and time, place and meeting link — for you to check and add
+- Say "add this to appointment" with a screenshot and it's added straight away; follow-ups like "make it 4pm" or "ends at 5pm" change the draft, and the classic form is one tap away
+- Appointments added this way go to your ticked calendars and to Planner on your Mac like any other
 - Calendar sync now also copies the appointments you already had before turning it on, not just new ones
 - Turning sync on no longer ticks a calendar for you: tick the ones you want (for example your personal and work Google calendars), so nothing lands in a calendar you didn't choose
 - Days you've booked as a holiday (an appointment titled "Holiday …") are shaded light green in the calendar, so time off stands out at a glance

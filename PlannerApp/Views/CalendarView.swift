@@ -140,7 +140,8 @@ struct CalendarView: View {
             }
             .sheet(item: $editingItem) { AddItemView(item: $0) }
             .sheet(item: $newAppointment) { new in
-                AddItemView(prefill: ParsedEntry(title: "", kind: .appointment, date: new.date))
+                // A bare time typed in the chat ("3pm") lands on the chosen day.
+                AppointmentChatView(anchorDay: new.date)
             }
         }
     }

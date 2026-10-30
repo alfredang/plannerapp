@@ -229,6 +229,10 @@ struct PlannerApp: App {
             // Far enough out to sit beyond the reminder lead window, so the advance
             // alerts have something to schedule in demo/screenshot runs.
             PlannerItem(title: "Quarterly review", kind: .appointment, date: at(11, 0, addDays: 14)),
+            // A few days booked off, so the light-green holiday shading shows in the calendar.
+            PlannerItem(title: "Holiday (Bali)", kind: .appointment, date: cal.startOfDay(for: at(0, 0, addDays: 8))),
+            PlannerItem(title: "Holiday (Bali)", kind: .appointment, date: cal.startOfDay(for: at(0, 0, addDays: 9))),
+            PlannerItem(title: "Holiday (Bali)", kind: .appointment, date: cal.startOfDay(for: at(0, 0, addDays: 10))),
             PlannerItem(title: "Buy groceries", kind: .task),
             PlannerItem(title: "Renew gym membership", kind: .task),
             PlannerItem(title: "Reply to client email", kind: .task)

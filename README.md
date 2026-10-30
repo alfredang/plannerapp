@@ -36,7 +36,8 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - 🇸🇬 **Singapore public holidays** — marked in red on the calendar with their names,
   including the observed Monday when a holiday falls on a Sunday. Dates come from the
   [Ministry of Manpower list](https://www.mom.gov.sg/employment-practices/public-holidays)
-  (2025–2027), bundled so the calendar works offline.
+  (2025–2027), bundled so the calendar works offline. Days you've booked as a holiday (an
+  appointment titled "Holiday …") are shaded light green on iPhone, iPad and Mac.
 - 🎥 **Meeting links** — paste a Google Meet, Zoom or Teams link into an appointment's
   *Meeting link* field and a **Join meeting** button appears on it (calendar too); links
   already in the notes are picked up automatically. The link is kept in the notes, so it
@@ -50,6 +51,12 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - 🎨 **Choose your look (iPhone)** — Light, Dark or System appearance, and eight accent
   colours (Indigo, Red, Blue, Green, Orange, Purple, Pink, Teal) in Settings ▸ Appearance.
   The Mac has its own Light/Dark toggle (⇧⌘D) and default in Settings.
+- 📸 **Add appointments by chat (iPhone)** — tap **+** on Appointments or the Calendar and
+  paste a screenshot of an email or invite, pick one from Photos, or say or type it. The text
+  is read on-device (Vision) and Apple Intelligence drafts the title, date and time, end time,
+  place and meeting link as a card to check — say *"add this to appointment"* (with the
+  screenshot or after it) or tap **Add**. Follow-ups like *"make it 4pm"* change the draft; the
+  classic form is one tap away. Added appointments go to your ticked calendars and the Mac.
 - 💬 **Capture bar** — a chatbot-style bar at the bottom of the Planner: type or dictate what
   you need and the assistant drafts a nicely worded entry and saves it instantly; the new row
   is the feedback, and the toolbar Undo takes it back.
@@ -107,7 +114,7 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   Settings, plus a refresh button on the iPhone Calendar and report pages and pull-to-refresh
   on the Planner, Calendar and Updates tabs. The Calendar shows when the phone last synced, so stale data is easy to spot.
 - 🖥 **macOS desktop edition** — a two-column Mac app: smart views (To-Do, Pinned, Today,
-  Upcoming, Appointments, Calendar, Schedule, Updates, Dashboard) and your lists in the sidebar, the item list with the
+  Upcoming, Appointments, Calendar, Schedule, Updates, Hermes Dashboard) and your lists in the sidebar, the item list with the
   capture bar on the right. Distributed as a
   [DMG](https://github.com/alfredang/plannerapp/releases/latest/download/Planner.dmg); build it
   yourself with `./scripts/build-macos-dmg.sh`.
@@ -136,7 +143,7 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   and a **Schedule** view of every background job on the Mac (workforce LaunchAgents, Hermes
   and OpenClaw cron, WhatsApp reminders). The agent panel has a built-in **Browser** tab for
   reports and claude.ai artifacts.
-- 📊 **Dashboard (Mac)** — Sidebar ▸ Dashboard embeds the **Hermes** web dashboard (cron jobs,
+- 📊 **Hermes Dashboard (Mac)** — Sidebar ▸ Hermes Dashboard embeds the **Hermes** web dashboard (cron jobs,
   sessions, config — started automatically on `127.0.0.1:9119` if it isn't running) or the
   **OpenClaw** Control UI (signed in with a fresh gateway token), so the agents' scheduled jobs
   are always one click away.
@@ -158,7 +165,10 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - **Intelligence:** `IntentAssistant` uses Apple's on-device **FoundationModels** (Apple
   Intelligence, iOS 26+) for intent classification and title wording, falling back to
   `SmartParser` (`NSDataDetector` + `NaturalLanguage`). Dates always come from the
-  deterministic parser so clock math never hallucinates.
+  deterministic parser so clock math never hallucinates. `AppointmentExtractor` does the same
+  for pasted invites and screenshots: the model picks the date *phrases*, each must appear
+  verbatim in the source, and `SmartParser` turns them into the date (send stamps like
+  "5:52 PM (4 hours ago)" are skipped).
 - **Notifications:** `UserNotifications` local alerts only — advance reminders, the morning
   summary and per-appointment alerts, kept under iOS's 64-pending-request limit.
 - **Project:** generated from `project.yml` via [XcodeGen](https://github.com/yonaskolb/XcodeGen).

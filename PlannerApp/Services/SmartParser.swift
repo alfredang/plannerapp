@@ -6,6 +6,9 @@ struct ParsedEntry {
     var title: String
     var kind: PlannerKind
     var date: Date?
+    /// Extra fields a pasted invite can carry into the form (see `AppointmentChatView`).
+    var notes: String = ""
+    var meetingLink: String = ""
 
     func makeItem() -> PlannerItem {
         PlannerItem(title: title, kind: kind, date: date)

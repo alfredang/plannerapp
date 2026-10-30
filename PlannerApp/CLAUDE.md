@@ -14,7 +14,7 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   `AboutView`, `RemindersSettingsView`. Changes there must still build for macOS: keep
   UIKit-only code behind `#if os(iOS)` and check the Mac build too.
 - `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` live in `project.yml` `settings.base`
-  (currently 2.6 / 41). The Mac target overrides its own build number.
+  (currently 2.6 / 42). The Mac target overrides its own build number.
 
 ## Architecture
 
@@ -31,6 +31,9 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   `FollowUpActions`, `SingaporeHolidays`.
 - Services: `PlannerCommand` (capture-bar command router — add vs. reschedule/rename/etc.;
   `keywordFallback` when no Apple Intelligence), `IntentAssistant` (FoundationModels, iOS 26+),
+  `AppointmentExtractor` (pasted invite / screenshot text → `AppointmentDraft`; the model picks
+  date phrases that must appear verbatim, `SmartParser` makes the date; end time, location and
+  meeting link ride in `notes`),
   `SmartParser` (deterministic dates), `ReminderScheduler` + `TodayAlerts` (local
   notifications), `CalendarSync` (two-way EventKit sync with every ticked calendar, e.g. Google angchewhoe@ + angch@: each appointment is copied to all of them, events from any come into Planner; `CalendarAutoSync` runs it at launch, on `EKEventStoreChanged` and every 2 min; links by `calendarItemExternalIdentifier` in `calendarEventID` + a `Planner id:` line in each copy's notes + per-device `calendar.links`; per-device agreed-state in UserDefaults decides push vs pull; same-marker duplicate copies are removed), `CloudSyncStatus` (`syncNow`, last sync),
   `DuplicateAudit`, `ModelUndoSupport`, `SpeechRecognizer`, `WeekStart`.
@@ -39,6 +42,11 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   Updates (`UpdatesView`), and shows the chatbot capture bar (type or dictate) on Tasks and
   Appointments. `CalendarView` is month grid + list with a refresh button and pull-to-refresh
   (`CloudSyncStatus.syncNow`); Planner and Updates are `.refreshable` too.
+  **+ on Appointments and on the Calendar opens `AppointmentChatView`** (iOS-only, not in the
+  Mac target): paste/pick a screenshot (Vision OCR on-device), dictate or type → draft card →
+  Add / Edit (the form, prefilled via `ParsedEntry.notes`/`meetingLink`). "add this to
+  appointment" (`AppointmentExtractor.isConfirmation`) adds it; said before the paste, it adds
+  as soon as the draft is ready. To-do + still opens `AddItemView`.
   `AssistantChatView` is not currently shown.
 - AppStorage keys worth knowing: `ownerName` (who "me" is for smart views), `iosAppearance`,
   `accentTheme` (changing it rebuilds tabs via `.id`), `calendar.weekStart`, `calendar.mode`,
@@ -53,7 +61,9 @@ xcodebuild test -project PlannerApp.xcodeproj -scheme PlannerApp \
 ```
 
 - Standalone regression tests (no simulator): the run line is at the top of
-  `scripts/test-capture-edits.swift` and `scripts/test-follow-up-actions.swift`.
+  `scripts/test-capture-edits.swift`, `scripts/test-follow-up-actions.swift` and
+  `scripts/test-appointment-extractor.swift` (the last runs the deterministic path unless the
+  binary can reach Apple Intelligence).
 - DEBUG launch args: `-seedSampleData` (in-memory store, demo data, no permission prompts —
   used by UI tests/screenshots), `-openPlanner`, `-openCalendar`, `-openSettings`,
   `-openUpcoming`, `-openAppointments`, `-openTasks`, `-dumpReminders`, `-dumpTodayAlerts`.
