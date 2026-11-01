@@ -222,6 +222,9 @@ enum CalendarSync {
         }
         let calendars = syncCalendars()
         guard !calendars.isEmpty else { return nil }
+        // Ask CalDAV accounts (Google) to fetch, so copies another device made show up here
+        // soon; the change notice that follows runs the sync again.
+        store.refreshSourcesIfNecessary()
         var summary = Summary()
         let all = (try? context.fetch(FetchDescriptor<PlannerItem>())) ?? []
         let cal = Calendar.current
@@ -426,10 +429,15 @@ enum CalendarSync {
         event.title = item.title
         let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
         if parts.hour == 0 && parts.minute == 0 {
-            // Date-only appointment → an all-day event.
+            // Date-only appointment → a one-day all-day event. EventKit counts an all-day
+            // event's end day in, so the end is the same day (the next midnight made it two
+            // days). An event that already starts that day keeps its end: a multi-day event
+            // from the calendar isn't cut short by a title change.
+            let keepsEnd = !created && event.isAllDay
+                && Calendar.current.isDate(event.startDate, inSameDayAs: date)
             event.isAllDay = true
             event.startDate = date
-            event.endDate = Calendar.current.date(byAdding: .day, value: 1, to: date) ?? date
+            if !keepsEnd { event.endDate = date }
         } else {
             event.isAllDay = false
             event.startDate = date
@@ -601,7 +609,11 @@ enum CalendarSync {
         for (_, group) in index.byMarker where group.count > 1 {
             let copies = group.filter { !$0.hasRecurrenceRules && canEdit($0) }
                 .sorted { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
-            guard copies.count > 1, Set(copies.compactMap { markerID(in: $0.notes) }).count == 1 else { continue }
+            // One item's copies: every id line is the same id, written in full or as its
+            // first 8 characters (agents' hand-made copies use the short form).
+            let ids = copies.compactMap { markerID(in: $0.notes) }
+            guard copies.count > 1, let full = ids.max(by: { $0.count < $1.count }),
+                  ids.allSatisfy({ full.hasPrefix($0) }) else { continue }
             for extra in copies.dropFirst() {
                 let id = extra.eventIdentifier ?? ""
                 if (try? store.remove(extra, span: .thisEvent, commit: true)) != nil { removed.insert(id) }

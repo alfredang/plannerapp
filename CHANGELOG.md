@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.7] — 2026-11-01
+
+- A date-only appointment now shows as one day in your Google and other calendars (it used to cover the next day too), and two copies of the same appointment in one calendar are tidied into one
+
 ## [2.6] — 2026-10-30
 
 - New appointments by chat: tap + and paste a screenshot of an email or invite, pick one from Photos, or just say or type it. Apple Intelligence on your iPhone reads it and drafts the appointment — title, date and time, place and meeting link — for you to check and add
