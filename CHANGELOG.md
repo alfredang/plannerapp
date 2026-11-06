@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.8] — 2026-11-06
+
+- Goals, ideas and pages you keep in Planner on your Mac no longer appear as to-dos on your iPhone, and goal dates no longer set off reminders
+- The duplicate check now only compares items in the same list, so each client's own copy of a document is left alone
+
 ## [2.7] — 2026-11-01
 
 - A date-only appointment now shows as one day in your Google and other calendars (it used to cover the next day too), and two copies of the same appointment in one calendar are tidied into one

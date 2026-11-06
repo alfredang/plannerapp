@@ -37,13 +37,13 @@ enum ItemPageViewer {
     // MARK: - Rendering
 
     private static func render(_ item: PlannerItem) -> String {
-        var chips: [String] = ["<span class=\"chip\">\(item.kind == .task ? "To-Do" : "Appointment")</span>"]
+        var chips: [String] = ["<span class=\"chip\">\(item.kind.title)</span>"]
         if item.kind == .task {
             let p = item.priority
             chips.append("<span class=\"chip prio-\(p.title.lowercased())\">\(escape(p.title))</span>")
         }
         if item.isPinned { chips.append("<span class=\"chip\">📌 Pinned</span>") }
-        if item.isDone { chips.append("<span class=\"chip done\">✓ Done</span>") }
+        if item.isDone { chips.append("<span class=\"chip done\">✓ \(item.isGoal ? "Achieved" : "Done")</span>") }
         if item.isArchived { chips.append("<span class=\"chip\">Archived</span>") }
 
         var facts: [(String, String)] = []
@@ -53,7 +53,7 @@ enum ItemPageViewer {
             var when = date.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
             if !dateOnly { when += " · " + date.formatted(date: .omitted, time: .shortened) }
             if !dateOnly, let end = item.endDate { when += "–" + end.formatted(date: .omitted, time: .shortened) }
-            facts.append((item.kind == .task ? "Due" : "When", escape(when)))
+            facts.append((item.isGoal ? "Target" : item.kind == .task ? "Due" : "When", escape(when)))
         }
         if let list = item.list?.name { facts.append(("List", escape(list))) }
         if !item.assignedTo.isEmpty { facts.append(("Assigned to", escape(item.assignedTo))) }

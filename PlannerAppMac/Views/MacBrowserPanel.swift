@@ -83,7 +83,8 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
             webView.observe(\.title) { [weak self] v, _ in Task { @MainActor in self?.pageTitle = v.title ?? "" } },
             webView.observe(\.url) { [weak self] v, _ in
                 Task { @MainActor in
-                    guard let self, let url = v.url else { return }
+                    // about:blank is what `clear()` leaves behind — not a page.
+                    guard let self, let url = v.url, url.absoluteString != "about:blank" else { return }
                     self.hasPage = true
                     self.addressText = url.isFileURL ? url.path : url.absoluteString
                 }
@@ -338,6 +339,15 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
         } else {
             webView.load(URLRequest(url: url))
         }
+    }
+
+    /// Empties the tab (closing the reports tab): no page, no address, back to the reports list.
+    func clear() {
+        webView.stopLoading()
+        webView.load(URLRequest(url: URL(string: "about:blank")!))
+        hasPage = false
+        pageTitle = ""
+        addressText = ""
     }
 
     func open(report: Report) {

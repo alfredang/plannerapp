@@ -62,7 +62,35 @@ struct MacPlannerPane: View {
 
     private var hasAgentView: Bool { currentAgent != nil || isWorkforceGroup }
     private var showsCaptureBar: Bool {
-        !(hasAgentView && !isSearching && !agentShowsItems)
+        // The bar files to-dos and appointments, or on Goals and Ideas what gets researched.
+        // Pages use + instead.
+        if selection == .category(.pages) { return false }
+        return !(hasAgentView && !isSearching && !agentShowsItems)
+    }
+
+    /// What + creates here: a goal on Goals, an idea on Ideas, a page on Pages, else the
+    /// form's default.
+    private var newItemKind: PlannerKind? {
+        switch selection {
+        case .category(.goals): return .goal
+        case .category(.ideas): return .idea
+        case .category(.pages): return .page
+        default:                return nil
+        }
+    }
+
+    /// What the capture bar files when it isn't the assistant: the researched kinds.
+    private var researchedCaptureKind: PlannerKind? {
+        newItemKind.flatMap { $0 == .goal || $0 == .idea ? $0 : nil }
+    }
+
+    private var capturePlaceholder: String {
+        if isListening { return "Listening…" }
+        switch researchedCaptureKind {
+        case .goal: return "Say your goal, e.g. “More than 5 franchisees by 2027”. Nova researches it into a page."
+        case .idea: return "Say your idea. Nova researches it into a page."
+        default:    return "e.g. “Lunch with Sam tomorrow 1pm”"
+        }
     }
 
     private func jobs(for agent: AgentProfile) -> [ScheduledJob] {
@@ -202,6 +230,36 @@ struct MacPlannerPane: View {
         ManualOrder.sortedPinnedFirst(items.filter { $0.kind == .appointment },
                                       pinned: { $0.isPinned }, position: { $0.sortOrder })
     }
+    /// Pages (HTML content): pinned first, then manual order, then by title and list — every
+    /// client's page is called "Client Overview", so the list (client) name breaks the tie.
+    private var pages: [PlannerItem] {
+        let byName = items.filter { $0.kind == .page }.sorted {
+            ($0.title + " " + ($0.list?.name ?? ""))
+                .localizedStandardCompare($1.title + " " + ($1.list?.name ?? "")) == .orderedAscending
+        }
+        return ManualOrder.sortedPinnedFirst(byName, pinned: { $0.isPinned },
+                                             position: { $0.sortOrder })
+    }
+
+    /// Goals still being worked towards: nearest target first, then manual order.
+    private var openGoals: [PlannerItem] {
+        let byTarget = items.filter { $0.isGoal && !$0.isDone }
+            .sorted { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
+        return ManualOrder.sortedPinnedFirst(byTarget, pinned: { $0.isPinned },
+                                             position: { $0.sortOrder })
+    }
+    /// Achieved goals, most recent first — kept on the list as a record.
+    private var achievedGoals: [PlannerItem] {
+        items.filter { $0.isGoal && $0.isDone }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+    }
+
+    /// Ideas: newest first, then manual order.
+    private var ideas: [PlannerItem] {
+        let newest = items.filter(\.isIdea).sorted { $0.createdAt > $1.createdAt }
+        return ManualOrder.sortedPinnedFirst(newest, pinned: { $0.isPinned },
+                                             position: { $0.sortOrder })
+    }
 
     private func moveItems(_ ordered: [PlannerItem], from source: IndexSet, to destination: Int) {
         ManualOrder.applyMove(ordered, from: source, to: destination) { item, position in
@@ -221,7 +279,7 @@ struct MacPlannerPane: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
                 .font(.system(size: 12))
-            TextField("Search to-dos and appointments", text: $searchText)
+            TextField("Search to-dos, appointments and pages", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.body)
                 .onSubmit { }
@@ -243,7 +301,7 @@ struct MacPlannerPane: View {
         .background(.bar)
     }
 
-    /// Same-title-same-day clusters among the rows on screen (multi-day courses are not
+    /// Same-list-same-title-same-day clusters among the rows on screen (multi-day courses are not
     /// duplicates and are never flagged — see DuplicateAudit).
     private var duplicateGroups: [DuplicateAudit.Group] {
         DuplicateAudit.findDuplicates(in: items)
@@ -320,8 +378,6 @@ struct MacPlannerPane: View {
             }
         }
         .task(id: selection) {
-            // Re-read on every list switch so edits to the agent .md files show up.
-            roster = AgentRoster.load()
             if case .digitalStaff = selection {
                 searchText = ""
                 agentShowsItems = false
@@ -330,9 +386,25 @@ struct MacPlannerPane: View {
                 agentShowsChat = false
                 if isWorkforceGroup { searchText = "" }
             }
-            if hasAgentView { agentJobs = ScheduleLoader.workforce() }
+            // Re-read on every list switch so edits to the agent .md files show up — off the
+            // main thread (files + `launchctl`), so the click itself never waits on them.
+            let loaded = await Task.detached(priority: .userInitiated) { AgentRoster.load() }.value
+            guard !Task.isCancelled else { return }
+            if loaded != roster {
+                roster = loaded
+                if isWorkforceGroup { searchText = "" }
+            }
+            if hasAgentView {
+                let jobs = await Task.detached(priority: .userInitiated) { ScheduleLoader.workforce() }.value
+                guard !Task.isCancelled else { return }
+                agentJobs = jobs
+            }
         }
-        .sheet(isPresented: $showingAdd) { AddItemView(defaultList: currentList) }
+        .sheet(isPresented: $showingAdd) {
+            AddItemView(prefill: newItemKind.map { ParsedEntry(title: "", kind: $0, date: nil) },
+                        defaultList: currentList,
+                        onSave: { ItemResearcher.shared.sweep() })
+        }
         .sheet(item: $editingItem) { AddItemView(item: $0) }
         .confirmationDialog("Delete this item?", isPresented: .init(
             get: { deletingItem != nil },
@@ -362,14 +434,17 @@ struct MacPlannerPane: View {
 
     /// Upcoming is broken down by date instead of by kind (search results stay flat).
     private var showsDaySections: Bool {
-        selection == .category(.scheduled) && !isSearching
+        (selection == .category(.appointments) || selection == .category(.scheduled)) && !isSearching
     }
 
     private var itemList: some View {
         List {
             if showsDaySections {
                 // Date order is the point here, so there's no drag-to-rearrange.
-                ForEach(DaySections.group(items)) { section in
+                // Appointments (which absorbed Upcoming): past ones not yet ticked are
+                // "Earlier", not overdue — they wait for "Did this happen?".
+                let pastTitle = selection == .category(.appointments) ? "Earlier" : "Overdue"
+                ForEach(DaySections.group(items, pastTitle: pastTitle)) { section in
                     Section(section.title) {
                         ForEach(section.items) { row($0) }
                     }
@@ -383,6 +458,33 @@ struct MacPlannerPane: View {
 
     @ViewBuilder
     private var kindSections: some View {
+        if !openGoals.isEmpty {
+            let ordered = openGoals
+            Section("Goals") {
+                ForEach(ordered) { row($0) }
+                    .onMove { moveItems(ordered, from: $0, to: $1) }
+            }
+        }
+        if !achievedGoals.isEmpty {
+            Section("Achieved") {
+                ForEach(achievedGoals) { row($0) }
+            }
+        }
+        if !ideas.isEmpty {
+            let ordered = ideas
+            Section("Ideas") {
+                ForEach(ordered) { row($0) }
+                    .onMove { moveItems(ordered, from: $0, to: $1) }
+            }
+        }
+        // Pages lead the rest: in a client's list the overview is the main document.
+        if !pages.isEmpty {
+            let ordered = pages
+            Section("Pages") {
+                ForEach(ordered) { row($0) }
+                    .onMove { moveItems(ordered, from: $0, to: $1) }
+            }
+        }
         if !appointments.isEmpty {
             let ordered = appointments
             Section("Appointments") {
@@ -409,6 +511,10 @@ struct MacPlannerPane: View {
                 editingItem = item
             } onOpen: {
                 ItemPageViewer.open(item)
+            }
+            // Where a goal's or idea's research has got to.
+            if item.isResearched {
+                ResearchStatusBadge(item: item)
             }
             // Priority flag on to-dos: click to set Critical / High / Medium / Low.
             if item.kind == .task {
@@ -447,12 +553,6 @@ struct MacPlannerPane: View {
             .buttonStyle(.plain)
             .help("Delete")
             .accessibilityLabel("Delete")
-            // Drag affordance — the whole row drags, the grip just signals it.
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .help("Hold and drag to rearrange")
-                .accessibilityHidden(true)
         }
         // Drag a row onto a sidebar list to move it there. Uses .onDrag with an
         // NSItemProvider rather than .draggable: inside a List(selection:) the
@@ -474,6 +574,15 @@ struct MacPlannerPane: View {
             }
             Button("Open") { ItemPageViewer.open(item) }
             Button("Edit…") { editingItem = item }
+            if item.isResearched, !item.isDone {
+                Button("Research Again") { ItemResearcher.shared.researchAgain(item) }
+            }
+            // Move between work and content: a to-do that is really a document, or back.
+            if item.kind == .task {
+                Button("Convert to Page") { withAnimation { item.makePage() } }
+            } else if item.isPage || item.isIdea {
+                Button("Convert to To-Do") { withAnimation { item.kind = .task } }
+            }
             Divider()
             Button("Delete", role: .destructive) { context.delete(item) }
         }
@@ -486,6 +595,18 @@ struct MacPlannerPane: View {
                     Label("No matches", systemImage: "magnifyingglass")
                 } description: {
                     Text("Nothing active matches “\(searchText)”. Archived items aren't searched.")
+                }
+            } else if selection == .category(.goals) {
+                ContentUnavailableView {
+                    Label("No goals yet", systemImage: "target")
+                } description: {
+                    Text("Say or type a goal below — what the business should achieve, and by when. Nova researches it into a page with competitor analysis, recommendations, a strategy plan and steps to implement.")
+                }
+            } else if selection == .category(.ideas) {
+                ContentUnavailableView {
+                    Label("No ideas yet", systemImage: "lightbulb")
+                } description: {
+                    Text("Say or type an idea below. Nova researches it into a page with recommendations, caveats and how to implement it.")
                 }
             } else {
                 ContentUnavailableView {
@@ -526,8 +647,7 @@ struct MacPlannerPane: View {
             // feedback, and ⌘Z (Edit ▸ Undo) reverts it like any other change.
 
             HStack(spacing: 10) {
-                TextField(isListening ? "Listening…" : "e.g. “Lunch with Sam tomorrow 1pm”",
-                          text: $input, axis: .vertical)
+                TextField(capturePlaceholder, text: $input, axis: .vertical)
                     .lineLimit(1...4)
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 14)
@@ -582,6 +702,13 @@ struct MacPlannerPane: View {
         guard !text.isEmpty, !isThinking else { return }
         speech?.stop()
         input = ""
+        // A goal or idea is filed as said and researched; the row shows how that's going.
+        if let kind = researchedCaptureKind {
+            withAnimation {
+                ItemResearcher.shared.add(text, kind: kind, list: currentList, context: context)
+            }
+            return
+        }
         isThinking = true
 
         reply = nil
@@ -601,6 +728,44 @@ struct MacPlannerPane: View {
                 try? await Task.sleep(for: .seconds(6))
                 if reply == shown { withAnimation { reply = nil } }
             }
+        }
+    }
+}
+
+/// Where a goal's or idea's research has got to, beside its row. Once the page exists this
+/// shows nothing: the row's "Open page" takes over.
+private struct ResearchStatusBadge: View {
+    let item: PlannerItem
+
+    private var researcher: ItemResearcher { .shared }
+
+    var body: some View {
+        switch researcher.status(of: item) {
+        case .researching:
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini)
+                Text("Researching…")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help("\(ItemResearcher.agentName) is researching this. It usually takes a few minutes.")
+        case .queued:
+            Text("Waiting for research")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .help("Starts when a research slot is free.")
+        case .failed:
+            Button("Research failed. Try again") { researcher.researchAgain(item) }
+                .buttonStyle(.link)
+                .font(.caption)
+                .help("Log: ~/DigitalWorkforce/logs/<date>-nova-research.log")
+        case .unavailable:
+            Text("Research unavailable")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .help("Research needs the Digital Workforce agents on this Mac.")
+        case nil:
+            EmptyView()
         }
     }
 }

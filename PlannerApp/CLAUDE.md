@@ -14,14 +14,19 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   `AboutView`, `RemindersSettingsView`. Changes there must still build for macOS: keep
   UIKit-only code behind `#if os(iOS)` and check the Mac build too.
 - `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` live in `project.yml` `settings.base`
-  (currently 2.7 / 43). The Mac target overrides its own build number.
+  (currently 2.8 / 44). The Mac target overrides its own build number.
 
 ## Architecture
 
 - `App/PlannerApp.swift` — `@main`; schema `[PlannerItem, PlannerList, AgentReport,
   ReportReply]` with `cloudKitDatabase: .automatic` (local fallback). Saves the context on
   `.background` so edits reach iCloud before suspension; re-arms alerts on `.active`.
-- Models: `PlannerItem` (task | appointment via `kindRaw`; `date`, `isDone`, `isArchived`,
+- Models: `PlannerItem` (task | appointment | page | goal | idea via `kindRaw` — `page` = HTML content such as a
+  client overview: no checkbox/priority/date, never archived as done, `makePage()`; `goal` =
+  business goal (Mac Sidebar ▸ Goals), date = target, achieved goals stay listed, kept out of
+  work views and reminders via `isWork`; `idea` = Mac Sidebar ▸ Ideas, content like a page, not
+  offered in the iPhone form; the Mac researches goals and ideas into pages; a String
+  raw value, so new kinds need no CloudKit schema change and old builds read them as tasks; `date`, `isDone`, `isArchived`,
   `sortOrder`, `isPinned`, `assignedTo`, `priorityRaw`, `calendarEventID`), `PlannerList`
   (`parent`/`children` sub-lists, `sortOrder`, `isPinned`), `AgentReport` + `ReportReply`
   (Digital Workforce reports uploaded by the Mac, replies from either device).

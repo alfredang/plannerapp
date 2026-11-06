@@ -28,7 +28,8 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - 🗓️ **One Planner page, two tabs** — **To-Do** (All Tasks · Pinned Tasks) and **Appointment**
   (Today · Upcoming) sit as top tabs on a single page, so a list never mixes the two kinds.
 - ⏭️ **Upcoming, by date** — everything with a date, broken down into **Today**, **Tomorrow**
-  and each day after, with anything overdue gathered on top. Same view on the Mac sidebar.
+  and each day after, with anything overdue gathered on top. On the Mac, **Appointments**
+  groups by day the same way.
 - 📅 **Month calendar** — each day's appointments are written right into the grid (with times
   on iPad and Mac), the selected day's agenda sits underneath, and a **List** view shows every
   appointment grouped by day, opened at today. Swipe (iPhone) or use the arrows to change
@@ -78,6 +79,12 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - 👯 **Duplicate check** — spots the same title on the same day and offers to archive the
   extra copies, keeping the original. Multi-day courses (same title, different days) are
   left alone.
+- 🎯 **Goals and Ideas, researched for you (Mac)** — say or type a goal or an idea in
+  **Strategy ▸ Goals** or **Ideas** and the Nova agent researches the web and writes it up as a
+  page with sources. A goal gets competitor analysis, recommendations, a strategy plan and steps
+  to implement; an idea gets recommendations, caveats and how to implement it. Goals are kept
+  out of To-Do and reminders, and "by 2027" sets the target date. Pages open in Planner's
+  browser and reach the iPhone through Updates. Needs the Digital Workforce agents on the Mac.
 - 🗂 **Your own lists and sub-lists** — create, rename, nest and delete lists ("Clients" ▸
   each client); a parent list shows its own items plus everything in its sub-lists. Move an
   item to another list from its menu (iPhone) or by dragging it onto the sidebar (Mac).
@@ -113,8 +120,8 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   across iPhone, iPad and Mac, with a live sync status, last-sync time and **Sync Now** in
   Settings, plus a refresh button on the iPhone Calendar and report pages and pull-to-refresh
   on the Planner, Calendar and Updates tabs. The Calendar shows when the phone last synced, so stale data is easy to spot.
-- 🖥 **macOS desktop edition** — a two-column Mac app: smart views (To-Do, Pinned, Today,
-  Upcoming, Appointments, Calendar, Schedule, Updates, Hermes Dashboard) and your lists in the sidebar, the item list with the
+- 🖥 **macOS desktop edition** — a two-column Mac app: Goals, Ideas, To-Do, Pinned, Today,
+  Appointments, Calendar, Pages, Updates, Agent Jobs, a Hermes Desktop shortcut and your lists in the sidebar, the item list with the
   capture bar on the right. Distributed as a
   [DMG](https://github.com/alfredang/plannerapp/releases/latest/download/Planner.dmg); build it
   yourself with `./scripts/build-macos-dmg.sh`.
@@ -140,13 +147,11 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   device appear under their card, and a brief re-published on the Mac reloads on the iPhone;
   pull down (or tap ↻) on a report to fetch the latest from iCloud.
 - 🧑‍💼 **Digital Workforce (Mac)** — each agent's profile and org chart, a chat with any agent,
-  and a **Schedule** view of every background job on the Mac (workforce LaunchAgents, Hermes
+  and an **Agent Jobs** view of every background job on the Mac (workforce LaunchAgents, Hermes
   and OpenClaw cron, WhatsApp reminders). The agent panel has a built-in **Browser** tab for
   reports and claude.ai artifacts.
-- 📊 **Hermes Dashboard (Mac)** — Sidebar ▸ Hermes Dashboard embeds the **Hermes** web dashboard (cron jobs,
-  sessions, config — started automatically on `127.0.0.1:9119` if it isn't running) or the
-  **OpenClaw** Control UI (signed in with a fresh gateway token), so the agents' scheduled jobs
-  are always one click away.
+- 📊 **Hermes Desktop (Mac)** — the sidebar button switches to the Hermes desktop app (sessions,
+  bots and scheduled jobs).
 - 💬 **Feedback & About** — house-style tabs (WhatsApp feedback, developer info, version).
 
 ## Tech Stack
@@ -202,7 +207,7 @@ PlannerApp/                             — iOS app + code shared with the Mac t
 │               CalendarSync.swift      — mirrors appointments into the system Calendar
 │               CloudSyncStatus.swift   — iCloud account + last-sync status, Sync Now
 │               PlannerCommand.swift    — assistant command router (15 verbs, on-device)
-│               DuplicateAudit.swift    — same-title-same-day duplicate detection
+│               DuplicateAudit.swift    — same-list, same-title, same-day duplicate detection
 │               ModelUndoSupport.swift  — system undo/redo for all SwiftData changes
 ├── Theme/      Theme.swift             — colour tokens, accent themes, appearance choice
 └── Views/      MainTabView, TodoListView (Planner: To-Do | Appointment), CalendarView
@@ -221,16 +226,17 @@ PlannerAppMac/                          — macOS desktop edition (DMG)
 │               AppearanceController.swift — Light/Dark/System for the Mac app
 │               UpdatesSync.swift       — agent reports → iCloud; replies → the agents
 │               AppointmentAgent.swift  — Atlas answers appointment comments
+│               ItemResearcher.swift    — Nova researches goals and ideas into pages
+│               MeetingOpener.swift     — Join meeting opens a new browser window
 │               AgentRoster.swift       — the agents in ~/.claude/agents
 │               AgentChat.swift         — chat sessions with an agent
 │               PowerSettings.swift     — daily wake / power-on schedule
 └── Views/      MacRootView.swift       — sidebar: smart views + user lists + sync badge
-                MacPlannerPane.swift    — item list (Upcoming by date) + capture bar
+                MacPlannerPane.swift    — item list (Appointments by day) + capture bar
                 MacCalendarPane.swift   — month grid / list calendar with holidays
                 MacTerminalPanel.swift  — agent panel: Claude Code / Codex / Hermes /
                                           OpenClaw terminal tabs + browser tabs
                 MacBrowserPanel.swift   — browser tabs (reports, replies, sign-in popups)
-                MacDashboardPane.swift  — Hermes dashboard / OpenClaw Control UI
                 MacUpdatesPane.swift    — report history, grouped by day
                 MacSchedulePane.swift   — every scheduled background job on this Mac
                 MacAgentProfileView.swift, MacAgentChatView.swift,
@@ -241,7 +247,7 @@ PlannerAppUITests/                      — iOS UI tests (navigation, appointmen
 
 scripts/build-macos-dmg.sh              — Release build → signed, notarized DMG
 scripts/test-*.swift                    — standalone regression tests (capture-bar edits,
-                                          follow-up actions)
+                                          follow-up actions, goal and idea research)
 scripts/icon/make_icon.py               — draws the iOS + Mac app icons
 ```
 
@@ -263,7 +269,7 @@ xcodebuild test -project PlannerApp.xcodeproj -scheme PlannerApp \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 
 # Standalone regression tests (no simulator) — the run line is at the top of each file
-head -3 scripts/test-capture-edits.swift scripts/test-follow-up-actions.swift
+head -3 scripts/test-capture-edits.swift scripts/test-follow-up-actions.swift scripts/test-item-researcher.swift
 ```
 
 ### Enabling iCloud sync on a device

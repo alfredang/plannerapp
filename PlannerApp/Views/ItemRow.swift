@@ -40,16 +40,38 @@ struct ItemRow: View {
 
     private var detailsRow: some View {
         HStack(alignment: .top, spacing: 12) {
-            Button(action: onToggle) {
-                Image(systemName: item.isDone ? "checkmark.circle.fill" : "circle")
+            if item.isPage || item.isIdea {
+                // Content, not work: its icon instead of a checkbox.
+                Image(systemName: item.kind.symbol)
                     .font(.title2)
-                    .foregroundStyle(item.isDone ? Theme.accent : .secondary)
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 26)
+                    .accessibilityHidden(true)
+            } else if item.isGoal {
+                // A goal is marked achieved (kept on the list), not checked off.
+                Button(action: onToggle) {
+                    Image(systemName: item.isDone ? "checkmark.seal.fill" : "target")
+                        .font(.title2)
+                        .foregroundStyle(item.isDone ? AnyShapeStyle(.green) : AnyShapeStyle(Theme.accent))
+                        .frame(width: 26)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.isDone ? "Mark as not achieved" : "Mark as achieved")
+                #if os(macOS)
+                .help(item.isDone ? "Achieved — click to reopen" : "Mark as achieved")
+                #endif
+            } else {
+                Button(action: onToggle) {
+                    Image(systemName: item.isDone ? "checkmark.circle.fill" : "circle")
+                        .font(.title2)
+                        .foregroundStyle(item.isDone ? Theme.accent : .secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.isDone ? "Mark as not done" : "Mark as done")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(item.isDone ? "Mark as not done" : "Mark as done")
 
             VStack(alignment: .leading, spacing: 4) {
-                let closed = item.isDone || item.isCancelled
+                let closed = (item.isDone && !item.isGoal) || item.isCancelled
                 Text(item.title)
                     .font(.body)
                     .strikethrough(closed, color: .secondary)
@@ -71,7 +93,11 @@ struct ItemRow: View {
                 // One-tap join for virtual appointments (link found in the notes).
                 if let url = item.meetingURL {
                     Button {
+                        #if os(macOS)
+                        MeetingOpener.open(url)
+                        #else
                         openURL(url)
+                        #endif
                     } label: {
                         Label("Join meeting", systemImage: "video.fill")
                             .font(.caption.weight(.semibold))
@@ -430,7 +456,7 @@ struct ItemRow: View {
         }
         if let date = item.date {
             // An appointment's date is its slot; a to-do's date is a deadline — say so.
-            let prefix = item.isAppointment ? "" : "Due "
+            let prefix = item.isAppointment ? "" : (item.isGoal ? "Target " : "Due ")
             text = text + Text("  •  \(prefix)") + Text(date, format: dateFormat(for: item))
         }
         if let list = item.list {
@@ -440,7 +466,8 @@ struct ItemRow: View {
     }
 
     private func dateFormat(for item: PlannerItem) -> Date.FormatStyle {
-        item.isAppointment
+        if item.isGoal { return .dateTime.day().month(.abbreviated).year() }
+        return item.isAppointment
             ? .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()
             : .dateTime.month(.abbreviated).day()
     }

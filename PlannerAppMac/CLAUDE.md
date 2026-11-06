@@ -16,7 +16,7 @@ notes are in `../PlannerApp/CLAUDE.md`.
   - Sharing another iOS view means adding it to the `PlannerAppMac` sources in `project.yml`.
 - `PRODUCT_NAME: Planner` → the app is `Planner.app`, binary `Contents/MacOS/Planner`.
 - Bundle id `com.tertiaryinfotech.plannerapp` (same as iOS), team `GU9WTSTX9M`, macOS 14+.
-- Mac overrides `CURRENT_PROJECT_VERSION` (currently "36") separately from the iOS base value;
+- Mac overrides `CURRENT_PROJECT_VERSION` (currently "52") separately from the iOS base value;
   `MARKETING_VERSION` is shared.
 - SwiftTerm is pinned `exactVersion: 1.11.2` — 1.12+ needs the Xcode Metal toolchain. Don't bump.
 
@@ -26,14 +26,13 @@ notes are in `../PlannerApp/CLAUDE.md`.
   ReportReply]`, `cloudKitDatabase: .automatic`, local/in-memory fallback. Starts
   `UpdatesSync` + `AppointmentAgent`; app delegate applies appearance and calls
   `HermesBridge.prepareWorkspace()`. Closing the window does not quit.
-- `Views/MacRootView.swift` — `NavigationSplitView`; `SidebarItem` enum (To-Do, Pinned, Today,
-  Upcoming, Appointments, Calendar, Schedule (`jobs`), Updates, Archive, Settings, Feedback,
-  About) + user lists (`ListHierarchy`) + Digital Workforce staff.
+- `Views/MacRootView.swift` — `NavigationSplitView`; sidebar sections Strategy (Goals, Ideas), Tasks
+  (To-Do, Pinned), Schedule (Today, Appointments — grouped by day, absorbed Upcoming — and
+  Calendar), Content (Pages, Updates), Agents (Agent Jobs = `jobs`, plus a "Hermes Desktop" button (`HermesDesktop.open`: activates/launches
+  `com.nousresearch.hermes`; the old embedded Hermes Dashboard pane was removed)), My Lists, Browse
+  (Archive), Support. `SidebarItem` keeps `.scheduled`/`.todos` for persisted state only. User lists (`ListHierarchy`) + Digital Workforce staff.
 - Panes: `MacPlannerPane` (items + capture bar), `MacCalendarPane`, `MacUpdatesPane`,
   `MacSchedulePane` (workforce LaunchAgents `com.alfred.workforce.*`, Hermes/OpenClaw cron),
-  `MacDashboardPane` (Sidebar ▸ Hermes Dashboard: Hermes web UI on http://127.0.0.1:9119, started
-  on demand and kept up by `~/DigitalWorkforce/bin/hermes-watchdog.py`; or the OpenClaw
-  Control UI via `~/.openclaw/bin/openclaw dashboard --json`),
   `MacSettingsPane` (Settings scene, ⌘,), `MacAgentProfileView`/`MacAgentChatView`/
   `DigitalWorkforceArtifactView`.
 - `Views/MacTerminalPanel.swift` — right-hand agent panel (⌥⌘T, `hermesPanelVisible`):
@@ -46,14 +45,31 @@ notes are in `../PlannerApp/CLAUDE.md`.
   `memory/`, and the Hermes skill `~/.hermes/skills/productivity/planner-app/SKILL.md`
   (panel runs `hermes chat -s planner-app`). Verbs: add, done/undone, delete, move, rename,
   reschedule, setkind, note, link, priority, assign, newlist, renamelist, browse, orderlists,
-  deletelist. `delete` archives and `deletelist` is refused unless
+  deletelist. `add …&kind=page` upserts by title within the list; `done` refuses pages. At
+  launch `PlannerKind.migrateContentToPages` turns "… Overview" to-dos with a page link into
+  pages and restores pages checked off on old iPhone builds. `delete` archives and `deletelist` is refused unless
   `hermes.allowsAgentDeletion` is on (Settings ▸ Agent safety).
 - `Services/UpdatesSync.swift` — every 60 s: `reports/index.json` pages → `AgentReport`
-  (re-saved on hash change); each `ReportReply` appended once to
+  (re-saved on hash change; off the main thread in its own `ModelContext`, since it reads every
+  report file and stored HTML); each `ReportReply` appended once to
   `~/DigitalWorkforce/replies/replies.jsonl`.
 - `Services/AppointmentAgent.swift` — answers appointment comments via
   `~/DigitalWorkforce/bin/answer-appointment-comment.sh` (Atlas); the answer is appended to
   the item's notes so it syncs to the iPhone.
+- `Services/ItemResearcher.swift` — goals and ideas without a page get researched (right after
+  adding, and every 60 s for ones from agents or the iPhone; max 2 at once; once each, a failed
+  run waits for "Research Again"). Runs `~/DigitalWorkforce/bin/research-item.sh` (not in this
+  repo): Nova, with web + a few read-only files only since web pages are untrusted, prints
+  markdown; `research-clean.py` rejects incomplete pages and neutralises raw HTML;
+  `publish-reports.py` renders it as `reports/<date>-nova-<kind>-<id8>.html`, so it gets the house
+  style, Reply on each card and reaches the iPhone through Updates. The link goes on the item's
+  `Page:` notes line. Log: `~/DigitalWorkforce/logs/<date>-nova-research.log`. The capture bar on
+  Goals and Ideas files through `ItemResearcher.add`, not `PlannerCommand`. **A launch on live
+  data starts real research on any goal without a page:** for UI checks pass
+  `-researchScript /nonexistent` (DEBUG), which turns it off.
+- `Services/MeetingOpener.swift` — "Join meeting" opens Chromium browsers with `--new-window`:
+  a plain URL open lands in the browser's last window, possibly on another Space, and looks
+  like nothing happened.
 - Also: `WhatsAppReminders` (daily digests), `PowerSettings` (pmset wake schedule),
   `AppearanceController` (`appearanceMode`; ⇧⌘D toggle), `AgentRoster` (`~/.claude/agents`),
   `AgentChat` (`~/DigitalWorkforce/bin/chat-agent.py`).
@@ -72,7 +88,8 @@ open build/mac-dev/Build/Products/Debug/Planner.app --args -debugSidebar calenda
   `updates`, `settings`), `-debugList <list name>`; `-appearanceMode light|dark|system` sets
   the AppStorage default via the argument domain.
 - Standalone tests (no simulator): run line is at the top of `scripts/test-capture-edits.swift`
-  and `scripts/test-follow-up-actions.swift`. UI tests are iOS-only.
+  and `scripts/test-follow-up-actions.swift`; `scripts/test-item-researcher.swift` covers research
+  with an in-memory store and a fake script. UI tests are iOS-only.
 - Store: non-sandboxed (sandbox removed so the panel can spawn agent CLIs), so SwiftData lives
   at `~/Library/Application Support/default.store`.
 
@@ -122,5 +139,7 @@ open build/mac-dev/Build/Products/Debug/Planner.app --args -debugSidebar calenda
   doc agents see; keep it in sync with the verbs.
 - Ordering: `ManualOrder` over `sortOrder` (0 = never placed, sorts last); pinned first via
   `isPinned`; to-do priority is `priorityRaw` (`PlannerPriority`, High/Critical auto-pin).
-  Collapsed sidebar lists are device-local (`collapsedLists`): build the rows passed to
+  Sidebar expand state is device-local and stores the *expanded* lists (`expandedLists`;
+  everything else is collapsed, so newly synced lists start shut; launch clears it). Chevrons
+  and row clicks are an accordion — opening a list folds its open siblings. Build the rows passed to
   `ListHierarchy.applyMove` with the same `collapsed:` set the sidebar shows, or indices misalign.

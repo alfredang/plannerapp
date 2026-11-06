@@ -5,17 +5,20 @@ import Foundation
 struct DaySection: Identifiable {
     let day: Date?
     let items: [PlannerItem]
+    /// Title of the past bucket: "Overdue" for deadlines, "Earlier" for appointments.
+    var pastTitle = "Overdue"
 
     var id: Date { day ?? .distantPast }
 
-    var title: String { day.map { DaySections.title(for: $0) } ?? "Overdue" }
+    var title: String { day.map { DaySections.title(for: $0) } ?? pastTitle }
 }
 
 /// Breaks dated items down by date for the Upcoming view (iPhone and Mac alike): anything
 /// already past goes in one "Overdue" section first, then one section per day from today
 /// onwards. Each section runs in time order.
 enum DaySections {
-    static func group(_ items: [PlannerItem], now: Date = Date()) -> [DaySection] {
+    static func group(_ items: [PlannerItem], pastTitle: String = "Overdue",
+                      now: Date = Date()) -> [DaySection] {
         let cal = Calendar.current
         let today = cal.startOfDay(for: now)
         let dated = items
@@ -24,7 +27,7 @@ enum DaySections {
 
         var sections: [DaySection] = []
         let overdue = dated.filter { $0.date! < today }
-        if !overdue.isEmpty { sections.append(DaySection(day: nil, items: overdue)) }
+        if !overdue.isEmpty { sections.append(DaySection(day: nil, items: overdue, pastTitle: pastTitle)) }
 
         let byDay = Dictionary(grouping: dated.filter { $0.date! >= today }) {
             cal.startOfDay(for: $0.date!)

@@ -56,7 +56,7 @@ struct AddItemView: View {
             Form {
                 Section {
                     Picker("Type", selection: $kind) {
-                        ForEach(PlannerKind.allCases) { k in
+                        ForEach(pickableKinds) { k in
                             Label(k.title, systemImage: k.symbol).tag(k)
                         }
                     }
@@ -97,13 +97,39 @@ struct AddItemView: View {
                     .padding(.vertical, 4)
                 }
 
-                Section {
-                    Toggle(kind == .task ? "Set deadline" : "Set date & time", isOn: $includeDate)
-                    if includeDate {
-                        // Same picker, different meaning: a to-do's date is its deadline,
-                        // an appointment's date is its slot.
-                        DatePicker(kind == .task ? "Due" : "When", selection: $date)
-                            .datePickerStyle(.compact)
+                // A page is content (like a Notion page): no date, no priority, no checkbox.
+                if kind == .page {
+                    Section {
+                        EmptyView()
+                    } footer: {
+                        Text("A page is content, not a to-do — it always shows in its list and is never checked off. Put a “Page: reports/<file>.html” line (or a web address) in the notes to open an HTML page.")
+                    }
+                } else if kind == .idea {
+                    Section {
+                        EmptyView()
+                    } footer: {
+                        Text("Say what the idea is. Planner on your Mac researches it and adds a page with recommendations, caveats and how to implement it.")
+                    }
+                } else if kind == .goal {
+                    // A goal's date is a target ("by 2027") — a day, no time.
+                    Section {
+                        Toggle("Set target date", isOn: $includeDate)
+                        if includeDate {
+                            DatePicker("Target", selection: $date, displayedComponents: .date)
+                                .datePickerStyle(.compact)
+                        }
+                    } footer: {
+                        Text("Goals show under Goals only — not in To-Do, Upcoming or reminders. Planner on your Mac researches each one into a page with competitor analysis, a strategy plan and steps to implement. Mark one achieved when it's done; it stays on the list.")
+                    }
+                } else {
+                    Section {
+                        Toggle(kind == .task ? "Set deadline" : "Set date & time", isOn: $includeDate)
+                        if includeDate {
+                            // Same picker, different meaning: a to-do's date is its deadline,
+                            // an appointment's date is its slot.
+                            DatePicker(kind == .task ? "Due" : "When", selection: $date)
+                                .datePickerStyle(.compact)
+                        }
                     }
                 }
 
@@ -190,8 +216,9 @@ struct AddItemView: View {
             }
             .onAppear(perform: applyPrefill)
             .onChange(of: kind) { _, newKind in
-                // Appointments need a time; default it on when switching.
+                // Appointments need a time; default it on when switching. Pages have none.
                 if newKind == .appointment && !includeDate { includeDate = true }
+                if newKind == .page || newKind == .idea { includeDate = false }
             }
             .onChange(of: selectedListID) { oldID, newID in
                 // Moving the item into someone's list assigns it to them. Only fills a
@@ -222,11 +249,18 @@ struct AddItemView: View {
         #endif
     }
 
+    /// The iPhone only shows to-dos and appointments: anything else created there would vanish
+    /// from it. It can still edit an item of another kind.
+    private var pickableKinds: [PlannerKind] {
+        #if os(iOS)
+        PlannerKind.allCases.filter { $0 == .task || $0 == .appointment || $0 == kind }
+        #else
+        PlannerKind.allCases
+        #endif
+    }
+
     private var navigationTitle: String {
-        if isEditing {
-            return kind == .task ? "Edit To-Do" : "Edit Appointment"
-        }
-        return kind == .task ? "New To-Do" : "New Appointment"
+        "\(isEditing ? "Edit" : "New") \(kind.title)"
     }
 
     private func applyPrefill() {
@@ -261,6 +295,12 @@ struct AddItemView: View {
         }
     }
 
+    /// The date to store: none, or for a goal the target day at midnight (no time).
+    private var savedDate: Date? {
+        guard includeDate else { return nil }
+        return kind == .goal ? Calendar.current.startOfDay(for: date) : date
+    }
+
     private func save() {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         var trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -276,8 +316,9 @@ struct AddItemView: View {
         if let itemToEdit {
             itemToEdit.title = trimmedTitle
             itemToEdit.notes = FollowUpActions.notes(trimmedNotes, preservingReferenceFrom: itemToEdit.notes)
+            if kind == .page || kind == .idea, itemToEdit.kind != kind { itemToEdit.makeContent(kind) }
             itemToEdit.kind = kind
-            itemToEdit.date = includeDate ? date : nil
+            itemToEdit.date = savedDate
             itemToEdit.list = list
             itemToEdit.assignedTo = trimmedAssignee
             if kind == .task, itemToEdit.priority != priority { itemToEdit.setPriority(priority) }
@@ -287,7 +328,7 @@ struct AddItemView: View {
                 title: trimmedTitle,
                 notes: trimmedNotes,
                 kind: kind,
-                date: includeDate ? date : nil
+                date: savedDate
             )
             item.list = list
             item.assignedTo = trimmedAssignee

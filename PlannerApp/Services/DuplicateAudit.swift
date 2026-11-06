@@ -4,10 +4,11 @@ import SwiftData
 /// Finds items that look accidentally duplicated, so they can be reviewed before they clutter
 /// a calendar or fire two reminders for the same thing.
 ///
-/// The rule is deliberately conservative: a duplicate is **the same title on the same day**.
-/// Two sessions of a multi-day course ("LHUB n8n Training" on the 30th and the 31st) share a
-/// title but not a day, and are NOT duplicates — flagging those would invite deleting a real
-/// training day.
+/// The rule is deliberately conservative: a duplicate is **the same title on the same day in
+/// the same list**. Two sessions of a multi-day course ("LHUB n8n Training" on the 30th and the
+/// 31st) share a title but not a day, and are NOT duplicates — flagging those would invite
+/// deleting a real training day. Likewise one "Client Overview" per client list is a pattern,
+/// not a copy: archiving "extras" across lists once wiped 74 of them.
 enum DuplicateAudit {
 
     /// One cluster of items judged to be duplicates of each other.
@@ -37,7 +38,7 @@ enum DuplicateAudit {
             !item.isArchived && (kind == nil || item.kind == kind)
         }
 
-        // Key on normalised title + calendar day. Undated items group by title alone.
+        // Key on list + normalised title + calendar day. Undated items group by list + title.
         var buckets: [String: [PlannerItem]] = [:]
         for item in candidates {
             let title = item.title
@@ -51,7 +52,8 @@ enum DuplicateAudit {
             } else {
                 day = "nodate"
             }
-            buckets["\(title)|\(day)", default: []].append(item)
+            let list = item.list?.id.uuidString ?? "nolist"
+            buckets["\(list)|\(title)|\(day)", default: []].append(item)
         }
 
         return buckets.values

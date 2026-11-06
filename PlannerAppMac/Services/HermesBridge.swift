@@ -228,28 +228,50 @@ enum HermesBridge {
                 }
                 priority = parsed
             }
-            let item = PlannerItem(title: title, notes: params["notes"] ?? "", kind: kind, date: date)
+            // A to-do's or page's `link=` is its page; `page=` works for any kind.
+            let page = params["page"] ?? (kind != .appointment ? params["link"] : nil)
+            if let page, !page.isEmpty, let problem = pageProblem(page) {
+                return problem + "; nothing was added"
+            }
+            let list = (params["list"]).flatMap { $0.isEmpty ? nil : findOrCreateList(named: $0, context: context) }
+            // A page is a document: adding one that its list already has (same title)
+            // updates it instead of filing a second copy.
+            if kind == .page, let existing = existingPage(titled: title, in: list, context: context) {
+                if let notes = params["notes"], !notes.isEmpty { existing.notes = notes }
+                if let page, !page.isEmpty { existing.notes = PageLink.notes(existing.notes, setting: page) }
+                return "OK: updated page “\(title)” (id \(shortID(existing.id)))"
+            }
+            // Pages and ideas have no date: they are content, not something that happens.
+            let item = PlannerItem(title: title, notes: params["notes"] ?? "", kind: kind,
+                                   date: kind == .page || kind == .idea ? nil : date)
             if let priority, kind == .task { item.setPriority(priority) }
             if let link = params["link"], !link.isEmpty, kind == .appointment {
                 item.notes = MeetingLink.notes(item.notes, settingLink: link)
             }
-            // A to-do's `link=` is its page; `page=` works for either kind.
-            if let page = params["page"] ?? (kind == .task ? params["link"] : nil), !page.isEmpty {
-                if let problem = pageProblem(page) { return problem + "; nothing was added" }
+            if let page, !page.isEmpty {
                 item.notes = PageLink.notes(item.notes, setting: page)
             }
-            if let listName = params["list"], !listName.isEmpty {
-                item.list = findOrCreateList(named: listName, context: context)
-            }
+            item.list = list
+            // "Client Overview" + a page, filed as a to-do the old way, is really a page.
+            PlannerKind.migrateContentToPages(in: [item])
             context.insert(item)
             CalendarSync.markLocal(item)
             let when = date.map { " on \(dateFormatter.string(from: $0))" } ?? ""
-            return "OK: added \(kind.rawValue) “\(title)”\(when) (id \(shortID(item.id)))"
+            return "OK: added \(item.kind.rawValue) “\(title)”\(when) (id \(shortID(item.id)))"
 
         case "done", "undone":
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
+            guard !item.isPage else {
+                return "ERROR: “\(item.title)” is a page (content, not a to-do) — pages are never marked done"
+            }
+            guard !item.isIdea else {
+                return "ERROR: “\(item.title)” is an idea (content, not a to-do) — ideas are never marked done"
+            }
             let target = command == "done"
             if item.isDone != target { item.toggleDone() }
+            if item.isGoal {
+                return "OK: goal “\(item.title)” marked \(target ? "achieved (kept on the Goals list)" : "not achieved")"
+            }
             return "OK: “\(item.title)” marked \(target ? "done (auto-archived)" : "not done (restored)")"
 
         case "delete":
@@ -295,7 +317,8 @@ enum HermesBridge {
 
         case "setkind":
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
-            item.kind = parseKind(params["kind"])
+            let kind = parseKind(params["kind"])
+            if kind == .page || kind == .idea { item.makeContent(kind) } else { item.kind = kind }
             return "OK: “\(item.title)” is now a \(item.kind.rawValue)"
 
         case "note":
@@ -303,8 +326,8 @@ enum HermesBridge {
             item.notes = FollowUpActions.notes(params["notes"] ?? "", preservingReferenceFrom: item.notes)
             return "OK: notes of “\(item.title)” updated"
 
-        case "link" where findItem(params, context: context)?.kind == .task, "page":
-            // A to-do's link is the page a click opens (e.g. a client overview report).
+        case "link" where findItem(params, context: context).map({ !$0.isAppointment }) == true, "page":
+            // A to-do's or page's link is the page a click opens (e.g. a client overview report).
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
             let page = params["url"] ?? params["file"] ?? ""
             if !page.isEmpty, let problem = pageProblem(page) { return problem }
@@ -321,7 +344,9 @@ enum HermesBridge {
 
         case "priority":
             guard let item = findItem(params, context: context) else { return "ERROR: item not found" }
-            guard item.kind == .task else { return "ERROR: “\(item.title)” is an appointment — priority is for to-dos" }
+            guard item.kind == .task else {
+                return "ERROR: “\(item.title)” is \(item.isPage ? "a page" : "an appointment") — priority is for to-dos"
+            }
             guard let level = PlannerPriority(name: params["level"] ?? "") else {
                 return "ERROR: bad level — use critical, high, medium or low"
             }
@@ -581,13 +606,33 @@ enum HermesBridge {
         return list
     }
 
-    /// `appointment` (also "appt", "event", "meeting", any case) or `task` (the default).
+    /// `appointment` (also "appt", "event", "meeting", any case), `page` (also "doc",
+    /// "document", "html", "content"), `goal` (also "objective", "target"), `idea` or `task`
+    /// (the default).
     private static func parseKind(_ raw: String?) -> PlannerKind {
         switch raw?.trimmingCharacters(in: .whitespaces).lowercased() {
         case "appointment", "appointments", "appt", "event", "meeting", "calendar":
             return .appointment
+        case "page", "pages", "doc", "document", "html", "content":
+            return .page
+        case "goal", "goals", "objective", "target":
+            return .goal
+        case "idea", "ideas":
+            return .idea
         default:
             return .task
+        }
+    }
+
+    /// The active page titled `title` (any case) in `list`, if there is one.
+    private static func existingPage(titled title: String, in list: PlannerList?,
+                                     context: ModelContext) -> PlannerItem? {
+        let pageKind = PlannerKind.page.rawValue
+        let pages = (try? context.fetch(FetchDescriptor<PlannerItem>(
+            predicate: #Predicate { $0.kindRaw == pageKind && !$0.isArchived }))) ?? []
+        return pages.first {
+            $0.list?.id == list?.id
+                && $0.title.caseInsensitiveCompare(title) == .orderedSame
         }
     }
 
@@ -669,6 +714,14 @@ enum HermesBridge {
     specific time or place — meetings, calls, trainings, events, invitations — is
     `kind=appointment`; it then shows in the Appointments view and the Calendar.
 
+    **Content is a page, not a to-do.** A client overview, a project brief, a research write-up —
+    any HTML report that is something to *read* rather than something to *do* — is
+    `kind=page`. Pages show in their list and under Pages, open in Planner's browser when
+    clicked, and are never checked off, archived as done, prioritised or pinned as work.
+    Never file a page as a Critical to-do to make it visible: it is always visible. Adding a
+    page whose list already has one with that title updates it (no duplicates), e.g.
+    `add?title=Client Overview&kind=page&list=ACME PTE LTD&page=2026-10-30-acme-overview.html`.
+
     | Action | URL |
     |---|---|
     | Add | `planner://add?title=Buy%20milk&kind=task&date=2026-07-15%2013:00&list=Groceries&notes=2L` |
@@ -678,11 +731,11 @@ enum HermesBridge {
     | Move to a list | `planner://move?id=ab12cd34&list=AI-LMS-TMS` (empty `list=` removes it from its list) |
     | Rename | `planner://rename?id=ab12cd34&title=New%20title` |
     | Reschedule | `planner://reschedule?id=ab12cd34&date=2026-07-16%2009:00` (omit date to clear) |
-    | Change kind | `planner://setkind?id=ab12cd34&kind=appointment` (`task` or `appointment`) |
+    | Change kind | `planner://setkind?id=ab12cd34&kind=appointment` (`task`, `appointment`, `page`, `goal` or `idea`) |
     | Set notes | `planner://note?id=ab12cd34&notes=…` |
     | Assign | `planner://assign?title=Setup%20exams&to=Ngooi` (empty `to` unassigns) |
     | Meeting link (appointments) | `planner://link?id=ab12cd34&url=meet.google.com/abc-defg-hij` (empty `url` removes it; `add` also takes `link=`) |
-    | Page link (to-dos) | `planner://link?id=ab12cd34&url=2026-10-30-acme-overview.html` — clicking the to-do on the Mac then opens that page in Planner's browser (Edit… is in its right-click menu). `url` = a report in `reports/` (bare `<file>.html` or `reports/<file>.html`), an absolute file path, or an https URL; empty removes it. `planner://page?id=…&url=…` does the same for any item; `add` takes `page=` (or `link=` on a to-do). Shown as `pageLink` in the snapshot. |
+    | Page link (pages, to-dos) | `planner://link?id=ab12cd34&url=2026-10-30-acme-overview.html` — clicking the item on the Mac then opens that page in Planner's browser (Edit… is in its right-click menu). `url` = a report in `reports/` (bare `<file>.html` or `reports/<file>.html`), an absolute file path, or an https URL; empty removes it. `planner://page?id=…&url=…` does the same for any item; `add` takes `page=` (or `link=` on a page or to-do). Shown as `pageLink` in the snapshot. |
     | Priority (to-dos) | `planner://priority?id=ab12cd34&level=high` (`critical`, `high`, `medium`, `low`; Critical/High auto-pin) |
     | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
     | Rename list | `planner://renamelist?name=Errands&to=Chores` (items and sub-lists are kept) |
@@ -691,7 +744,15 @@ enum HermesBridge {
     | Delete list | `planner://deletelist?name=Errands` — **disabled by default, see below** |
 
     Notes:
-    * `kind` is `task` (a to-do) or `appointment` (anything at a specific time/place).
+    * `kind` is `task` (a to-do: work to finish), `appointment` (anything at a specific
+      time/place), `page` (HTML content to read — no date, no priority, never done),
+      `goal` (a business goal the owner set in Sidebar ▸ Goals; `date` = target date) or
+      `idea` (an idea to explore, Sidebar ▸ Ideas — no date, never done).
+    * **New goals and ideas are researched automatically:** Planner has Nova write a page
+      and links it. Just add the item; don't research it or set a page yourself unless asked.
+    * **Goals** are the owner's priorities — read them (`kind: "goal"` in the snapshot) when
+      advising, planning or proposing work, and say which goal a suggestion serves. Don't
+      add, rename or delete goals unless the user asks; `done` on a goal marks it achieved.
     * On `add`, a named `list` is created automatically if it doesn't exist.
     * On `add`, a to-do may carry `priority=critical|high|medium|low` (default medium).
     * If you don't know an id you may pass `title=` with a title substring instead — but

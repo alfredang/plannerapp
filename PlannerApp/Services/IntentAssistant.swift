@@ -159,6 +159,12 @@ enum IntentAssistant {
                 return "Added “\(entry.title)” to your to-dos, due \(when)."
             }
             return "Added “\(entry.title)” to your to-dos."
+        case .page:
+            return "Added the page “\(entry.title)”."
+        case .goal:
+            return "Added the goal “\(entry.title)”."
+        case .idea:
+            return "Added the idea “\(entry.title)”."
         }
     }
 }

@@ -13,6 +13,7 @@ final class UpdatesSync {
 
     private var context: ModelContext?
     private var timer: Timer?
+    private var uploadTask: Task<Void, Never>?
 
     nonisolated static var repliesURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -30,8 +31,8 @@ final class UpdatesSync {
 
     func sync() {
         guard let context else { return }
-        uploadReports(context)
         exportReplies(context)
+        startReportUpload(container: context.container)
     }
 
     // MARK: Reports → iCloud
@@ -45,8 +46,23 @@ final class UpdatesSync {
         var modified: Int?
     }
 
-    private func uploadReports(_ context: ModelContext) {
+    /// Runs off the main thread with its own context: this reads every report file and loads
+    /// every stored report's HTML (8 MB+), which stalled the UI for ~180 ms each minute when it
+    /// ran on the main actor. Saves merge into the main context; one pass at a time.
+    private func startReportUpload(container: ModelContainer) {
+        guard uploadTask == nil else { return }
         let dir = AgentBrowser.reportsURL
+        uploadTask = Task.detached(priority: .utility) { [weak self] in
+            Self.uploadReports(ModelContext(container), dir: dir)
+            await self?.uploadDidFinish()
+        }
+    }
+
+    private func uploadDidFinish() {
+        uploadTask = nil
+    }
+
+    nonisolated private static func uploadReports(_ context: ModelContext, dir: URL) {
         guard let data = try? Data(contentsOf: dir.appendingPathComponent("index.json")),
               let entries = try? JSONDecoder().decode([IndexEntry].self, from: data) else { return }
         let existing = (try? context.fetch(FetchDescriptor<AgentReport>())) ?? []

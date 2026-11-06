@@ -3,14 +3,47 @@ import SwiftData
 import CoreTransferable
 import UniformTypeIdentifiers
 
-/// The kind of entry. Backed by a raw `String` so it stays CloudKit-compatible.
+/// The kind of entry. Backed by a raw `String` so it stays CloudKit-compatible — a new kind
+/// needs no schema change (older builds read an unknown kind as a to-do).
+///
+/// - `task`: a to-do — checked off, then archived.
+/// - `appointment`: something at a time and place — on the calendar.
+/// - `page`: HTML content, e.g. a client overview — a note, not work. It is never checked
+///   off or archived as done, carries no priority, and always shows in its list.
+/// - `goal`: a business goal ("> 5 franchisees by 2027"), set in Sidebar ▸ Goals. Its date
+///   is a target, not a deadline: goals stay out of To-Do, Today, Upcoming and reminders,
+///   and marking one achieved keeps it on the Goals list instead of archiving it.
+/// - `idea`: an idea to explore, set in Sidebar ▸ Ideas. Like a page it's content, not work:
+///   never checked off, no date, no priority. The Mac researches it into a page, as it does
+///   for goals (`ItemResearcher`).
 enum PlannerKind: String, CaseIterable, Identifiable {
     case task
     case appointment
+    case page
+    case goal
+    case idea
 
     var id: String { rawValue }
-    var title: String { self == .task ? "To-Do" : "Appointment" }
-    var symbol: String { self == .task ? "checklist" : "calendar" }
+
+    var title: String {
+        switch self {
+        case .task:        return "To-Do"
+        case .appointment: return "Appointment"
+        case .page:        return "Page"
+        case .goal:        return "Goal"
+        case .idea:        return "Idea"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .task:        return "checklist"
+        case .appointment: return "calendar"
+        case .page:        return "doc.richtext"
+        case .goal:        return "target"
+        case .idea:        return "lightbulb"
+        }
+    }
 }
 
 /// How urgent a to-do is. Persisted as an Int (CloudKit-friendly); higher = more urgent.
@@ -130,6 +163,36 @@ final class PlannerItem {
 
     var isAppointment: Bool { kind == .appointment }
 
+    /// HTML content (a page), not work: no checkbox, no priority, never archived as done.
+    var isPage: Bool { kind == .page }
+
+    /// A business goal (Sidebar ▸ Goals).
+    var isGoal: Bool { kind == .goal }
+
+    /// An idea to explore (Sidebar ▸ Ideas).
+    var isIdea: Bool { kind == .idea }
+
+    /// Researched into a page on the Mac when added (see `ItemResearcher`).
+    var isResearched: Bool { isGoal || isIdea }
+
+    /// To-dos and appointments — what the work views (To-Do, Pinned, Today, Upcoming) and
+    /// reminders deal in. Pages, goals and ideas have their own views.
+    var isWork: Bool { kind == .task || kind == .appointment }
+
+    /// Turn this item into a page: clears the to-do state (done, archived, priority and the
+    /// pin that Critical/High added) so it shows in its list as content.
+    func makePage() { makeContent(.page) }
+
+    /// Turn this item into content (a page or an idea), clearing its to-do state.
+    func makeContent(_ contentKind: PlannerKind) {
+        kind = contentKind
+        isDone = false
+        isArchived = false
+        completedAt = nil
+        if priority.autoPins { isPinned = false }
+        priority = .medium
+    }
+
     /// An appointment that is over without being checked off. Date-only appointments
     /// (stored at midnight) count as over once their day has passed; timed ones once their
     /// end (see `endDate`) has passed, so a class still in progress is not flagged.
@@ -239,6 +302,13 @@ final class PlannerItem {
 
     /// Toggle completion. Checking an item auto-archives it (per app spec); unchecking restores it.
     func toggleDone() {
+        guard !isPage, !isIdea else { return }   // content, not work — nothing to finish
+        if isGoal {
+            // An achieved goal stays on the Goals list (ticked), so the record is kept.
+            isDone.toggle()
+            completedAt = isDone ? Date() : nil
+            return
+        }
         isDone.toggle()
         if isDone {
             completedAt = Date()

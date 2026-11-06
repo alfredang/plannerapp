@@ -103,9 +103,17 @@ final class AgentPanelTabs: ObservableObject {
     @Published private(set) var terminals: [TerminalTab] = TerminalAgent.allCases.map { TerminalTab(agent: $0) }
     @Published private(set) var selectedTerminal: TerminalAgent =
         TerminalAgent(rawValue: UserDefaults.standard.string(forKey: "terminalAgent") ?? "") ?? .hermes
-    /// The first browser tab is the reports browser (`AgentBrowser.shared`) and stays open.
+    /// The first browser tab is the reports browser (`AgentBrowser.shared`). It is never
+    /// destroyed — agents open their pages in it — but closing it hides its chip until the
+    /// next page opens there (see `sharedClosed`).
     @Published private(set) var browsers: [AgentBrowser] = [AgentBrowser.shared]
     @Published private(set) var selectedBrowser: UUID = AgentBrowser.shared.id
+    @Published private(set) var sharedClosed = false
+
+    /// Browser tabs with a chip in the header.
+    var visibleBrowsers: [AgentBrowser] {
+        browsers.filter { !(sharedClosed && $0 === AgentBrowser.shared) }
+    }
 
     /// Running terminals by agent.
     private var sessions: [TerminalAgent: TerminalSession] = [:]
@@ -179,15 +187,36 @@ final class AgentPanelTabs: ObservableObject {
     }
 
     func selectBrowser(_ browser: AgentBrowser) {
+        if browser === AgentBrowser.shared { sharedClosed = false }
         selectedBrowser = browser.id
         showKind("browser")
     }
 
+    /// Closes a browser tab. The reports tab is blanked and hidden rather than destroyed;
+    /// closing the last tab showing returns the panel to the agent terminal.
     func closeBrowser(_ browser: AgentBrowser) {
-        guard browser !== AgentBrowser.shared, let index = browsers.firstIndex(where: { $0 === browser }) else { return }
-        browsers.remove(at: index)
-        browser.webView.stopLoading()
-        if selectedBrowser == browser.id { selectedBrowser = browsers[min(index, browsers.count - 1)].id }
+        guard let index = visibleBrowsers.firstIndex(where: { $0 === browser }) else { return }
+        if browser === AgentBrowser.shared {
+            browser.clear()
+            sharedClosed = true
+        } else {
+            browser.webView.stopLoading()
+            browsers.removeAll { $0 === browser }
+        }
+        let remaining = visibleBrowsers
+        guard selectedBrowser == browser.id else { return }
+        if remaining.isEmpty {
+            selectedBrowser = AgentBrowser.shared.id
+            showKind("terminal")
+        } else {
+            selectedBrowser = remaining[min(index, remaining.count - 1)].id
+        }
+    }
+
+    /// Closes every browser tab except `browser`.
+    func closeOtherBrowsers(_ browser: AgentBrowser) {
+        for other in visibleBrowsers where other !== browser { closeBrowser(other) }
+        selectBrowser(browser)
     }
 }
 
@@ -272,12 +301,17 @@ struct MacTerminalPanel: View {
                             select: { tabs.selectTerminal(terminal.agent) },
                             close: nil)
                     }
-                    ForEach(tabs.browsers) { browser in
+                    ForEach(tabs.visibleBrowsers) { browser in
                         BrowserTabChip(
                             browser: browser,
                             isSelected: showsBrowser && browser.id == tabs.selectedBrowser,
                             select: { tabs.selectBrowser(browser) },
-                            close: browser === AgentBrowser.shared ? nil : { tabs.closeBrowser(browser) })
+                            close: { tabs.closeBrowser(browser) })
+                        .contextMenu {
+                            Button("Close Tab") { tabs.closeBrowser(browser) }
+                            Button("Close Other Tabs") { tabs.closeOtherBrowsers(browser) }
+                                .disabled(tabs.visibleBrowsers.count < 2)
+                        }
                     }
                     Button { tabs.newBrowser() } label: {
                         Image(systemName: "plus")

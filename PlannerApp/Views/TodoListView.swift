@@ -320,7 +320,7 @@ struct TodoListView: View {
 
     // MARK: - Duplicate audit (mirrors the Mac pane's banner)
 
-    /// Same-title-same-day clusters among this tab's active items (multi-day courses are
+    /// Same-list-same-title-same-day clusters among this tab's active items (multi-day courses are
     /// not duplicates and are never flagged — see DuplicateAudit).
     private var duplicateGroups: [DuplicateAudit.Group] {
         DuplicateAudit.findDuplicates(in: kindItems, kind: mode)

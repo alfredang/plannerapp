@@ -132,7 +132,8 @@ enum ReminderScheduler {
     /// When the advance alert for `item` should fire, or `nil` if it needs none
     /// (no date, already done, or the lead window has already passed).
     static func fireDate(for item: PlannerItem, now: Date = Date()) -> Date? {
-        guard !item.isArchived, !item.isDone, let due = item.date else { return nil }
+        // Goals' dates are targets ("by 2027"), not something to be reminded of.
+        guard item.isWork, !item.isArchived, !item.isDone, let due = item.date else { return nil }
         guard let fire = Calendar.current.date(byAdding: .day,
                                                value: -leadTime.rawValue,
                                                to: due) else { return nil }

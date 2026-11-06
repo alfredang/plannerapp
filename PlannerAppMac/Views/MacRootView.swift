@@ -8,9 +8,9 @@ import UniformTypeIdentifiers
 /// separately via `SidebarSelection.userList`.
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     // Smart lists
-    case all, today, scheduled, pinned, todos, appointments
+    case all, today, scheduled, pinned, todos, appointments, pages, goals, ideas
     // Browse
-    case calendar, jobs, updates, dashboard, archive
+    case calendar, jobs, updates, archive
     // Support
     case settings, feedback, about
 
@@ -24,10 +24,12 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .pinned:       return "Pinned"
         case .todos:        return "To-Dos"
         case .appointments: return "Appointments"
+        case .pages:        return "Pages"
+        case .goals:        return "Goals"
+        case .ideas:        return "Ideas"
         case .calendar:     return "Calendar"
-        case .jobs:         return "Schedule"
+        case .jobs:         return "Agent Jobs"
         case .updates:      return "Updates"
-        case .dashboard:    return "Hermes Dashboard"
         case .archive:      return "Archive"
         case .settings:     return "Settings"
         case .feedback:     return "Feedback"
@@ -43,10 +45,12 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .pinned:       return "pin.fill"
         case .todos:        return "checklist"
         case .appointments: return "calendar"
+        case .pages:        return "doc.richtext.fill"
+        case .goals:        return "target"
+        case .ideas:        return "lightbulb.fill"
         case .calendar:     return "calendar.badge.clock"
         case .jobs:         return "clock.arrow.circlepath"
         case .updates:      return "doc.richtext.fill"
-        case .dashboard:    return "gauge.with.dots.needle.67percent"
         case .archive:      return "archivebox.fill"
         case .settings:     return "gearshape.fill"
         case .feedback:     return "bubble.left.and.bubble.right.fill"
@@ -54,10 +58,12 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    /// `.todos` is deliberately absent: with Appointments broken out separately, "To-Dos"
-    /// listed the same rows as All Items, so the two read as duplicates. The case remains
-    /// (persisted selections may still reference it) — it just isn't offered in the sidebar.
-    static let smartLists: [SidebarItem] = [.all, .pinned, .today, .scheduled, .appointments]
+    /// The sidebar groups the categories into Strategy (Goals, Ideas), Tasks (To-Do, Pinned, Today),
+    /// Schedule (Appointments, Calendar), Content (Pages, Updates) and Agents (Agent Jobs) — see
+    /// `MacRootView.sidebar`. Pages, Goals and Ideas stay out of the work lists, so they never inflate
+    /// the To-Do or Pinned counts. Not offered, but kept for persisted state and
+    /// `-debugSidebar`: `.todos` (duplicated To-Do) and `.scheduled` (Upcoming — the same
+    /// appointments as Appointments, which now groups them by day).
     static let support: [SidebarItem] = [.settings, .feedback, .about]
 
     /// Whether an active (non-archived) item belongs to this smart category.
@@ -68,16 +74,24 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
             // them in here just duplicated that list.
             return item.kind == .task
         case .today:
-            guard let date = item.date else { return false }
+            guard item.isWork, let date = item.date else { return false }
             return Calendar.current.isDateInToday(date)
         case .scheduled:
-            return item.date != nil
+            // A goal's date is a target ("by 2027"), not an upcoming event.
+            return item.isWork && item.date != nil
         case .pinned:
-            return item.isPinned
+            // Pinned is the work queue; a page or goal pinned in its own view stays there.
+            return item.isPinned && item.isWork
         case .todos:
             return item.kind == .task
         case .appointments:
             return item.kind == .appointment
+        case .pages:
+            return item.kind == .page
+        case .goals:
+            return item.kind == .goal
+        case .ideas:
+            return item.kind == .idea
         default:
             return false
         }
@@ -106,21 +120,54 @@ struct MacRootView: View {
     /// When set, the New List alert creates a sub-list under this parent.
     @State private var newListParent: PlannerList?
 
-    /// Collapsed parent lists (chevron toggled shut), stored locally as comma-joined UUIDs —
-    /// per-device UI state, not synced data.
-    @AppStorage("collapsedLists") private var collapsedListsRaw = ""
+    /// Parent lists the user has opened, stored locally as comma-joined UUIDs — per-device UI
+    /// state, not synced data. Lists are collapsed unless listed here, so lists that arrive
+    /// later (iCloud sync, agent `newlist`) start collapsed too. (The old `collapsedLists`
+    /// key was filled at launch before the @Query loaded, which left everything expanded.)
+    @AppStorage("expandedLists") private var expandedListsRaw = ""
 
     /// Who "I" am, for the assigned-to filter (shared with the planner pane and iPhone app).
     @AppStorage("ownerName") private var ownerName = "Alfred"
 
-    private var collapsedLists: Set<UUID> {
-        Set(collapsedListsRaw.split(separator: ",").compactMap { UUID(uuidString: String($0)) })
+    private var expandedLists: Set<UUID> {
+        Set(expandedListsRaw.split(separator: ",").compactMap { UUID(uuidString: String($0)) })
     }
 
+    private func setExpanded(_ set: Set<UUID>) {
+        expandedListsRaw = set.map(\.uuidString).joined(separator: ",")
+    }
+
+    /// Everything not explicitly expanded — the shape `ListHierarchy.rows` wants.
+    private var collapsedLists: Set<UUID> {
+        Set(lists.map(\.id)).subtracting(expandedLists)
+    }
+
+    /// Accordion toggle: collapsing a list also folds its sub-lists; expanding one folds its
+    /// open siblings (and their sub-lists), so only one branch under a parent is open.
     private func toggleCollapsed(_ id: UUID) {
-        var set = collapsedLists
-        if !set.insert(id).inserted { set.remove(id) }
-        collapsedListsRaw = set.map(\.uuidString).joined(separator: ",")
+        guard let list = lists.first(where: { $0.id == id }) else { return }
+        var set = expandedLists
+        if set.contains(id) {
+            set.subtract(list.subtreeIDs)
+        } else {
+            let siblings = list.parent?.children ?? lists.filter { $0.parent == nil }
+            for sibling in siblings where sibling.id != id {
+                set.subtract(sibling.subtreeIDs)
+            }
+            set.insert(id)
+        }
+        setExpanded(set)
+    }
+
+    /// Opens a list and its ancestors, folding every other branch — what clicking a folder does.
+    private func reveal(_ list: PlannerList) {
+        var set = Set<UUID>()
+        var node: PlannerList? = list
+        while let current = node {
+            set.insert(current.id)
+            node = current.parent
+        }
+        setExpanded(set)
     }
 
     /// Lists that can actually collapse — only those with sub-lists.
@@ -130,22 +177,37 @@ struct MacRootView: View {
 
     /// True when at least one parent list is still expanded (so "Collapse All" has work).
     private var hasExpandedLists: Bool {
-        let collapsed = collapsedLists
-        return collapsibleListIDs.contains { !collapsed.contains($0) }
+        let expanded = expandedLists
+        return collapsibleListIDs.contains { expanded.contains($0) }
     }
 
     private func collapseAllLists() {
-        collapsedListsRaw = collapsibleListIDs.map(\.uuidString).joined(separator: ",")
+        expandedListsRaw = ""
     }
 
     private func expandAllLists() {
-        collapsedListsRaw = ""
+        setExpanded(Set(collapsibleListIDs))
     }
 
     private func openWorkforce(_ list: PlannerList) {
-        collapsedListsRaw = collapsedLists.subtracting([list.id]).map(\.uuidString).joined(separator: ",")
+        reveal(list)
         selection = .userList(list.id)
         UserDefaults.standard.set(false, forKey: "agentPaneShowsItems")
+    }
+
+    /// The list behind a sidebar selection; staff lists are tagged by name, and roster-only
+    /// staff rows have no list (nil), which leaves the open branch alone.
+    private func list(for selection: SidebarSelection) -> PlannerList? {
+        switch selection {
+        case .userList(let id):
+            return lists.first { $0.id == id }
+        case .digitalStaff(let id):
+            return lists.first {
+                $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == id
+            }
+        default:
+            return nil
+        }
     }
 
     private func selection(for list: PlannerList) -> SidebarSelection {
@@ -221,6 +283,12 @@ struct MacRootView: View {
                     }
                 }
         }
+        // Clicking a folder opens it and folds the others, same as its chevron.
+        .onChange(of: selection) {
+            if let list = list(for: selection) {
+                withAnimation(.easeInOut(duration: 0.15)) { reveal(list) }
+            }
+        }
         .onChange(of: lists.count) {
             // If the selected user list was deleted (locally or via sync), fall back to All.
             if case .userList(let id) = selection, !lists.contains(where: { $0.id == id }) {
@@ -258,9 +326,7 @@ struct MacRootView: View {
             #endif
             WhatsAppReminders.shared.start(context: context)
         }
-        .onChange(of: dataFingerprint) {
-            HermesBridge.writeSnapshot(context: context)
-        }
+        .background(HermesSnapshotObserver())
         .onOpenURL { url in
             guard url.scheme == "planner" else { return }
             HermesBridge.handle(url, context: context)
@@ -350,54 +416,71 @@ struct MacRootView: View {
         .accessibilityLabel("Resize agent panel")
     }
 
-    /// A hash of everything the Hermes snapshot contains. Reading every property here makes
-    /// the view observe them, so `onChange` fires on any edit (title, date, list, …), not
-    /// just on inserts/deletes.
-    private var dataFingerprint: Int {
-        var hasher = Hasher()
-        for item in activeItems + archivedItems {
-            hasher.combine(item.id)
-            hasher.combine(item.title)
-            hasher.combine(item.kindRaw)
-            hasher.combine(item.date)
-            hasher.combine(item.notes)
-            hasher.combine(item.isDone)
-            hasher.combine(item.isArchived)
-            hasher.combine(item.list?.name)
+    /// Active items per list, sub-lists rolled up into their parents — one pass over the items
+    /// instead of every row walking its subtree (which also faulted in archived items).
+    private var subtreeActiveCounts: [UUID: Int] {
+        var counts: [UUID: Int] = [:]
+        for item in activeItems {
+            var node = item.list
+            while let list = node {
+                counts[list.id, default: 0] += 1
+                node = list.parent
+            }
         }
-        for list in lists {
-            hasher.combine(list.id)
-            hasher.combine(list.name)
-        }
-        return hasher.finalize()
+        return counts
     }
 
     // MARK: - Sidebar
 
     private var sidebar: some View {
         List(selection: $selection) {
-            Section("Lists") {
-                ForEach(SidebarItem.smartLists) { item in
-                    categoryRow(item, count: count(for: item))
-                }
-                // Right under Appointments, so it's visible without scrolling the sidebar.
+            // Grouped by what the items are: goals and ideas, work, time, content, agents.
+            Section("Strategy") {
+                categoryRow(.goals, count: count(for: .goals))
+                categoryRow(.ideas, count: count(for: .ideas))
+            }
+            Section("Tasks") {
+                ForEach([SidebarItem.all, .pinned]) { categoryRow($0, count: count(for: $0)) }
+            }
+            Section("Schedule") {
+                categoryRow(.today, count: count(for: .today))
+                // Appointments grouped by day (it absorbed the old Upcoming view).
+                categoryRow(.appointments, count: count(for: .appointments))
                 categoryRow(.calendar, count: upcomingAppointmentCount)
-                // Scheduled background jobs (agents, cron) — not planner items, so no count.
-                Label(SidebarItem.jobs.title, systemImage: SidebarItem.jobs.symbol)
-                    .tag(SidebarSelection.category(.jobs))
+            }
+            Section("Content") {
+                categoryRow(.pages, count: count(for: .pages))
                 // History of the agents' report pages; opens them in the Browser tab.
                 Label(SidebarItem.updates.title, systemImage: SidebarItem.updates.symbol)
                     .badge(todaysUpdates)
                     .tag(SidebarSelection.category(.updates))
-                // The Hermes / OpenClaw web dashboards — cron jobs (the daily videos), sessions.
-                Label(SidebarItem.dashboard.title, systemImage: SidebarItem.dashboard.symbol)
-                    .tag(SidebarSelection.category(.dashboard))
+            }
+            Section("Agents") {
+                // Scheduled background jobs (agents, cron) — not planner items, so no count.
+                Label(SidebarItem.jobs.title, systemImage: SidebarItem.jobs.symbol)
+                    .tag(SidebarSelection.category(.jobs))
+                // Switches to the Hermes desktop app (sessions, bots, scheduled jobs) — an
+                // action, not a pane, so it has no selection tag.
+                Button(action: HermesDesktop.open) {
+                    HStack {
+                        Label("Hermes Desktop", systemImage: "arrow.up.forward.app")
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Switch to the Hermes desktop app")
             }
             Section {
-                ForEach(ListHierarchy.rows(lists, collapsed: collapsedLists)) { row in
-                    userListRow(row.list, depth: row.depth)
+                // Worked out once per render, not once per row.
+                let collapsed = collapsedLists
+                let counts = subtreeActiveCounts
+                ForEach(ListHierarchy.rows(lists, collapsed: collapsed)) { row in
+                    userListRow(row.list, depth: row.depth,
+                                isCollapsed: collapsed.contains(row.list.id),
+                                count: counts[row.list.id] ?? 0)
                     if row.list.name.caseInsensitiveCompare("Digital Workforce") == .orderedSame,
-                       !collapsedLists.contains(row.list.id) {
+                       !collapsed.contains(row.list.id) {
                         let listed = Set((row.list.children ?? []).map { $0.name.lowercased() })
                         ForEach(AgentRoster.staffIDs.filter { !listed.contains($0) }, id: \.self) { id in
                             if let agent = staffRoster[id] {
@@ -435,6 +518,8 @@ struct MacRootView: View {
                                   : "arrow.up.left.and.arrow.down.right")
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(.secondary)
+                                .frame(width: 20, height: 18)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .help(hasExpandedLists ? "Collapse all lists" : "Expand all lists")
@@ -496,10 +581,9 @@ struct MacRootView: View {
             .tag(SidebarSelection.category(item))
     }
 
-    private func userListRow(_ list: PlannerList, depth: Int = 0) -> some View {
+    private func userListRow(_ list: PlannerList, depth: Int, isCollapsed: Bool, count: Int) -> some View {
         HStack(spacing: 4) {
             if !(list.children ?? []).isEmpty {
-                let isCollapsed = collapsedLists.contains(list.id)
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) { toggleCollapsed(list.id) }
                 } label: {
@@ -507,7 +591,10 @@ struct MacRootView: View {
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isCollapsed ? 0 : 90))
-                        .frame(width: 12)
+                        // A full-height hit area — the bare 9pt glyph was too small to click,
+                        // so clicks fell through to row selection instead of collapsing.
+                        .frame(width: 18, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(isCollapsed ? "Expand \(list.name)" : "Collapse \(list.name)")
@@ -532,7 +619,7 @@ struct MacRootView: View {
             }
         }
             .padding(.leading, CGFloat(depth) * 28)
-            .badge(list.subtreeActiveCount)
+            .badge(count)
             .tag(selection(for: list))
             .onDrop(of: [UTType.plannerItem],
                     isTargeted: Binding(
@@ -590,7 +677,9 @@ struct MacRootView: View {
     /// Badge count for a smart category. Must apply the SAME owner filter the planner pane
     /// uses, or the badge advertises rows the pane won't show (delegated items).
     private func count(for category: SidebarItem) -> Int {
-        activeItems.filter { category.contains($0) && $0.isMine(ownerName: ownerName) }.count
+        // Goals: the ones still being worked towards (achieved goals stay listed, ticked).
+        activeItems.filter { category.contains($0) && $0.isMine(ownerName: ownerName)
+            && !(category == .goals && $0.isDone) }.count
     }
 
     @ObservedObject private var agentBrowser = AgentBrowser.shared
@@ -674,9 +763,7 @@ struct MacRootView: View {
         let list = PlannerList(name: name, parent: newListParent)
         context.insert(list)
         // Reveal the new sub-list if its parent was collapsed.
-        if let parent = newListParent, collapsedLists.contains(parent.id) {
-            toggleCollapsed(parent.id)
-        }
+        if let parent = newListParent { reveal(parent) }
         newListParent = nil
         selection = .userList(list.id)
     }
@@ -698,8 +785,6 @@ struct MacRootView: View {
             MacSchedulePane()
         case .category(.updates):
             MacUpdatesPane()
-        case .category(.dashboard):
-            MacDashboardPane()
         case .category(.archive):
             ArchiveView()
         case .category(.settings):
@@ -782,4 +867,75 @@ private struct PanelResizeHandle: NSViewRepresentable {
 #Preview {
     MacRootView()
         .modelContainer(for: PlannerItem.self, inMemory: true)
+}
+
+/// The Hermes desktop app (Nous Research, an Electron build in the Hermes agent checkout).
+/// Brought to the front when it's running, otherwise launched.
+enum HermesDesktop {
+    static let bundleID = "com.nousresearch.hermes"
+
+    /// Where the desktop app is built, used when LaunchServices doesn't know the bundle id.
+    /// `/Applications/Hermes.app` is only the Hermes-Setup launcher, so it is the last resort.
+    private static let fallbackPaths = [
+        "~/.hermes/hermes-agent/apps/desktop/release/mac-arm64/Hermes.app",
+        "/Applications/Hermes.app",
+    ]
+
+    static func open() {
+        if let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            running.unhide()
+            running.activate()
+            return
+        }
+        let fm = FileManager.default
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+            ?? fallbackPaths
+                .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+                .first { fm.fileExists(atPath: $0.path) }
+        guard let url else {
+            NSSound.beep()
+            return
+        }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    }
+}
+
+/// Keeps the Hermes snapshot current. Its own view, so hashing every item happens only when
+/// items change — in `MacRootView` it ran on every render, i.e. on every sidebar click.
+private struct HermesSnapshotObserver: View {
+    @Environment(\.modelContext) private var context
+    @Query private var items: [PlannerItem]
+    @Query private var lists: [PlannerList]
+
+    /// A hash of everything the snapshot contains. Reading every property here makes the view
+    /// observe them, so it updates on any edit (title, date, list, …), not just inserts/deletes.
+    private var fingerprint: Int {
+        var hasher = Hasher()
+        for item in items {
+            hasher.combine(item.id)
+            hasher.combine(item.title)
+            hasher.combine(item.kindRaw)
+            hasher.combine(item.date)
+            hasher.combine(item.notes)
+            hasher.combine(item.isDone)
+            hasher.combine(item.isArchived)
+            hasher.combine(item.list?.name)
+        }
+        for list in lists {
+            hasher.combine(list.id)
+            hasher.combine(list.name)
+        }
+        return hasher.finalize()
+    }
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .task(id: fingerprint) {
+                // A pause so a burst of changes (an iCloud import) writes the file once.
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
+                HermesBridge.writeSnapshot(context: context)
+            }
+    }
 }

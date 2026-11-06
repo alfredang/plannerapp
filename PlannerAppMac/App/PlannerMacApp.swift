@@ -98,8 +98,16 @@ struct PlannerMacApp: App {
                 .modelUndoSupport()
                 .frame(minWidth: 860, minHeight: 560)
                 .task {
+                    // Client overviews and other HTML content filed as to-dos become pages.
+                    let context = container.mainContext
+                    if let items = try? context.fetch(FetchDescriptor<PlannerItem>()),
+                       PlannerKind.migrateContentToPages(in: items) > 0 {
+                        try? context.save()
+                    }
                     UpdatesSync.shared.start(container: container)
                     AppointmentAgent.shared.start(container: container)
+                    // Goals and ideas without a page get researched into one.
+                    ItemResearcher.shared.start(container: container)
                     // Two-way Calendar (Google) sync; also catches edits made by the agents
                     // through the bridge and changes arriving from the iPhone via iCloud.
                     CalendarAutoSync.shared.start(container: container)
