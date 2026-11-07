@@ -87,8 +87,8 @@ struct MacPlannerPane: View {
     private var capturePlaceholder: String {
         if isListening { return "Listening…" }
         switch researchedCaptureKind {
-        case .goal: return "Say your goal, e.g. “More than 5 franchisees by 2027”. Nova researches it into a page."
-        case .idea: return "Say your idea. Nova researches it into a page."
+        case .goal: return "Say your goal, e.g. “More than 5 franchisees by 2027”. Nova turns it into a researched page."
+        case .idea: return "Say your idea. Nova turns it into a researched page."
         default:    return "e.g. “Lunch with Sam tomorrow 1pm”"
         }
     }
@@ -269,7 +269,7 @@ struct MacPlannerPane: View {
 
     private var subtitle: String {
         let n = items.count
-        let noun = "item\(n == 1 ? "" : "s")"
+        let noun = (researchedCaptureKind != nil && !isSearching ? "page" : "item") + (n == 1 ? "" : "s")
         return isSearching ? "\(n) \(noun) matching “\(searchText)”" : "\(n) \(noun)"
     }
 
@@ -358,6 +358,12 @@ struct MacPlannerPane: View {
                     .frame(maxHeight: .infinity)
             } else if items.isEmpty {
                 emptyState
+            } else if researchedCaptureKind != nil && !isSearching {
+                // Goals and Ideas are read, not ticked off: each one is its page.
+                MacResearchPagesView(items: openGoals + achievedGoals + ideas,
+                                     onEdit: { editingItem = $0 },
+                                     onDelete: { deletingItem = $0 })
+                    .frame(maxHeight: .infinity)
             } else {
                 itemList
             }
@@ -580,7 +586,7 @@ struct MacPlannerPane: View {
             // Move between work and content: a to-do that is really a document, or back.
             if item.kind == .task {
                 Button("Convert to Page") { withAnimation { item.makePage() } }
-            } else if item.isPage || item.isIdea {
+            } else if item.isPage {
                 Button("Convert to To-Do") { withAnimation { item.kind = .task } }
             }
             Divider()
@@ -600,13 +606,13 @@ struct MacPlannerPane: View {
                 ContentUnavailableView {
                     Label("No goals yet", systemImage: "target")
                 } description: {
-                    Text("Say or type a goal below — what the business should achieve, and by when. Nova researches it into a page with competitor analysis, recommendations, a strategy plan and steps to implement.")
+                    Text("Say or type a goal below — what the business should achieve, and by when. Nova reviews it and writes a page with market research, competitor analysis, features, recommendations, a strategy and steps to implement.")
                 }
             } else if selection == .category(.ideas) {
                 ContentUnavailableView {
                     Label("No ideas yet", systemImage: "lightbulb")
                 } description: {
-                    Text("Say or type an idea below. Nova researches it into a page with recommendations, caveats and how to implement it.")
+                    Text("Say or type an idea below. Nova reviews it and writes a page with market research, competitor analysis, features, recommendations, a strategy and steps to implement.")
                 }
             } else {
                 ContentUnavailableView {

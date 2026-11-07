@@ -14,6 +14,10 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
     /// A new, empty browser tab.
     static func makeTab() -> AgentBrowser { AgentBrowser(isMain: false) }
 
+    /// A browser for a page shown inside a pane rather than a panel tab (Goals and Ideas): same
+    /// rendering and Reply boxes, but it stays on its page, so links go to the panel instead.
+    static func makeEmbedded() -> AgentBrowser { AgentBrowser(isMain: false, isEmbedded: true) }
+
     let id = UUID()
 
     /// Which tab the agent panel shows ("terminal" / "browser"). AppStorage-backed, so
@@ -55,9 +59,11 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
     }
 
     private let isMain: Bool
+    private let isEmbedded: Bool
 
-    private init(isMain: Bool) {
+    private init(isMain: Bool, isEmbedded: Bool = false) {
         self.isMain = isMain
+        self.isEmbedded = isEmbedded
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()   // persistent: a claude.ai sign-in sticks
         config.preferences.javaScriptCanOpenWindowsAutomatically = true   // sign-in popups
@@ -324,7 +330,7 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
     /// Opens a URL (web or file) in this tab and brings it forward. `readAccess` widens what
     /// a local page may load or link to (default: its own folder).
     func open(_ url: URL, readAccess: URL? = nil) {
-        AgentPanelTabs.shared.selectBrowser(self)
+        if !isEmbedded { AgentPanelTabs.shared.selectBrowser(self) }
         if url.isFileURL {
             // Agent reports are often HTML fragments with no <meta charset>; WebKit then
             // reads local files as Latin-1 and emoji/dashes turn into "ðŸ…" mojibake.
@@ -425,9 +431,15 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
     /// a page in reports/ may link to one anywhere (e.g. a client's working folder).
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard navigationAction.navigationType == .linkActivated,
-              let url = navigationAction.request.url, url.isFileURL else { return .allow }
+              let url = navigationAction.request.url else { return .allow }
         // Same page (an #anchor): let WebKit scroll.
-        if url.path == webView.url?.path { return .allow }
+        if url.path == webView.url?.path, url.isFileURL { return .allow }
+        if isEmbedded {
+            UserDefaults.standard.set(true, forKey: "hermesPanelVisible")
+            if !openOutside(url) { _ = AgentPanelTabs.shared.newBrowser(url) }
+            return .cancel
+        }
+        guard url.isFileURL else { return .allow }
         if openOutside(url) { return .cancel }
         guard ["html", "htm"].contains(url.pathExtension.lowercased()),
               FileManager.default.fileExists(atPath: url.path) else { return .allow }

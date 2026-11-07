@@ -154,6 +154,18 @@ struct ItemResearcherTests {
         await wait("the rerun") { calls().count == rerun + 1 && researcher.running.isEmpty }
         check(calls().last?.contains("force=1") == true && goalB.pageLink != nil, "Research Again works on an item with a page")
 
+        // A page linked while a run was going stays, unless Research Again asked for a new one
+        let raced = PlannerItem(title: "SLOW raced idea", kind: .idea)
+        context.insert(raced)
+        researcher.sweep()
+        check(researcher.status(of: raced) == .researching, "the raced idea is running")
+        raced.notes = PageLink.notes(raced.notes, setting: "reports/agent-wrote-this.html")
+        await wait("the raced run") { researcher.running.isEmpty }
+        check(raced.pageLink == "reports/agent-wrote-this.html", "a run doesn't overwrite a page linked meanwhile")
+        researcher.researchAgain(raced)
+        await wait("the forced run") { raced.pageLink?.hasPrefix("item-pages/") == true }
+        check(raced.pageLink?.hasPrefix("item-pages/") == true, "Research Again replaces it")
+
         // No script (a Mac without the agents)
         defaults.set("/nonexistent/research.sh", forKey: "researchScript")
         let orphan = PlannerItem(title: "No agents here", kind: .idea)

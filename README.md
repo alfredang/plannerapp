@@ -79,12 +79,15 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - 👯 **Duplicate check** — spots the same title on the same day and offers to archive the
   extra copies, keeping the original. Multi-day courses (same title, different days) are
   left alone.
-- 🎯 **Goals and Ideas, researched for you (Mac)** — say or type a goal or an idea in
-  **Strategy ▸ Goals** or **Ideas** and the Nova agent researches the web and writes it up as a
-  page with sources. A goal gets competitor analysis, recommendations, a strategy plan and steps
-  to implement; an idea gets recommendations, caveats and how to implement it. Goals are kept
-  out of To-Do and reminders, and "by 2027" sets the target date. Pages open in Planner's
-  browser and reach the iPhone through Updates. Needs the Digital Workforce agents on the Mac.
+- 🎯 **Goals and Ideas are researched pages (Mac)** — say or type a goal or an idea in
+  **Strategy ▸ Goals** or **Ideas** and the Nova agent reviews it, researches the web and writes it
+  up with sources: review, market research, competitor analysis, features, recommendations,
+  strategy, steps to implement, caveats. Each one shows in the pane as its rendered page, with a
+  tab per goal or idea and a Reply box on every card, not as a to-do row. Goals are kept out of
+  To-Do and reminders, and "by 2027" sets the target date. Pages reach the iPhone through Updates.
+  Needs the Digital Workforce agents on the Mac.
+- 📁 **ATO folders show their status (Mac)** — folders under **ATO PROJECTS** are green for a
+  successful application, brown for ongoing and red for rejected. Change one from its menu.
 - 🗂 **Your own lists and sub-lists** — create, rename, nest and delete lists ("Clients" ▸
   each client); a parent list shows its own items plus everything in its sub-lists. Move an
   item to another list from its menu (iPhone) or by dragging it onto the sidebar (Mac).
@@ -227,12 +230,14 @@ PlannerAppMac/                          — macOS desktop edition (DMG)
 │               UpdatesSync.swift       — agent reports → iCloud; replies → the agents
 │               AppointmentAgent.swift  — Atlas answers appointment comments
 │               ItemResearcher.swift    — Nova researches goals and ideas into pages
+│               ATOStatus.swift         — ATO folder status: green, brown or red
 │               MeetingOpener.swift     — Join meeting opens a new browser window
 │               AgentRoster.swift       — the agents in ~/.claude/agents
 │               AgentChat.swift         — chat sessions with an agent
 │               PowerSettings.swift     — daily wake / power-on schedule
 └── Views/      MacRootView.swift       — sidebar: smart views + user lists + sync badge
                 MacPlannerPane.swift    — item list (Appointments by day) + capture bar
+                MacResearchPagesView.swift — Goals and Ideas shown as their rendered pages
                 MacCalendarPane.swift   — month grid / list calendar with holidays
                 MacTerminalPanel.swift  — agent panel: Claude Code / Codex / Hermes /
                                           OpenClaw terminal tabs + browser tabs

@@ -2,11 +2,11 @@ import Foundation
 import SwiftData
 import Observation
 
-/// Turns an idea or a goal into a researched page: Nova researches the web and writes it up
-/// (ideas: recommendations, caveats, how to implement; goals: competitor analysis,
-/// recommendations, strategy plan, steps to implement), and the report pipeline renders it.
-/// The page's link is added to the item's notes (`PageLink`), so a click opens it and the
-/// iPhone sees the same notes; the page itself reaches the iPhone through Updates.
+/// Turns an idea or a goal into a researched page: Nova examines it, researches the web and
+/// writes it up (review, market research, competitor analysis, features, recommendations,
+/// strategy, steps to implement, caveats), and the report pipeline renders it. The page's link
+/// goes on the item's notes (`PageLink`), which `MacResearchPagesView` shows; the iPhone sees the
+/// same notes, and the page itself reaches the iPhone through Updates.
 ///
 /// Runs right after an item is added and every minute for ones from elsewhere (an agent, the
 /// iPhone, or left while Planner was closed). An item is researched once; a failed run isn't
@@ -107,11 +107,11 @@ final class ItemResearcher {
         let script = Self.scriptURL
         Task.detached {
             let link = Self.runScript(script, args: args, goals: goals, target: target, force: force)
-            await MainActor.run { self.finish(id: id, link: link) }
+            await MainActor.run { self.finish(id: id, link: link, force: force) }
         }
     }
 
-    private func finish(id: UUID, link: String?) {
+    private func finish(id: UUID, link: String?, force: Bool) {
         running.remove(id)
         attempted.insert(id)
         defer { sweep() }   // a slot is free: start the next one
@@ -119,6 +119,8 @@ final class ItemResearcher {
               let item = try? context.fetch(FetchDescriptor<PlannerItem>(predicate: #Predicate { $0.id == id })).first,
               let url = PageLink.url(for: link, workspace: HermesBridge.workspaceURL),
               FileManager.default.fileExists(atPath: url.path) else { return }
+        // An agent or the user linked a page during the run: only Research Again replaces it.
+        guard force || item.pageTarget == nil else { return }
         item.notes = PageLink.notes(item.notes, setting: link)
         try? context.save()
     }

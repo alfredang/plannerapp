@@ -34,6 +34,10 @@ enum HermesBridge {
     /// reads to the user as data loss. Toggle it in Settings.
     static let allowsAgentDeletionKey = "hermes.allowsAgentDeletion"
 
+    private static var atoStatusStored: String {
+        UserDefaults.standard.string(forKey: ATOStatus.storageKey) ?? ""
+    }
+
     static var allowsAgentDeletion: Bool {
         UserDefaults.standard.bool(forKey: allowsAgentDeletionKey)   // absent => false
     }
@@ -120,6 +124,8 @@ enum HermesBridge {
         let activeCount: Int
         /// Name of the list this one nests under, when it is a sub-list.
         let parent: String?
+        /// An ATO project's status (`ATOStatus`), which colours its folder.
+        let atoStatus: String?
     }
 
     private struct StateSnapshot: Codable {
@@ -147,7 +153,8 @@ enum HermesBridge {
             // Sidebar order (parents before their sub-lists), so agents see the current order.
             lists: ListHierarchy.rows(lists).map { row in
                 ListSnapshot(name: row.list.name, activeCount: row.list.activeCount,
-                             parent: row.list.parent?.name) },
+                             parent: row.list.parent?.name,
+                             atoStatus: ATOStatus.of(row.list, in: atoStatusStored)?.rawValue) },
             items: items.map { item in
                 ItemSnapshot(
                     id: shortID(item.id),
@@ -436,6 +443,23 @@ enum HermesBridge {
                 ? " (pinned lists still show first)" : ""
             return "OK: ordered " + (ordered + rest).map { "“\($0.name)”" }.joined(separator: ", ")
                  + (parent.map { " under “\($0.name)”" } ?? "") + pinnedNote
+
+        case "atostatus":
+            guard let name = params["list"], !name.isEmpty else { return "ERROR: missing list" }
+            let lists = (try? context.fetch(FetchDescriptor<PlannerList>())) ?? []
+            guard let list = lists.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
+            else { return "ERROR: list not found" }
+            guard list.isATOProject else {
+                return "ERROR: “\(list.name)” is not under \(ATOStatus.parentListName)"
+            }
+            let raw = (params["status"] ?? "").lowercased()
+            let status = ATOStatus(rawValue: raw)
+            guard status != nil || raw == "none" else {
+                return "ERROR: status must be successful, ongoing, rejected or none"
+            }
+            UserDefaults.standard.set(ATOStatus.encode(atoStatusStored, setting: status, for: list),
+                                      forKey: ATOStatus.storageKey)
+            return "OK: “\(list.name)” ATO status is \(status?.rawValue ?? "none")"
 
         case "deletelist":
             guard let name = params["name"], !name.isEmpty else { return "ERROR: missing name" }
@@ -741,6 +765,7 @@ enum HermesBridge {
     | Rename list | `planner://renamelist?name=Errands&to=Chores` (items and sub-lists are kept) |
     | Reorder lists | `planner://orderlists?names=Alfred,Projects,Clients` — lists sharing one parent (or all top-level), in the order wanted; unnamed siblings follow in their current order. Sub-lists move with their parent. One call per level. |
     | Show a page | `planner://browse?file=2026-10-09-oracle.html` opens a report from `reports/` in Planner's built-in browser (next to this terminal); `planner://browse?url=https://…` opens any web page or absolute file path |
+    | ATO status | `planner://atostatus?list=ACME%20PTE%20LTD&status=ongoing` (`successful`, `ongoing`, `rejected`, `none`), only for lists under ATO PROJECTS; colours the folder green, brown or red. Set `successful` or `rejected` only once the outcome is confirmed |
     | Delete list | `planner://deletelist?name=Errands` — **disabled by default, see below** |
 
     Notes:
@@ -748,8 +773,10 @@ enum HermesBridge {
       time/place), `page` (HTML content to read — no date, no priority, never done),
       `goal` (a business goal the owner set in Sidebar ▸ Goals; `date` = target date) or
       `idea` (an idea to explore, Sidebar ▸ Ideas — no date, never done).
-    * **New goals and ideas are researched automatically:** Planner has Nova write a page
-      and links it. Just add the item; don't research it or set a page yourself unless asked.
+    * **New goals and ideas are researched automatically:** Planner has Nova write the page
+      (review, market research, competitors, features, recommendations, strategy, steps) and
+      links it, about 10 minutes later. Just add the item. Don't write or link a page for one
+      yourself unless asked; the owner redoes a page with Research Again on it.
     * **Goals** are the owner's priorities — read them (`kind: "goal"` in the snapshot) when
       advising, planning or proposing work, and say which goal a suggestion serves. Don't
       add, rename or delete goals unless the user asks; `done` on a goal marks it achieved.

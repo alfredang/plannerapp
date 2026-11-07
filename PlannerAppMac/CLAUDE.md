@@ -16,7 +16,7 @@ notes are in `../PlannerApp/CLAUDE.md`.
   - Sharing another iOS view means adding it to the `PlannerAppMac` sources in `project.yml`.
 - `PRODUCT_NAME: Planner` → the app is `Planner.app`, binary `Contents/MacOS/Planner`.
 - Bundle id `com.tertiaryinfotech.plannerapp` (same as iOS), team `GU9WTSTX9M`, macOS 14+.
-- Mac overrides `CURRENT_PROJECT_VERSION` (currently "52") separately from the iOS base value;
+- Mac overrides `CURRENT_PROJECT_VERSION` (currently "54") separately from the iOS base value;
   `MARKETING_VERSION` is shared.
 - SwiftTerm is pinned `exactVersion: 1.11.2` — 1.12+ needs the Xcode Metal toolchain. Don't bump.
 
@@ -31,7 +31,9 @@ notes are in `../PlannerApp/CLAUDE.md`.
   Calendar), Content (Pages, Updates), Agents (Agent Jobs = `jobs`, plus a "Hermes Desktop" button (`HermesDesktop.open`: activates/launches
   `com.nousresearch.hermes`; the old embedded Hermes Dashboard pane was removed)), My Lists, Browse
   (Archive), Support. `SidebarItem` keeps `.scheduled`/`.todos` for persisted state only. User lists (`ListHierarchy`) + Digital Workforce staff.
-- Panes: `MacPlannerPane` (items + capture bar), `MacCalendarPane`, `MacUpdatesPane`,
+- Panes: `MacPlannerPane` (items + capture bar; on Goals and Ideas the items area is
+  `MacResearchPagesView`: one tab per item, the selected one's page rendered in the pane through an
+  embedded `AgentBrowser`, so Reply boxes work and links open in the panel), `MacCalendarPane`, `MacUpdatesPane`,
   `MacSchedulePane` (workforce LaunchAgents `com.alfred.workforce.*`, Hermes/OpenClaw cron),
   `MacSettingsPane` (Settings scene, ⌘,), `MacAgentProfileView`/`MacAgentChatView`/
   `DigitalWorkforceArtifactView`.
@@ -58,15 +60,21 @@ notes are in `../PlannerApp/CLAUDE.md`.
   the item's notes so it syncs to the iPhone.
 - `Services/ItemResearcher.swift` — goals and ideas without a page get researched (right after
   adding, and every 60 s for ones from agents or the iPhone; max 2 at once; once each, a failed
-  run waits for "Research Again"). Runs `~/DigitalWorkforce/bin/research-item.sh` (not in this
+  run waits for "Research Again"; a page linked during a run stays unless Research Again asked for
+  a new one). Runs `~/DigitalWorkforce/bin/research-item.sh` (not in this
   repo): Nova, with web + a few read-only files only since web pages are untrusted, prints
-  markdown; `research-clean.py` rejects incomplete pages and neutralises raw HTML;
+  markdown with the same sections for both kinds (Review, Market research, Competitor analysis,
+  Features, Recommendations, Strategy, Steps to implement, Caveats and risks, Sources); `research-clean.py` rejects incomplete pages and neutralises raw HTML;
   `publish-reports.py` renders it as `reports/<date>-nova-<kind>-<id8>.html`, so it gets the house
   style, Reply on each card and reaches the iPhone through Updates. The link goes on the item's
   `Page:` notes line. Log: `~/DigitalWorkforce/logs/<date>-nova-research.log`. The capture bar on
   Goals and Ideas files through `ItemResearcher.add`, not `PlannerCommand`. **A launch on live
   data starts real research on any goal without a page:** for UI checks pass
   `-researchScript /nonexistent` (DEBUG), which turns it off.
+- `Services/ATOStatus.swift` — folders under the `ATO PROJECTS` list are coloured by application
+  status: successful green, ongoing brown, rejected red, none plain. Kept per Mac in UserDefaults by
+  list id (no schema change, no client names in this public repo). Set from the folder's ATO Status
+  menu or `planner://atostatus?list=…&status=…`; the snapshot carries `atoStatus`.
 - `Services/MeetingOpener.swift` — "Join meeting" opens Chromium browsers with `--new-window`:
   a plain URL open lands in the browser's last window, possibly on another Space, and looks
   like nothing happened.

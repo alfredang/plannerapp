@@ -128,6 +128,8 @@ struct MacRootView: View {
 
     /// Who "I" am, for the assigned-to filter (shared with the planner pane and iPhone app).
     @AppStorage("ownerName") private var ownerName = "Alfred"
+    /// Colours the folders under ATO PROJECTS (see `ATOStatus`).
+    @AppStorage(ATOStatus.storageKey) private var atoStatusRaw = ""
 
     private var expandedLists: Set<UUID> {
         Set(expandedListsRaw.split(separator: ",").compactMap { UUID(uuidString: String($0)) })
@@ -608,6 +610,14 @@ struct MacRootView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Digital Workforce")
                 .help("Expand the staff and open the interactive org chart")
+            } else if let status = ATOStatus.of(list, in: atoStatusRaw) {
+                Label {
+                    Text(list.name)
+                } icon: {
+                    Image(systemName: "folder.fill").foregroundStyle(status.color)
+                }
+                .help("ATO application: \(status.title)")
+                .accessibilityLabel("\(list.name), ATO application \(status.title)")
             } else {
                 Label(list.name, systemImage: "folder")
             }
@@ -661,6 +671,19 @@ struct MacRootView: View {
                 Button("Rename…") {
                     renameText = list.name
                     renamingList = list
+                }
+                if list.isATOProject {
+                    Menu("ATO Status") {
+                        ForEach(ATOStatus.allCases) { status in
+                            Button(status.title) {
+                                atoStatusRaw = ATOStatus.encode(atoStatusRaw, setting: status, for: list)
+                            }
+                        }
+                        Divider()
+                        Button("No Status") {
+                            atoStatusRaw = ATOStatus.encode(atoStatusRaw, setting: nil, for: list)
+                        }
+                    }
                 }
                 Divider()
                 Button("Delete", role: .destructive) {
