@@ -6,12 +6,32 @@ import WebKit
 /// Directory (`trainers.html`, from the LMS/TMS). They hold staff and trainer details, so they are
 /// never synced or published. "⤢ Full screen" opens the page in a large window.
 struct WorkspaceChartView: View {
-    let fileName: String
+    let fileURL: URL
     let windowTitle: String
     let emptyTitle: String
     let emptyHint: String
 
-    private var fileURL: URL { HermesBridge.workspaceURL.appendingPathComponent(fileName) }
+    init(fileName: String, windowTitle: String, emptyTitle: String, emptyHint: String) {
+        self.init(fileURL: HermesBridge.workspaceURL.appendingPathComponent(fileName), windowTitle: windowTitle,
+                  emptyTitle: emptyTitle, emptyHint: emptyHint)
+    }
+
+    init(fileURL: URL, windowTitle: String, emptyTitle: String, emptyHint: String) {
+        self.fileURL = fileURL
+        self.windowTitle = windowTitle
+        self.emptyTitle = emptyTitle
+        self.emptyHint = emptyHint
+    }
+
+    /// A person's (staff, intern or trainer) overview page for the Planner list named `listName`, from
+    /// `<workspace>/people/index.json` ({list name: page path}), which the HR agent keeps. Mac only.
+    static func personPage(forList listName: String) -> URL? {
+        let index = HermesBridge.workspaceURL.appendingPathComponent("people/index.json")
+        guard let data = try? Data(contentsOf: index),
+              let map = try? JSONDecoder().decode([String: String].self, from: data),
+              let path = map[listName], FileManager.default.fileExists(atPath: path) else { return nil }
+        return URL(fileURLWithPath: path)
+    }
 
     var body: some View {
         if FileManager.default.fileExists(atPath: fileURL.path) {
@@ -122,8 +142,18 @@ private struct HumanWorkforceWebView: NSViewRepresentable {
             // "Open in HRMS" or a trainer's LinkedIn open in the default browser.
             let url = action.request.url
             switch url?.scheme {
-            case "file", "about":
+            case "about":
                 decisionHandler(.allow)
+            case "file":
+                // Pages (the chart, people/ and trainer pages) open here; a trainer's evidence folder,
+                // a CV or a certificate PDF opens in Finder / Preview.
+                let ext = url?.pathExtension.lowercased() ?? ""
+                if ext == "html" || ext == "htm" || action.navigationType != .linkActivated {
+                    decisionHandler(.allow)
+                } else {
+                    if let url { NSWorkspace.shared.open(url) }
+                    decisionHandler(.cancel)
+                }
             case "https", "http":
                 if action.navigationType == .linkActivated, let url { NSWorkspace.shared.open(url) }
                 decisionHandler(.cancel)

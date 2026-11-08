@@ -56,7 +56,7 @@ the workspace `memory/` folder.
   - Sharing another iOS view means adding it to the `PlannerAppMac` sources in `project.yml`.
 - `PRODUCT_NAME: Planner` → the app is `Planner.app`, binary `Contents/MacOS/Planner`.
 - Bundle id `com.tertiaryinfotech.plannerapp` (same as iOS), team `GU9WTSTX9M`, macOS 14+.
-- Mac overrides `CURRENT_PROJECT_VERSION` (currently "54") separately from the iOS base value;
+- Mac overrides `CURRENT_PROJECT_VERSION` (currently "58") separately from the iOS base value;
   `MARKETING_VERSION` is shared.
 - SwiftTerm is pinned `exactVersion: 1.11.2` — 1.12+ needs the Xcode Metal toolchain. Don't bump.
 

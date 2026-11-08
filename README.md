@@ -158,10 +158,13 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   (the Digital Workforce scheduler, Hermes and OpenClaw cron, WhatsApp reminders). The agent panel
   has a built-in **Browser** tab for reports and claude.ai artifacts.
 - 👥 **Human Workforce and Trainers (Mac only)** — opening **Human Workforce** shows a horizontal
-  staff and intern org chart, and **Trainers** a searchable trainer directory, each with an overview
-  page per person; links open the matching record in your HR system. The pages are built on the Mac
-  by the HR agent from your HRMS and LMS/TMS and **stay on the Mac**: they are never synced to iCloud
-  or published, because they hold personal details.
+  staff and intern org chart, and **Trainers** a concise trainer directory (sorted by recent
+  classes, with certification and skill tags and search). Every staff member, intern and trainer has
+  their own folder, which opens straight to their overview page, the way an agent's folder opens its
+  profile. Links open the matching HR record in your browser, and a trainer's evidence folder, CV or
+  certificates in Finder and Preview. The pages are built on the Mac by the HR agent from your HRMS
+  and LMS/TMS and **stay on the Mac**: they are never synced to iCloud or published, because they
+  hold personal details.
 - 📊 **Hermes Desktop (Mac)** — the sidebar button switches to the Hermes desktop app (sessions,
   bots and scheduled jobs).
 - 💬 **Feedback & About** — house-style tabs (WhatsApp feedback, developer info, version).

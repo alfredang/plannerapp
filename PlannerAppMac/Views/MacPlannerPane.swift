@@ -72,7 +72,15 @@ struct MacPlannerPane: View {
         return list.name.caseInsensitiveCompare("Trainers") == .orderedSame
     }
 
-    private var hasAgentView: Bool { currentAgent != nil || isWorkforceGroup || isHumanWorkforce || isTrainers }
+    /// A person's list (a staff member, intern or trainer) shows their overview page, like an agent's profile.
+    private var personPage: URL? {
+        guard currentAgent == nil, !isWorkforceGroup, !isHumanWorkforce, !isTrainers, let list = currentList else { return nil }
+        return WorkspaceChartView.personPage(forList: list.name)
+    }
+
+    private var hasAgentView: Bool {
+        currentAgent != nil || isWorkforceGroup || isHumanWorkforce || isTrainers || personPage != nil
+    }
     private var showsCaptureBar: Bool {
         // The bar files to-dos and appointments, or on Goals and Ideas what gets researched.
         // Pages use + instead.
@@ -156,6 +164,10 @@ struct MacPlannerPane: View {
             WorkspaceChartView.humanWorkforce
         } else if isTrainers {
             WorkspaceChartView.trainers
+        } else if let page = personPage, let list = currentList {
+            WorkspaceChartView(fileURL: page, windowTitle: list.name, emptyTitle: "No overview yet",
+                               emptyHint: "Vesta builds it from the HRMS and the LMS/TMS.")
+                .id(page)
         } else if let list = currentList {
             let members = OrgChartBuilder.staff(of: list, roster: roster)
             let nodes = members.map { member in
@@ -173,7 +185,7 @@ struct MacPlannerPane: View {
             get: { agentShowsChat && currentAgent != nil ? 2 : (agentShowsItems ? 1 : 0) },
             set: { agentShowsChat = $0 == 2; agentShowsItems = $0 == 1 }
         )) {
-            Text(currentAgent != nil ? "Profile" : (isTrainers ? "Directory" : "Org Chart")).tag(0)
+            Text(currentAgent != nil ? "Profile" : (isTrainers ? "Directory" : (personPage != nil ? "Overview" : "Org Chart"))).tag(0)
             if currentAgent != nil { Text("Chat").tag(2) }
             Text("To-Dos (\(items.count))").tag(1)
         }
