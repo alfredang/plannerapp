@@ -241,13 +241,15 @@ struct ListDetailView: View {
     @State private var showingAdd = false
     @State private var editingItem: PlannerItem?
 
-    /// This folder's items plus everything in its sub-lists.
+    /// This folder's items plus everything in its sub-lists. Pages (a client overview, a status
+    /// board) come first: they're what you open a client's folder to read.
     private var items: [PlannerItem] {
         let ids = list.subtreeIDs
-        return allItems.filter { item in
+        let mine = allItems.filter { item in
             guard let listID = item.list?.id else { return false }
             return ids.contains(listID)
         }
+        return mine.filter(\.isPage) + mine.filter { !$0.isPage }
     }
 
     var body: some View {

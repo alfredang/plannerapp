@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Where a client's ATO application stands, shown as the colour of its folder under the
-/// "ATO PROJECTS" list: successful is green, ongoing is brown, rejected is red. A folder with no
-/// status is the plain one, so an unconfirmed outcome is never shown as a result.
+/// Where a client's ATO application stands, shown as the colour of its folder under one of the
+/// `parentListNames` lists: successful is green, ongoing is brown, rejected is red. A folder with
+/// no status is the plain one, so an unconfirmed outcome is never shown as a result.
 ///
 /// Kept per Mac, by list id so a rename keeps it: the iPhone has no such folders, and a CloudKit
 /// field isn't worth a schema change for a colour. Set from the folder's menu, or by an agent
@@ -10,8 +10,11 @@ import SwiftUI
 enum ATOStatus: String, CaseIterable, Identifiable {
     case successful, ongoing, rejected
 
-    /// The parent list whose sub-lists are ATO applications.
-    static let parentListName = "ATO PROJECTS"
+    /// The parent lists whose sub-lists are ATO applications, one per regulator plus the original
+    /// combined list. Moving a folder between them keeps its status.
+    static let parentListNames = ["ATO PROJECTS", "SWDA ATO PROJECTS", "IBF ATO PROJECTS"]
+    /// The same names for messages and docs.
+    static var parentListNamesText: String { "ATO PROJECTS, SWDA ATO PROJECTS or IBF ATO PROJECTS" }
     /// `@AppStorage` key: JSON of list id → raw status.
     static let storageKey = "atoProjectStatus"
 
@@ -47,11 +50,13 @@ enum ATOStatus: String, CaseIterable, Identifiable {
 }
 
 extension PlannerList {
-    /// Inside the "ATO PROJECTS" list, at any depth.
+    /// Inside one of the `ATOStatus.parentListNames` lists, at any depth.
     var isATOProject: Bool {
         var node = parent
         while let current = node {
-            if current.name.caseInsensitiveCompare(ATOStatus.parentListName) == .orderedSame { return true }
+            if ATOStatus.parentListNames.contains(where: {
+                current.name.caseInsensitiveCompare($0) == .orderedSame
+            }) { return true }
             node = current.parent
         }
         return false

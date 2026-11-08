@@ -39,6 +39,9 @@ enum WhatsAppDelivery: String, CaseIterable, Identifiable {
 /// adjustable in Settings). Runs inside the Mac app, so Planner has to be running — it
 /// checks every minute and catches up after sleep, as long as it is still within a few
 /// hours of the scheduled time. Each digest is sent at most once per day.
+///
+/// Also the critical and overdue alert (`FollowUpDigest`): everything open at the first alert
+/// time each day, then anything new until 10 pm, so it keeps asking until the item is dealt with.
 @MainActor
 final class WhatsAppReminders: ObservableObject {
     static let shared = WhatsAppReminders()
@@ -48,6 +51,14 @@ final class WhatsAppReminders: ObservableObject {
     static let deliveryKey = "waReminders.delivery"
     static let skipEmptyKey = "waReminders.skipEmpty"
     static let statusKey = "waReminders.lastStatus"
+    static let followUpEnabledKey = "waReminders.followUp.enabled"
+    static let followUpMinutesKey = "waReminders.followUp.minutes"
+    private static let followUpAlertedKey = "waReminders.followUp.alerted"
+    static let defaultFollowUpMinutes = 8 * 60 + 30
+    /// No alert after 10 pm; it goes out next morning instead.
+    private static let followUpLastMinute = 22 * 60
+    /// A failed alert tries again this much later, so a long outage can't lose it.
+    private static let followUpRetryDelay: TimeInterval = 15 * 60
     /// No built-in number: the repo is public, so the recipient is entered in Settings
     /// (stored locally under `phoneKey`). Sending reports "no WhatsApp number set" until then.
     static let defaultPhone = ""
@@ -68,6 +79,7 @@ final class WhatsAppReminders: ObservableObject {
     private var activity: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
     private var attempts: [String: Int] = [:]
+    private var followUpRetryAt: Date?
 
     private let defaults = UserDefaults.standard
 
@@ -86,6 +98,12 @@ final class WhatsAppReminders: ObservableObject {
 
     var delivery: WhatsAppDelivery {
         defaults.string(forKey: Self.deliveryKey).flatMap(WhatsAppDelivery.init) ?? .hermes
+    }
+
+    var followUpEnabled: Bool { defaults.object(forKey: Self.followUpEnabledKey) as? Bool ?? true }
+
+    var followUpMinutes: Int {
+        defaults.object(forKey: Self.followUpMinutesKey) as? Int ?? Self.defaultFollowUpMinutes
     }
 
     func minutes(for slot: ReminderSlot) -> Int {
@@ -120,13 +138,13 @@ final class WhatsAppReminders: ObservableObject {
     /// while reminders are on, and — when switching on — treats digests whose time has
     /// already passed today as done, so enabling at 10 am doesn't fire the 8 am one.
     func enabledDidChange(justEnabled: Bool = false) {
-        if isEnabled {
+        if isEnabled || followUpEnabled {
             if activity == nil {
                 activity = ProcessInfo.processInfo.beginActivity(
                     options: [.userInitiatedAllowingIdleSystemSleep],
                     reason: "Daily WhatsApp appointment reminders")
             }
-            if justEnabled {
+            if isEnabled, justEnabled {
                 let now = Date()
                 for slot in ReminderSlot.allCases where now >= dueTime(slot, on: now) {
                     defaults.set(Self.dayStamp(now), forKey: slot.lastSentKey)
@@ -151,9 +169,9 @@ final class WhatsAppReminders: ObservableObject {
     }
 
     func tick(now: Date = Date()) {
-        guard isEnabled, context != nil, !isSending else { return }
+        guard context != nil, !isSending else { return }
         let stamp = Self.dayStamp(now)
-        for slot in ReminderSlot.allCases {
+        for slot in ReminderSlot.allCases where isEnabled {
             let due = dueTime(slot, on: now)
             guard now >= due, now < due.addingTimeInterval(Self.catchUpWindow),
                   defaults.string(forKey: slot.lastSentKey) != stamp else { continue }
@@ -165,6 +183,19 @@ final class WhatsAppReminders: ObservableObject {
             Task { await send(slot, now: now, automatic: true) }
             return   // one at a time; the other slot (if also due) goes on the next tick
         }
+        tickFollowUps(now: now)
+    }
+
+    /// Sends what's critical or overdue and hasn't been alerted today.
+    private func tickFollowUps(now: Date) {
+        guard followUpEnabled, !phoneDigits.isEmpty, now >= followUpRetryAt ?? .distantPast else { return }
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: now)
+        let minute = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+        guard minute >= followUpMinutes, minute < Self.followUpLastMinute else { return }
+        let fresh = openFollowUps(now: now).excluding(alertedFollowUps(on: now))
+        guard !fresh.isEmpty else { return }
+        isSending = true   // so an overlapping tick can't send it twice
+        Task { await deliverFollowUps(fresh, now: now, automatic: true) }
     }
 
     // MARK: - Sending
@@ -188,7 +219,7 @@ final class WhatsAppReminders: ObservableObject {
         defer { isSending = false }
         let error: String?
         switch delivery {
-        case .hermes:      error = await Self.sendViaHermes(message, to: phoneDigits)
+        case .hermes:      error = await Self.sendViaHermes(message, target: Self.whatsAppTarget(phoneDigits))
         case .whatsappApp: error = Self.openWhatsApp(message, to: phoneDigits)
         }
 
@@ -200,6 +231,64 @@ final class WhatsAppReminders: ObservableObject {
             let n = appointments.count
             record("\(slot.title) \(verb) \(Self.statusTime(Date())) — \(n) appointment\(n == 1 ? "" : "s").")
         }
+    }
+
+    /// The Send Now button: everything open, whether or not it has been alerted today.
+    func sendFollowUps() async {
+        let now = Date()
+        let open = openFollowUps(now: now)
+        guard !open.isEmpty else {
+            record("Nothing critical or overdue (\(Self.statusTime(now))).")
+            return
+        }
+        guard !phoneDigits.isEmpty else {
+            record("Not sent — no WhatsApp number set.")
+            return
+        }
+        await deliverFollowUps(open, now: now, automatic: false)
+    }
+
+    private func openFollowUps(now: Date) -> FollowUpDigest.Open {
+        FollowUpDigest.open(in: (try? context?.fetch(FetchDescriptor<PlannerItem>())) ?? [], now: now)
+    }
+
+    /// Item ids alerted on `now`'s day, stored as "<day>|<id>,<id>".
+    private func alertedFollowUps(on now: Date) -> Set<String> {
+        let parts = (defaults.string(forKey: Self.followUpAlertedKey) ?? "").split(separator: "|")
+        guard parts.count == 2, parts[0] == Self.dayStamp(now) else { return [] }
+        return Set(parts[1].split(separator: ",").map(String.init))
+    }
+
+    /// WhatsApp first; through Hermes, Telegram if that fails, because an alert should arrive.
+    private func deliverFollowUps(_ open: FollowUpDigest.Open, now: Date, automatic: Bool) async {
+        isSending = true
+        defer { isSending = false }
+        let message = FollowUpDigest.message(open, now: now)
+        var route = "WhatsApp"
+        var note = ""
+        var error: String?
+        switch delivery {
+        case .whatsappApp:
+            error = Self.openWhatsApp(message, to: phoneDigits)
+        case .hermes:
+            error = await Self.sendViaHermes(message, target: Self.whatsAppTarget(phoneDigits))
+            if let whatsAppError = error {
+                error = await Self.sendViaHermes(message, target: "telegram")
+                route = "Telegram"
+                note = " WhatsApp failed: \(whatsAppError)"
+                if let telegramError = error { error = "\(whatsAppError); Telegram: \(telegramError)" }
+            }
+        }
+        if let error {
+            if automatic { followUpRetryAt = Date().addingTimeInterval(Self.followUpRetryDelay) }
+            record("Follow-up alert failed (\(Self.statusTime(Date()))): \(error)")
+            return
+        }
+        followUpRetryAt = nil
+        let ids = alertedFollowUps(on: now).union(open.ids)
+        defaults.set("\(Self.dayStamp(now))|\(ids.sorted().joined(separator: ","))", forKey: Self.followUpAlertedKey)
+        record("Follow-up alert sent on \(route) \(Self.statusTime(Date())) — "
+               + "\(open.critical.count) critical, \(open.overdue.count) overdue.\(note)")
     }
 
     private func record(_ status: String) {
@@ -254,17 +343,19 @@ final class WhatsAppReminders: ObservableObject {
 
     // MARK: - Delivery
 
-    /// `hermes send` through the gateway's WhatsApp bridge. Returns an error message, or
-    /// nil on success. The message goes in on stdin so no shell quoting is involved.
-    private static func sendViaHermes(_ message: String, to digits: String) async -> String? {
+    private static func whatsAppTarget(_ digits: String) -> String { "whatsapp:\(digits)@s.whatsapp.net" }
+
+    /// `hermes send` to a target: `whatsAppTarget`, or `telegram` for its home channel. Returns an
+    /// error message, or nil on success. The message goes in on stdin so no shell quoting is involved.
+    private static func sendViaHermes(_ message: String, target: String) async -> String? {
         await Task.detached(priority: .utility) { () -> String? in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             // Login shell for the user's PATH; ~/.local/bin is where hermes installs.
             process.arguments = ["-lc", "export PATH=\"$HOME/.local/bin:$PATH\"; "
-                                 + "exec hermes send --to \"$PLANNER_WA_TARGET\" --file -"]
+                                 + "exec hermes send --to \"$PLANNER_SEND_TARGET\" --file -"]
             var env = ProcessInfo.processInfo.environment
-            env["PLANNER_WA_TARGET"] = "whatsapp:\(digits)@s.whatsapp.net"
+            env["PLANNER_SEND_TARGET"] = target
             process.environment = env
             let input = Pipe(), output = Pipe()
             process.standardInput = input

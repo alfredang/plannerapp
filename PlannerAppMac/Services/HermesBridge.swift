@@ -370,6 +370,14 @@ enum HermesBridge {
 
         case "newlist":
             guard let name = params["name"], !name.isEmpty else { return "ERROR: missing name" }
+            // An existing name is fine here (it finds that list, and parent= moves it), so this
+            // can't make a duplicate. Lists already sharing a name could move the wrong one.
+            if let parentName = params["parent"], !parentName.isEmpty {
+                let lists = (try? context.fetch(FetchDescriptor<PlannerList>())) ?? []
+                if let error = ListNames.moveError(name: name, parent: parentName, in: lists) {
+                    return "ERROR: \(error)"
+                }
+            }
             let list = findOrCreateList(named: name, context: context)
             // Optional parent=<name>: nest the list as a sub-list (parent created if needed).
             if let parentName = params["parent"], !parentName.isEmpty {
@@ -383,10 +391,14 @@ enum HermesBridge {
 
         case "renamelist":
             guard let name = params["name"], !name.isEmpty else { return "ERROR: missing name" }
-            guard let newName = params["to"], !newName.isEmpty else { return "ERROR: missing to" }
+            let newName = (params["to"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !newName.isEmpty else { return "ERROR: missing to" }
             let lists = (try? context.fetch(FetchDescriptor<PlannerList>())) ?? []
             guard let list = lists.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
             else { return "ERROR: list not found" }
+            if let error = ListNames.renameError(renaming: list, to: newName, in: lists) {
+                return "ERROR: \(error)"
+            }
             list.name = newName   // non-destructive: items and sub-lists are untouched
             return "OK: renamed list “\(name)” to “\(newName)”"
 
@@ -450,7 +462,7 @@ enum HermesBridge {
             guard let list = lists.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
             else { return "ERROR: list not found" }
             guard list.isATOProject else {
-                return "ERROR: “\(list.name)” is not under \(ATOStatus.parentListName)"
+                return "ERROR: “\(list.name)” is not under \(ATOStatus.parentListNamesText)"
             }
             let raw = (params["status"] ?? "").lowercased()
             let status = ATOStatus(rawValue: raw)
@@ -694,9 +706,16 @@ enum HermesBridge {
     private static var agentsInstructions: String { """
     # Planner — Hermes Agent Bridge
 
-    You are running inside the terminal panel of the **Planner** macOS app. Your job is to
-    help the user manage their to-dos, appointments and lists conversationally — e.g.
-    "add buy milk tomorrow", "move the n8n task to AI-LMS-TMS", "rename X to Y",
+    You are running inside the terminal panel of the **Planner** macOS app.
+
+    Planner is the owner's business operating system, not just a to-do list. It should help them
+    **set goals and strategise the business to reach higher revenue and ROI, and manage all their
+    projects (in-house and client) and their clients**, in one place, with visuals and HTML
+    content, and with agents doing the legwork. Agents never delete, send or submit on their own
+    judgement: the owner decides.
+
+    Your job is to help with all of that, including managing their to-dos, appointments and
+    lists conversationally — e.g. "add buy milk tomorrow", "move the n8n task to AI-LMS-TMS", "rename X to Y",
     "mark the dentist appointment done", "what's on today?".
 
     **In this panel the Planner app is the source of truth for to-dos and appointments.**
@@ -761,11 +780,11 @@ enum HermesBridge {
     | Meeting link (appointments) | `planner://link?id=ab12cd34&url=meet.google.com/abc-defg-hij` (empty `url` removes it; `add` also takes `link=`) |
     | Page link (pages, to-dos) | `planner://link?id=ab12cd34&url=2026-10-30-acme-overview.html` — clicking the item on the Mac then opens that page in Planner's browser (Edit… is in its right-click menu). `url` = a report in `reports/` (bare `<file>.html` or `reports/<file>.html`), an absolute file path, or an https URL; empty removes it. `planner://page?id=…&url=…` does the same for any item; `add` takes `page=` (or `link=` on a page or to-do). Shown as `pageLink` in the snapshot. |
     | Priority (to-dos) | `planner://priority?id=ab12cd34&level=high` (`critical`, `high`, `medium`, `low`; Critical/High auto-pin) |
-    | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list) |
-    | Rename list | `planner://renamelist?name=Errands&to=Chores` (items and sub-lists are kept) |
+    | New list | `planner://newlist?name=Errands` (optional `parent=Clients` nests it as a sub-list, and moves it there if it already exists; refused if more than one list has either name) |
+    | Rename list | `planner://renamelist?name=Errands&to=Chores` (items and sub-lists are kept; refused if another list already has that name) |
     | Reorder lists | `planner://orderlists?names=Alfred,Projects,Clients` — lists sharing one parent (or all top-level), in the order wanted; unnamed siblings follow in their current order. Sub-lists move with their parent. One call per level. |
     | Show a page | `planner://browse?file=2026-10-09-oracle.html` opens a report from `reports/` in Planner's built-in browser (next to this terminal); `planner://browse?url=https://…` opens any web page or absolute file path |
-    | ATO status | `planner://atostatus?list=ACME%20PTE%20LTD&status=ongoing` (`successful`, `ongoing`, `rejected`, `none`), only for lists under ATO PROJECTS; colours the folder green, brown or red. Set `successful` or `rejected` only once the outcome is confirmed |
+    | ATO status | `planner://atostatus?list=ACME%20PTE%20LTD&status=ongoing` (`successful`, `ongoing`, `rejected`, `none`), only for lists under ATO PROJECTS, SWDA ATO PROJECTS or IBF ATO PROJECTS; colours the folder green, brown or red. Set `successful` or `rejected` only once the outcome is confirmed |
     | Delete list | `planner://deletelist?name=Errands` — **disabled by default, see below** |
 
     Notes:

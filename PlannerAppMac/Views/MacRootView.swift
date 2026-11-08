@@ -537,7 +537,8 @@ struct MacRootView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 300)
+        // Wide max: nested lists indent deeply and long client names otherwise truncate.
+        .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 560)
         .navigationTitle("Planner")
         .safeAreaInset(edge: .bottom, spacing: 0) { syncStatusRow }
         .alert(newListParent == nil ? "New List" : "New Sub-list", isPresented: $showingNewList) {

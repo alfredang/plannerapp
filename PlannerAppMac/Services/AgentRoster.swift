@@ -48,7 +48,37 @@ struct AgentProfile: Identifiable, Hashable {
 /// an agent (`Atlas` ↔ `atlas.md`) shows that agent's profile; a list of such lists shows the
 /// org chart. Read-only — the `.md` files stay the single source of truth.
 enum AgentRoster {
-    static let staffIDs = ["atlas", "mercury", "muse", "sage", "sentinel", "forge", "ledger", "oracle", "nova"]
+    static let staffIDs = ["atlas", "mercury", "muse", "sage", "sentinel", "forge", "ledger", "oracle", "nova", "helm", "vesta"]
+
+    /// One job an agent owns, from the "who owns what" table in COMPANY.md.
+    struct Ownership: Hashable {
+        var job: String
+        var when: String
+    }
+
+    /// Staff id → the jobs it owns, read from COMPANY.md's ownership table rows
+    /// ("| Job | **Owner** … | When | … |"). The bold name in the owner cell is the owner; words
+    /// after it, such as "(weekly Tue; skill synthesis Mon/Thu)", fill in an empty When.
+    static var ownership: [String: [Ownership]] {
+        guard let text = try? String(contentsOf: companyURL, encoding: .utf8) else { return [:] }
+        var out: [String: [Ownership]] = [:]
+        for line in text.components(separatedBy: .newlines) where line.hasPrefix("|") {
+            let cells = line.split(separator: "|", omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            guard cells.count >= 5, !cells[1].hasPrefix("---"), cells[1] != "Job" else { continue }
+            let owner = cells[2]
+            guard let bold = owner.range(of: #"\*\*[A-Za-z]+\*\*"#, options: .regularExpression) else { continue }
+            let id = owner[bold].replacingOccurrences(of: "*", with: "").lowercased()
+            guard staffIDs.contains(id) else { continue }
+            var when = cells[3]
+            if when.isEmpty || when == "—" || when == "-" {
+                when = owner[bold.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: " ()"))
+            }
+            let job = cells[1].replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+            out[id, default: []].append(Ownership(job: job, when: when))
+        }
+        return out
+    }
     private static let home = FileManager.default.homeDirectoryForCurrentUser
     static var agentsDir: URL { home.appendingPathComponent(".claude/agents", isDirectory: true) }
     static var companyURL: URL { home.appendingPathComponent("DigitalWorkforce/COMPANY.md") }

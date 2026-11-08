@@ -60,7 +60,19 @@ struct MacPlannerPane: View {
             || !OrgChartBuilder.agentChildren(of: list, roster: roster).isEmpty
     }
 
-    private var hasAgentView: Bool { currentAgent != nil || isWorkforceGroup }
+    /// The open list is the "Human Workforce" group: it shows the HR org chart built from the HRMS.
+    private var isHumanWorkforce: Bool {
+        guard currentAgent == nil, let list = currentList else { return false }
+        return list.name.caseInsensitiveCompare("Human Workforce") == .orderedSame
+    }
+
+    /// The open list is "Trainers": it shows the Trainer Directory built from the LMS/TMS.
+    private var isTrainers: Bool {
+        guard currentAgent == nil, let list = currentList else { return false }
+        return list.name.caseInsensitiveCompare("Trainers") == .orderedSame
+    }
+
+    private var hasAgentView: Bool { currentAgent != nil || isWorkforceGroup || isHumanWorkforce || isTrainers }
     private var showsCaptureBar: Bool {
         // The bar files to-dos and appointments, or on Goals and Ideas what gets researched.
         // Pages use + instead.
@@ -140,6 +152,10 @@ struct MacPlannerPane: View {
                              team: teamChart(for: agent, list: currentList),
                              jobs: jobs(for: agent), onOpenList: onOpenList,
                              onOpenChat: { agentShowsItems = false; agentShowsChat = true })
+        } else if isHumanWorkforce {
+            WorkspaceChartView.humanWorkforce
+        } else if isTrainers {
+            WorkspaceChartView.trainers
         } else if let list = currentList {
             let members = OrgChartBuilder.staff(of: list, roster: roster)
             let nodes = members.map { member in
@@ -157,7 +173,7 @@ struct MacPlannerPane: View {
             get: { agentShowsChat && currentAgent != nil ? 2 : (agentShowsItems ? 1 : 0) },
             set: { agentShowsChat = $0 == 2; agentShowsItems = $0 == 1 }
         )) {
-            Text(currentAgent != nil ? "Profile" : "Org Chart").tag(0)
+            Text(currentAgent != nil ? "Profile" : (isTrainers ? "Directory" : "Org Chart")).tag(0)
             if currentAgent != nil { Text("Chat").tag(2) }
             Text("To-Dos (\(items.count))").tag(1)
         }

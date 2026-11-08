@@ -12,6 +12,28 @@ enum Theme {
     /// Standard rounded surface used for grouped cards.
     static let cardShape = RoundedRectangle(cornerRadius: 18, style: .continuous)
     static let rowShape  = RoundedRectangle(cornerRadius: 14, style: .continuous)
+
+    // Calendar colours (iPhone month grid and Mac calendar pane).
+    /// Appointment checked off: blue text on a light blue chip.
+    static let calendarDone = Color.blue
+    /// Appointment over without being checked off: red text on a light red chip.
+    static let calendarMissed = Color.red
+    /// Singapore public holiday: purple day number and name on a yellow day cell.
+    static let holidayText = Color.purple
+    static let holidayFill = Color.yellow.opacity(0.3)
+
+    /// Text colour for an appointment chip: blue when done, red when missed, grey when cancelled.
+    static func appointmentText(done: Bool, cancelled: Bool, missed: Bool) -> Color {
+        if done { return calendarDone }
+        if cancelled { return .secondary }
+        return missed ? calendarMissed : .primary
+    }
+
+    /// Fill behind an appointment chip, matching `appointmentText`.
+    static func appointmentFill(done: Bool, missed: Bool) -> Color {
+        if done { return calendarDone.opacity(0.12) }
+        return missed ? calendarMissed.opacity(0.15) : accent.opacity(0.2)
+    }
 }
 
 /// Accent colour choices. `indigo` is the original asset-catalog colour (with its tuned

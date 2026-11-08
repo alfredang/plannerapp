@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// A single planner row with a tappable checkbox. Checking the box auto-archives the item.
 /// Tapping the row content opens the edit form (when `onEdit` is provided) — on the Mac it
@@ -20,6 +21,10 @@ struct ItemRow: View {
     /// "Rescheduled" opens an inline date picker for the new slot.
     @State private var isRescheduling = false
     @State private var rescheduleDate = Date()
+    #if os(iOS)
+    /// A Mac report this item links to, opened from its synced copy (Updates).
+    @State private var shownReport: AgentReport?
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -132,6 +137,22 @@ struct ItemRow: View {
                     #endif
                     .accessibilityLabel("Open page")
                 }
+                #if os(iOS)
+                if pageURL == nil, let report = syncedReport {
+                    Button {
+                        shownReport = report
+                    } label: {
+                        Label("Open page", systemImage: "doc.richtext")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Theme.accent.opacity(0.15), in: Capsule())
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Open page")
+                }
+                #endif
 
                 let notesPreview = PageLink.withoutLink(AppointmentComments.withoutComments(item.displayNotes))
                 if !notesPreview.isEmpty {
@@ -150,9 +171,24 @@ struct ItemRow: View {
             #if os(macOS)
             if let onOpen { onOpen(); return }
             if let url = pageURL { openPage(url); return }
+            #else
+            // A page is something to read: tapping it opens the synced report when there is one.
+            if item.isPage, let report = syncedReport { shownReport = report; return }
             #endif
             onEdit?()
         }
+        #if os(iOS)
+        .sheet(item: $shownReport) { report in
+            NavigationStack {
+                ReportPageView(report: report)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { shownReport = nil }
+                        }
+                    }
+            }
+        }
+        #endif
         .accessibilityElement(children: .combine)
         .accessibilityHint(onEdit != nil ? "Double tap to edit" : "")
     }
@@ -169,6 +205,19 @@ struct ItemRow: View {
         return PageLink.url(for: link, workspace: nil).flatMap { $0.isFileURL ? nil : $0 }
         #endif
     }
+
+    #if os(iOS)
+    /// The Mac report this item links to ("reports/<file>.html"), as synced to this device by the
+    /// Mac's UpdatesSync (Planner ▸ Updates). Nil for web links or reports not synced yet.
+    private var syncedReport: AgentReport? {
+        guard let link = item.pageTarget, !PageLink.isWeb(link) else { return nil }
+        let file = (link as NSString).lastPathComponent
+        guard file.lowercased().hasSuffix(".html") || file.lowercased().hasSuffix(".htm") else { return nil }
+        var descriptor = FetchDescriptor<AgentReport>(predicate: #Predicate { $0.file == file })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+    #endif
 
     /// Mac: Planner's built-in browser (panel shown, Browser tab in front). iPhone: Safari.
     private func openPage(_ url: URL) {

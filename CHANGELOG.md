@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.9] — 2026-11-08
+
+- Open a list on your iPhone or iPad and its pages, such as a client overview or the All Client Projects board, are shown first; tap one to read it, with the same content you see on your Mac
+
 ## [2.8] — 2026-11-06
 
 - Goals, ideas and pages you keep in Planner on your Mac no longer appear as to-dos on your iPhone, and goal dates no longer set off reminders

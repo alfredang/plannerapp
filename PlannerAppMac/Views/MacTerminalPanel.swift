@@ -330,6 +330,13 @@ struct MacTerminalPanel: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Reload the page")
+            } else {
+                // Speak to the agent on screen with LahLah Voice.
+                LahLahVoiceButton {
+                    if let terminal = tabs.currentTerminal {
+                        tabs.session(for: terminal).setActive(true, refocus: true)
+                    }
+                }
             }
             Button {
                 withAnimation { isVisible = false }

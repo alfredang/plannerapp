@@ -1,5 +1,7 @@
 # Tertiary Planner for iPhone/iPad (PlannerApp target)
 
+Product purpose (goals and strategy for revenue and ROI, in-house and client projects, clients; visuals and HTML content): see "What this app is for" in `../PlannerAppMac/CLAUDE.md`.
+
 AI to-do and appointment planner on the App Store (app id **6785397240**, bundle id
 `com.tertiaryinfotech.plannerapp`, team `GU9WTSTX9M`, iOS 17+, iPhone + iPad). SwiftData +
 CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md`.

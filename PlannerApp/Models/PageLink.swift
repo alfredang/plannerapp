@@ -65,7 +65,7 @@ enum PageLink {
         return String(notes[range])
     }
 
-    private static func isWeb(_ link: String) -> Bool {
+    static func isWeb(_ link: String) -> Bool {
         let lower = link.lowercased()
         return lower.hasPrefix("https://") || lower.hasPrefix("http://")
     }

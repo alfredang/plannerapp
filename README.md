@@ -34,7 +34,9 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   on iPad and Mac), the selected day's agenda sits underneath, and a **List** view shows every
   appointment grouped by day, opened at today. Swipe (iPhone) or use the arrows to change
   month; long-press (iPhone) or double-click (Mac) a day to add an appointment there.
-- 🇸🇬 **Singapore public holidays** — marked in red on the calendar with their names,
+  Past appointments are coloured by outcome: **blue** when completed, **red** when missed.
+- 🇸🇬 **Singapore public holidays** — marked on the calendar with their names in purple on a
+  yellow day,
   including the observed Monday when a holiday falls on a Sunday. Dates come from the
   [Ministry of Manpower list](https://www.mom.gov.sg/employment-practices/public-holidays)
   (2025–2027), bundled so the calendar works offline. Days you've booked as a holiday (an
@@ -84,7 +86,8 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   up with sources: review, market research, competitor analysis, features, recommendations,
   strategy, steps to implement, caveats. Each one shows in the pane as its rendered page, with a
   tab per goal or idea and a Reply box on every card, not as a to-do row. Goals are kept out of
-  To-Do and reminders, and "by 2027" sets the target date. Pages reach the iPhone through Updates.
+  To-Do and reminders, and "by 2027" sets the target date. Pages reach the iPhone through Updates, and a list's pages (a client overview, the All
+  Client Projects board) are shown first when you open it on iPhone or iPad; tap one to read it.
   Needs the Digital Workforce agents on the Mac.
 - 📁 **ATO folders show their status (Mac)** — folders under **ATO PROJECTS** are green for a
   successful application, brown for ongoing and red for rejected. Change one from its menu.
@@ -149,7 +152,8 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   away, and every reply is handed to the agents' next run. Replies synced in from the other
   device appear under their card, and a brief re-published on the Mac reloads on the iPhone;
   pull down (or tap ↻) on a report to fetch the latest from iCloud.
-- 🧑‍💼 **Digital Workforce (Mac)** — each agent's profile and org chart, a chat with any agent,
+- 🧑‍💼 **Digital Workforce (Mac)** — each agent's profile, a horizontal org chart (full-screen
+  window, with a who-owns-what table), the Human Workforce and Trainers charts, a chat with any agent,
   and an **Agent Jobs** view of every background job on the Mac (workforce LaunchAgents, Hermes
   and OpenClaw cron, WhatsApp reminders). The agent panel has a built-in **Browser** tab for
   reports and claude.ai artifacts.
@@ -232,7 +236,9 @@ PlannerAppMac/                          — macOS desktop edition (DMG)
 │               ItemResearcher.swift    — Nova researches goals and ideas into pages
 │               ATOStatus.swift         — ATO folder status: green, brown or red
 │               MeetingOpener.swift     — Join meeting opens a new browser window
-│               AgentRoster.swift       — the agents in ~/.claude/agents
+│               AgentRoster.swift       — the agents in ~/.claude/agents and what each owns
+│               FollowUpDigest.swift    — Critical and overdue to-dos for the follow-up digest
+│               ListNames.swift         — list-name rules for the agent bridge
 │               AgentChat.swift         — chat sessions with an agent
 │               PowerSettings.swift     — daily wake / power-on schedule
 └── Views/      MacRootView.swift       — sidebar: smart views + user lists + sync badge
@@ -246,6 +252,8 @@ PlannerAppMac/                          — macOS desktop edition (DMG)
                 MacSchedulePane.swift   — every scheduled background job on this Mac
                 MacAgentProfileView.swift, MacAgentChatView.swift,
                 DigitalWorkforceArtifactView.swift — agent profiles, org chart, chat
+                HumanWorkforceChartView.swift — Human Workforce and Trainers charts
+                LahLahVoiceLink.swift   — mic button: dictate to the agent with LahLah Voice
                 MacSettingsPane.swift   — owner, appearance, WhatsApp, agent safety
 
 PlannerAppUITests/                      — iOS UI tests (navigation, appointment edits)

@@ -16,8 +16,8 @@ packages:
 
 settings:
   base:
-    MARKETING_VERSION: "2.8"
-    CURRENT_PROJECT_VERSION: "44"
+    MARKETING_VERSION: "2.9"
+    CURRENT_PROJECT_VERSION: "45"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: GU9WTSTX9M
     CODE_SIGN_STYLE: Automatic
@@ -84,7 +84,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Planner
-        CURRENT_PROJECT_VERSION: "54"
+        CURRENT_PROJECT_VERSION: "57"
         PRODUCT_BUNDLE_IDENTIFIER: com.tertiaryinfotech.plannerapp
         INFOPLIST_FILE: PlannerAppMac/Info.plist
         CODE_SIGN_ENTITLEMENTS: PlannerAppMac/PlannerAppMac.entitlements

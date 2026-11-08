@@ -4,6 +4,46 @@ Desktop edition of Tertiary Planner, shipped as a Developer ID–signed, notariz
 the Mac App Store). Same data as the iPhone app via SwiftData + CloudKit. The iPhone app's
 notes are in `../PlannerApp/CLAUDE.md`.
 
+## What this app is for
+
+Planner is the owner's business operating system, not just a to-do list. It should help them
+**set goals and strategise the business to reach higher revenue and ROI, and manage all their
+projects (in-house and client) and their clients**, in one place, with visuals and HTML content,
+and with agents doing the legwork. Judge every feature by whether it makes one of those easier, and
+make the app as useful to the owner as possible.
+
+- **Revenue and ROI are the point.** Goals, strategy and advice should say what they do for revenue
+  or return, so the owner can weigh them.
+- **Show it, don't just list it.** Status, progress and plans should be visuals and rendered HTML
+  pages wherever those read better than a list.
+- **Goals lead.** Goals say what matters. Work, advice and agent proposals should say which goal
+  they serve, and it should be easy to see whether a goal is moving.
+- **Strategy lives here.** Goals and Ideas get researched pages; reports, reviews and decisions
+  should end in something the owner can act on or file, not just read.
+- **Clients and projects come first, in-house ones included.** The owner should see at a glance, for any client or project:
+  where it stands, who it's waiting on, the next date, what's missing and what happened so far.
+- **Chase what slips.** Tell the owner on their phone when something is critical or overdue, so
+  they can follow up without opening the app.
+- **Tell the truth about status.** Never show an unconfirmed outcome as a result. "Not on file" is
+  a valid state, and a blank colour beats a guessed one.
+- **The sidebar should match how the owner thinks.** One client can be in several project types
+  (WSQ, IBF, SWDA ATO, IBF ATO, TPQA, PEI), and the owner's folders on disk are the reference.
+- **Agents do the work; the owner decides.** Agents never delete, send or submit on their own
+  judgement. Anything an agent can do should be possible through the bridge, not by editing data.
+
+Direction, in rough priority. These are proposals, so confirm scope with the owner first, and
+remember that a SwiftData change needs the CloudKit steps under Gotchas:
+
+1. A client as one record across project types. Today agents fake this with copied lists named
+   `<CLIENT> (<TYPE>)`, which duplicates pages and splits to-dos.
+2. Native project boards and timelines per project type (agents currently render these as HTML
+   pages), with status, waiting-on and next date as real fields.
+3. A home view that answers "what needs me today?" across goals, clients and deadlines.
+4. Links from goals to the clients and projects that serve them, with visible progress.
+
+Keep client names and other private business facts out of this repo: it's public. They belong in
+the workspace `memory/` folder.
+
 ## Project layout and code sharing
 
 - XcodeGen: `project.yml` is the source of truth; `PlannerApp.xcodeproj/` is generated and
@@ -78,7 +118,8 @@ notes are in `../PlannerApp/CLAUDE.md`.
 - `Services/MeetingOpener.swift` — "Join meeting" opens Chromium browsers with `--new-window`:
   a plain URL open lands in the browser's last window, possibly on another Space, and looks
   like nothing happened.
-- Also: `WhatsAppReminders` (daily digests), `PowerSettings` (pmset wake schedule),
+- Also: `WhatsAppReminders` (daily digests, plus the critical and overdue alert from
+  `FollowUpDigest`: Telegram through Hermes if WhatsApp fails), `PowerSettings` (pmset wake schedule),
   `AppearanceController` (`appearanceMode`; ⇧⌘D toggle), `AgentRoster` (`~/.claude/agents`),
   `AgentChat` (`~/DigitalWorkforce/bin/chat-agent.py`).
 

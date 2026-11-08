@@ -285,14 +285,14 @@ struct CalendarView: View {
                     .monospacedDigit()
                     .foregroundStyle(isToday ? Color.white
                                      : (isSelected ? Theme.accent
-                                        : (holiday != nil ? Color.red
+                                        : (holiday != nil ? Theme.holidayText
                                            : (inMonth ? Color.primary : Color.secondary))))
                     .frame(width: 22, height: 22)
                     .background(Circle().fill(isToday ? Theme.accent : Color.clear))
                 if let holiday {
                     Text(holiday)
                         .font(.system(size: showTime ? 11 : 8.5, weight: .semibold))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.holidayText)
                         .lineLimit(1)
                 }
                 ForEach(items.prefix(shown)) { item in
@@ -312,7 +312,7 @@ struct CalendarView: View {
         .frame(maxWidth: .infinity)
         .background(isSelected ? Theme.accent.opacity(0.12)
                     : (onLeave ? Color.green.opacity(0.15)
-                       : (holiday != nil ? Color.red.opacity(0.06)
+                       : (holiday != nil ? Theme.holidayFill
                           : (inMonth ? Color.clear : Color.primary.opacity(0.035)))))
         .opacity(inMonth ? 1 : 0.55)
         .contentShape(Rectangle())
@@ -344,13 +344,12 @@ struct CalendarView: View {
         }
         .font(.system(size: showTime ? 11 : 9.5))
         .lineLimit(1)
-        .foregroundStyle(item.isDone || item.isCancelled ? Color.secondary : (item.isMissed ? Color.red : Color.primary))
+        .foregroundStyle(Theme.appointmentText(done: item.isDone, cancelled: item.isCancelled, missed: item.isMissed))
         .padding(.horizontal, 2)
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 3)
-            .fill(item.isMissed ? Color.red.opacity(0.15)
-                  : Theme.accent.opacity(item.isDone ? 0.07 : 0.2)))
+            .fill(Theme.appointmentFill(done: item.isDone, missed: item.isMissed)))
         .contentShape(Rectangle())
         // Tap an event to open it — add comments in its Notes.
         .onTapGesture { editingItem = item }
@@ -367,7 +366,7 @@ struct CalendarView: View {
                 if let holiday = SingaporeHolidays.name(on: selectedDay) {
                     Spacer()
                     Label(holiday, systemImage: "flag.fill")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.holidayText)
                 }
             }
             .font(.footnote.weight(.semibold))
@@ -437,7 +436,7 @@ struct CalendarView: View {
                         HStack {
                             Text(DaySections.title(for: day))
                             if let holiday = SingaporeHolidays.name(on: day) {
-                                Text(holiday).foregroundStyle(.red)
+                                Text(holiday).foregroundStyle(Theme.holidayText)
                             }
                             if day < today {
                                 Text("Past").foregroundStyle(.tertiary)

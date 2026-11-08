@@ -24,6 +24,8 @@ struct MacSettingsPane: View {
     @AppStorage(WhatsAppReminders.skipEmptyKey) private var skipEmptyDays = false
     @AppStorage(ReminderSlot.today.timeKey) private var todayMinutes = ReminderSlot.today.defaultMinutes
     @AppStorage(ReminderSlot.tomorrow.timeKey) private var tomorrowMinutes = ReminderSlot.tomorrow.defaultMinutes
+    @AppStorage(WhatsAppReminders.followUpEnabledKey) private var followUpEnabled = true
+    @AppStorage(WhatsAppReminders.followUpMinutesKey) private var followUpMinutes = WhatsAppReminders.defaultFollowUpMinutes
     @ObservedObject private var reminders = WhatsAppReminders.shared
     @State private var opensAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginItemError: String?
@@ -155,6 +157,10 @@ struct MacSettingsPane: View {
                        displayedComponents: .hourAndMinute)
             DatePicker("Tomorrow's appointments at", selection: timeBinding($tomorrowMinutes, slot: .tomorrow),
                        displayedComponents: .hourAndMinute)
+            Toggle("Alert me about critical and overdue items", isOn: $followUpEnabled)
+                .onChange(of: followUpEnabled) { reminders.enabledDidChange() }
+            DatePicker("First alert each day at", selection: minutesBinding($followUpMinutes),
+                       displayedComponents: .hourAndMinute)
             Picker("Send via", selection: $deliveryRaw) {
                 ForEach(WhatsAppDelivery.allCases) { Text($0.title).tag($0.rawValue) }
             }
@@ -162,6 +168,7 @@ struct MacSettingsPane: View {
             HStack {
                 Button("Send Today's Now") { Task { await reminders.send(.today) } }
                 Button("Send Tomorrow's Now") { Task { await reminders.send(.tomorrow) } }
+                Button("Send Alert Now") { Task { await reminders.sendFollowUps() } }
                 if reminders.isSending { ProgressView().controlSize(.small) }
             }
             .disabled(reminders.isSending)
@@ -171,6 +178,9 @@ struct MacSettingsPane: View {
                     .foregroundStyle(reminders.lastStatus.contains("failed") ? .orange : .green)
                     .textSelection(.enabled)
             }
+            Text("The alert lists Critical to-dos and overdue to-dos and goals at that time each day, then anything new until 10 pm. Through Hermes, it goes to Telegram if WhatsApp fails.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Text(deliveryRaw == WhatsAppDelivery.hermes.rawValue
                  ? "Sent automatically through Hermes's WhatsApp bridge. One-time setup in Terminal: run `hermes whatsapp`, scan the QR code with WhatsApp, then restart the gateway (`hermes gateway restart`). Planner must be running at the scheduled time (it can sit in the background); a reminder missed while the Mac slept is sent on wake if it's less than 4 hours late."
                  : "Opens WhatsApp with the reminder already typed — press Send. Needs no setup, but someone has to be at the Mac. Planner must be running at the scheduled time.")
@@ -190,6 +200,18 @@ struct MacSettingsPane: View {
                 let c = Calendar.current.dateComponents([.hour, .minute], from: date)
                 minutes.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0)
                 reminders.timeDidChange(slot)
+            })
+    }
+
+    private func minutesBinding(_ minutes: Binding<Int>) -> Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.startOfDay(for: Date())
+                    .addingTimeInterval(TimeInterval(minutes.wrappedValue * 60))
+            },
+            set: { date in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+                minutes.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0)
             })
     }
 

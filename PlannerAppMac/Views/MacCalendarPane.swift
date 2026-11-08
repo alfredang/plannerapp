@@ -208,7 +208,7 @@ struct MacCalendarPane: View {
                         .font(.callout.weight(isToday ? .bold : .regular))
                         .monospacedDigit()
                         .foregroundStyle(isToday ? Color.white
-                                         : (holiday != nil ? Color.red
+                                         : (holiday != nil ? Theme.holidayText
                                             : (inMonth ? Color.primary : Color.secondary)))
                         .frame(minWidth: 20, minHeight: 20)
                         .background(Circle().fill(isToday ? Theme.accent : Color.clear))
@@ -216,7 +216,7 @@ struct MacCalendarPane: View {
                 if let holiday {
                     Text(holiday)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.holidayText)
                         .lineLimit(1)
                         .padding(.leading, 4)
                         .help("Singapore public holiday: \(holiday)")
@@ -238,7 +238,7 @@ struct MacCalendarPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(isSelected ? Theme.accent.opacity(0.12)
                     : (onLeave ? Color.green.opacity(0.15)
-                       : (holiday != nil ? Color.red.opacity(0.06)
+                       : (holiday != nil ? Theme.holidayFill
                           : (inMonth ? Color.clear : Color.primary.opacity(0.035)))))
         .background(isWeekend ? Color.gray.opacity(0.08) : Color.clear)
         .opacity(inMonth ? 1 : 0.6)
@@ -263,13 +263,12 @@ struct MacCalendarPane: View {
         }
         .font(.caption)
         .lineLimit(1)
-        .foregroundStyle(item.isDone || item.isCancelled ? Color.secondary : (item.isMissed ? Color.red : Color.primary))
+        .foregroundStyle(Theme.appointmentText(done: item.isDone, cancelled: item.isCancelled, missed: item.isMissed))
         .padding(.horizontal, 4)
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 4)
-            .fill(item.isMissed ? Color.red.opacity(0.15)
-                  : Theme.accent.opacity(item.isDone ? 0.07 : 0.2)))
+            .fill(Theme.appointmentFill(done: item.isDone, missed: item.isMissed)))
         .contentShape(Rectangle())
         .onTapGesture { editingItem = item }
         .help(chipHelp(item))
@@ -302,7 +301,7 @@ struct MacCalendarPane: View {
                 if let holiday = SingaporeHolidays.name(on: selectedDay) {
                     Label(holiday, systemImage: "flag.fill")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.holidayText)
                 }
                 Spacer()
                 Button {
@@ -379,7 +378,7 @@ struct MacCalendarPane: View {
                         HStack {
                             Text(dayTitle(day))
                             if let holiday = SingaporeHolidays.name(on: day) {
-                                Text(holiday).foregroundStyle(.red)
+                                Text(holiday).foregroundStyle(Theme.holidayText)
                             }
                             if day < today {
                                 Text("Past").foregroundStyle(.tertiary)
