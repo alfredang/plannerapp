@@ -153,10 +153,15 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   device appear under their card, and a brief re-published on the Mac reloads on the iPhone;
   pull down (or tap ↻) on a report to fetch the latest from iCloud.
 - 🧑‍💼 **Digital Workforce (Mac)** — each agent's profile, a horizontal org chart (full-screen
-  window, with a who-owns-what table), the Human Workforce and Trainers charts, a chat with any agent,
-  and an **Agent Jobs** view of every background job on the Mac (workforce LaunchAgents, Hermes
-  and OpenClaw cron, WhatsApp reminders). The agent panel has a built-in **Browser** tab for
-  reports and claude.ai artifacts.
+  window, with a who-owns-what table: name, model, role, what each agent owns, reporting line and
+  schedule), a chat with any agent, and an **Agent Jobs** view of every background job on the Mac
+  (the Digital Workforce scheduler, Hermes and OpenClaw cron, WhatsApp reminders). The agent panel
+  has a built-in **Browser** tab for reports and claude.ai artifacts.
+- 👥 **Human Workforce and Trainers (Mac only)** — opening **Human Workforce** shows a horizontal
+  staff and intern org chart, and **Trainers** a searchable trainer directory, each with an overview
+  page per person; links open the matching record in your HR system. The pages are built on the Mac
+  by the HR agent from your HRMS and LMS/TMS and **stay on the Mac**: they are never synced to iCloud
+  or published, because they hold personal details.
 - 📊 **Hermes Desktop (Mac)** — the sidebar button switches to the Hermes desktop app (sessions,
   bots and scheduled jobs).
 - 💬 **Feedback & About** — house-style tabs (WhatsApp feedback, developer info, version).
