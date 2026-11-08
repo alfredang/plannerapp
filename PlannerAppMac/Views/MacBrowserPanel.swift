@@ -357,7 +357,23 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
     }
 
     func open(report: Report) {
-        open(Self.reportsURL.appendingPathComponent(report.file))
+        // Mac-only pages are listed as "../people/updates/<file>"; resolve the "..".
+        open(Self.reportsURL.appendingPathComponent(report.file).standardizedFileURL)
+    }
+
+    /// Mac-only report pages (the Weekly HR Brief): personal data, so they live in the private
+    /// `people/updates/` folder with their own index, which UpdatesSync never reads (no iCloud, no iPhone).
+    nonisolated static var localUpdatesURL: URL {
+        HermesBridge.workspaceURL.appendingPathComponent("people/updates", isDirectory: true)
+    }
+
+    private func localReports() -> [Report] {
+        let dir = Self.localUpdatesURL
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent("index.json")),
+              let list = try? JSONDecoder().decode([Report].self, from: data) else { return [] }
+        return list
+            .filter { !$0.file.contains("/") && FileManager.default.fileExists(atPath: dir.appendingPathComponent($0.file).path) }
+            .map { var r = $0; r.file = "../people/updates/" + $0.file; return r }
     }
 
     /// Address-bar input: a path (/…, ~/…), a URL, or a bare host.
@@ -389,6 +405,7 @@ final class AgentBrowser: NSObject, ObservableObject, Identifiable, WKNavigation
         if let data = try? Data(contentsOf: dir.appendingPathComponent("index.json")),
            let list = try? JSONDecoder().decode([Report].self, from: data) {
             reports = list.filter { FileManager.default.fileExists(atPath: dir.appendingPathComponent($0.file).path) }
+                + localReports()
             return
         }
         let files = (try? FileManager.default.contentsOfDirectory(

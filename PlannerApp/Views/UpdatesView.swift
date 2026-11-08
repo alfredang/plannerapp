@@ -18,7 +18,9 @@ struct UpdatesView: View {
 
 struct UpdatesContentView: View {
     private enum Scope: String, CaseIterable, Identifiable {
-        case morning = "Morning Brief", other = "Other Updates"
+        // Updates = the weekly briefs and the Business Brief (ReportPresentation.isUpdate, shared
+        // with the Mac); Logs = every other agent report, kept apart so it doesn't distract.
+        case morning = "Morning Brief", updates = "Updates", logs = "Logs"
         var id: String { rawValue }
     }
 
@@ -34,7 +36,12 @@ struct UpdatesContentView: View {
     private var filtered: [AgentReport] {
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return reports.filter { report in
-            let matchesScope = scope == .morning ? report.isMorningBrief : !report.isMorningBrief
+            let matchesScope: Bool
+            switch scope {
+            case .morning: matchesScope = report.isMorningBrief
+            case .updates: matchesScope = !report.isMorningBrief && report.isUpdate
+            case .logs: matchesScope = !report.isMorningBrief && !report.isUpdate
+            }
             let matchesSearch = q.isEmpty || (report.displayTitle + " " + report.agent + " " + report.summary)
                 .lowercased().contains(q)
             return matchesScope && matchesSearch
@@ -70,7 +77,8 @@ struct UpdatesContentView: View {
             List {
                 if filtered.isEmpty {
                     ContentUnavailableView {
-                        Label(scope == .morning ? "No morning brief yet" : "No other updates", systemImage: "doc.richtext")
+                        Label(scope == .morning ? "No morning brief yet" : scope == .updates ? "No updates yet" : "No logs",
+                              systemImage: "doc.richtext")
                     } description: {
                         Text(search.isEmpty
                              ? "Reports published on your Mac appear here through iCloud."

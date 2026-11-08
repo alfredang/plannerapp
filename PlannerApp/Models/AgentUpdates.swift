@@ -23,6 +23,7 @@ final class AgentReport {
 
     var displayTitle: String { ReportPresentation.title(title) }
     var isMorningBrief: Bool { ReportPresentation.isMorningBrief(file: file, title: title) }
+    var isUpdate: Bool { ReportPresentation.isUpdate(file: file, title: title) }
     var displayHTML: String { ReportPresentation.title(html) }
 }
 

@@ -3,6 +3,8 @@
 ## [2.9] — 2026-11-08
 
 - Open a list on your iPhone or iPad and its pages, such as a client overview or the All Client Projects board, are shown first; tap one to read it, with the same content you see on your Mac
+- Updates now has three tabs: Morning Brief, Updates (the Business Brief and the weekly summaries: strategy, projects, AI news) and Logs, so the briefs you act on aren't buried among routine agent logs
+- The calendar colours each appointment by how it went: completed ones blue, missed ones red, and Singapore public holidays stand out
 
 ## [2.8] — 2026-11-06
 

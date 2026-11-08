@@ -126,9 +126,11 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   across iPhone, iPad and Mac, with a live sync status, last-sync time and **Sync Now** in
   Settings, plus a refresh button on the iPhone Calendar and report pages and pull-to-refresh
   on the Planner, Calendar and Updates tabs. The Calendar shows when the phone last synced, so stale data is easy to spot.
-- 🖥 **macOS desktop edition** — a two-column Mac app: Goals, Ideas, To-Do, Pinned, Today,
-  Appointments, Calendar, Pages, Updates, Agent Jobs, a Hermes Desktop shortcut and your lists in the sidebar, the item list with the
-  capture bar on the right. Distributed as a
+- 🖥 **macOS desktop edition** — a two-column Mac app that opens on **Updates**. The sidebar is grouped
+  into sections: **Strategy** (Updates, Goals, Ideas), **Workforce** (Human Workforce, Trainers,
+  Agent Workforce, Agent Jobs, Hermes Agent), **Schedule** (Today, Appointments, Calendar),
+  **Projects** (All Projects and each project folder), **Tasks** (To-Do, Pinned), **Content**
+  (Pages), **Logs**, then your own lists; the item list with the capture bar is on the right. Distributed as a
   [DMG](https://github.com/alfredang/plannerapp/releases/latest/download/Planner.dmg); build it
   yourself with `./scripts/build-macos-dmg.sh`.
 - 💚 **WhatsApp digests (Mac)** — today's appointments at 8 am and tomorrow's at 3 pm (times
@@ -145,16 +147,19 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   edits your planner through a local command bridge (a file inbox the open window answers),
   reading live state from an auto-maintained JSON snapshot. **The agent cannot delete your
   data by default:** `delete` archives instead and deleting a list is refused; opt in via
-  Settings ▸ Agent safety.
-- 📰 **Updates (iPhone + Mac)** — read the Digital Workforce agents' reports (Morning Brief,
-  daily previews, weekly reviews) in Planner ▸ Updates, newest first and grouped by day. Reply
+  Settings ▸ Agent safety. A voice-note bar under the terminal sends what you say to the
+  agent in front.
+- 📰 **Updates and Logs (iPhone + Mac)** — **Updates** holds only the briefs and weekly updates
+  you act on (Morning Brief, Business Brief, and the weekly strategy, project, HR and AI-news
+  updates); every other agent report is in **Logs** so it doesn't distract. On iPhone these are the
+  Morning Brief | Updates | Logs tabs. Reports are newest first and grouped by day. Reply
   under any card, from either device; on the Mac the agent that wrote the report answers right
   away, and every reply is handed to the agents' next run. Replies synced in from the other
   device appear under their card, and a brief re-published on the Mac reloads on the iPhone;
   pull down (or tap ↻) on a report to fetch the latest from iCloud.
-- 🧑‍💼 **Digital Workforce (Mac)** — each agent's profile, a horizontal org chart (full-screen
-  window, with a who-owns-what table: name, model, role, what each agent owns, reporting line and
-  schedule), a chat with any agent, and an **Agent Jobs** view of every background job on the Mac
+- 🧑‍💼 **Digital Workforce (Mac)** — each agent's profile, an org chart laid out like the Human
+  Workforce chart (one column per lead, compact cards that expand to show what the agent owns, its
+  schedule and model and a chat button; full-screen window; a who-owns-what table below), a chat with any agent, and an **Agent Jobs** view of every background job on the Mac
   (the Digital Workforce scheduler, Hermes and OpenClaw cron, WhatsApp reminders). The agent panel
   has a built-in **Browser** tab for reports and claude.ai artifacts.
 - 👥 **Human Workforce and Trainers (Mac only)** — opening **Human Workforce** shows a horizontal
@@ -255,8 +260,9 @@ PlannerAppMac/                          — macOS desktop edition (DMG)
                 MacCalendarPane.swift   — month grid / list calendar with holidays
                 MacTerminalPanel.swift  — agent panel: Claude Code / Codex / Hermes /
                                           OpenClaw terminal tabs + browser tabs
+                VoiceNote.swift         — voice-note bar under the agent terminal
                 MacBrowserPanel.swift   — browser tabs (reports, replies, sign-in popups)
-                MacUpdatesPane.swift    — report history, grouped by day
+                MacUpdatesPane.swift    — Updates and Logs feeds, grouped by day
                 MacSchedulePane.swift   — every scheduled background job on this Mac
                 MacAgentProfileView.swift, MacAgentChatView.swift,
                 DigitalWorkforceArtifactView.swift — agent profiles, org chart, chat

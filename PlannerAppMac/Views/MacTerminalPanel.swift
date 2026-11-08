@@ -142,6 +142,18 @@ final class AgentPanelTabs: ObservableObject {
         return session
     }
 
+    /// A voice note from the bar under the terminal: types it into the agent in front and
+    /// submits it (relaunching the agent first if it has stopped).
+    func submitVoice(_ text: String) {
+        UserDefaults.standard.set(true, forKey: "hermesPanelVisible")
+        showKind("terminal")
+        let agent = selectedTerminal
+        if terminals.first(where: { $0.agent == agent })?.exited == true { restart(agent, resume: true) }
+        guard let tab = terminals.first(where: { $0.agent == agent }) else { return }
+        let session = session(for: tab)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { session.submitText(text) }
+    }
+
     func selectTerminal(_ agent: TerminalAgent) {
         selectedTerminal = agent
         showKind("terminal")
@@ -279,7 +291,7 @@ struct MacTerminalPanel: View {
             }
             .clipped()
             if !showsBrowser {
-                Divider()
+                VoiceNoteBar(agentName: tabs.selectedTerminal.title)
                 footer
             }
         }
@@ -558,6 +570,16 @@ final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate {
             environment: env.map { "\($0.key)=\($0.value)" }
         )
         watchExit(of: terminal.process.shellPid)
+    }
+
+    /// Pastes text into the agent's prompt as one block, then presses Return a moment later,
+    /// so it is sent as a message (a voice note from the bar under the terminal).
+    func submitText(_ text: String) {
+        let view = view
+        let bracketed = view.terminal?.bracketedPasteMode == true
+        view.send(txt: bracketed ? "\u{1b}[200~\(text)\u{1b}[201~" : text)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { view.send(txt: "\r") }
+        setActive(true, refocus: true)
     }
 
     /// Types a slash command into the agent: clears whatever is half-typed (⌃U), enters the

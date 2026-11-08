@@ -115,79 +115,89 @@ struct DigitalWorkforceArtifactView: NSViewRepresentable {
 }
 
 enum WorkforceArtifactHTML {
-    /// A horizontal org chart: the principal on top, one column per direct report with that
-    /// lead's team beneath it, then a "who owns what" table. `zoomable` adds the full-screen button.
+    /// Column headings for the principal's direct reports, so the chart reads like the Human
+    /// Workforce chart (one column per department). Unknown leads fall back to their title.
+    static let departments = ["atlas": "Operations", "oracle": "Strategy", "nova": "Growth"]
+
+    /// Laid out like the Human Workforce org chart: the principal on top, one column per direct
+    /// report (department header with headcount, the lead's card, then their team), compact cards
+    /// that expand for details and the chat button, then a "who owns what" table.
+    /// `zoomable` adds the full-screen button.
     static func render(chart: OrgNode, jobs: [ScheduledJob], dark: Bool, zoomable: Bool = true) -> String {
         let owns = AgentRoster.ownership
         let staffCount = chart.descendantIDs.intersection(AgentRoster.staffIDs).count
-        let branches = chart.children.map { lead -> String in
+        let columns = chart.children.map { lead -> String in
             let team = staff(of: lead)
-            let sub = team.isEmpty ? "" : "<div class=\"sub\" aria-label=\"Reports to \(escape(lead.name))\">"
-                + team.map { card($0, manager: lead.name, jobs: jobs, owns: owns, lead: false) }.joined() + "</div>"
-            return "<div class=\"branch\">" + card(lead, manager: chart.name, jobs: jobs, owns: owns, lead: true) + sub + "</div>"
+            let heading = departments[lead.agent?.id ?? ""] ?? (lead.agent?.title ?? lead.name)
+            return "<div class=\"col\"><div class=\"ch\">\(escape(heading)) · \(escape(lead.name)) <span>\(team.count + 1)</span></div>"
+                + card(lead, manager: chart.name, jobs: jobs, owns: owns, lead: true)
+                + team.map { card($0, manager: lead.name, jobs: jobs, owns: owns, lead: false) }.joined()
+                + "</div>"
         }.joined()
         let table = ownershipTable(chart: chart, jobs: jobs, owns: owns)
-        let background = dark ? "#171b21" : "#f4f5f7"
-        let surface = dark ? "#242a33" : "#ffffff"
-        let foreground = dark ? "#eef1f5" : "#202833"
-        let secondary = dark ? "#b9c4ce" : "#5c6974"
-        let border = dark ? "#44505c" : "#c9d0d6"
         let zoomButton = zoomable
             ? "<button type=\"button\" class=\"zoom\" id=\"zoom\" aria-label=\"Open the whole org chart in a large window\">⤢ Full screen</button>"
             : ""
+        let palette = dark
+            ? "--bg:#171b21;--card:#242a33;--ink:#eef1f5;--muted:#b9c4ce;--line:#44505c;--accent:#a8d9d7;--lead:#e2c99f"
+            : "--bg:#f4f5f7;--card:#ffffff;--ink:#202833;--muted:#5c6974;--line:#d6dbe0;--accent:#376b69;--lead:#865e2f"
         return """
         <!doctype html><html lang="en"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
-        <title>Digital Workforce Org Chart</title>
+        <title>Agent Workforce Org Chart</title>
         <style>
-        :root{color-scheme:\(dark ? "dark" : "light");--bg:\(background);--surface:\(surface);--text:\(foreground);--muted:\(secondary);--border:\(border);--accent:\(dark ? "#a8d9d7" : "#376b69");--lead:\(dark ? "#e2c99f" : "#865e2f")}
-        *{box-sizing:border-box}body{margin:0;padding:22px;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,sans-serif}
-        main{max-width:1500px;margin:auto}
-        header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
-        h1{font:700 clamp(24px,3vw,34px)/1.15 Georgia,serif;margin:0 0 8px}header p{color:var(--muted);margin:0 0 6px;max-width:820px}.hint{font-size:13px}
-        .zoom{font:600 13px -apple-system,sans-serif;padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--surface);color:var(--accent);cursor:pointer;white-space:nowrap}
-        .zoom:hover{background:var(--accent);color:var(--surface)}
-        .principal{max-width:360px;margin:18px auto 0;padding:14px;text-align:center;border:1px solid \(dark ? "#9b835a" : "#c7ac82");background:\(dark ? "#3c3225" : "#f4e8d2");border-radius:10px}
-        .principal h2{font:700 21px Georgia,serif;margin:0 0 3px}.principal p{margin:0;font-size:12px;color:var(--lead);text-transform:uppercase;letter-spacing:.06em}
-        .stem{height:22px;width:2px;background:var(--border);margin:auto}
-        .scroll{overflow-x:auto;padding-bottom:8px}
-        .tree{display:flex;gap:18px;align-items:flex-start;min-width:max-content;margin:0 auto;padding-top:22px;position:relative;justify-content:center}
-        .branch{position:relative;width:300px;display:flex;flex-direction:column;gap:10px}
-        .branch::before{content:"";position:absolute;top:-22px;left:50%;height:22px;border-left:2px solid var(--border)}
-        .branch::after{content:"";position:absolute;top:-22px;left:-9px;right:-9px;border-top:2px solid var(--border)}
-        .branch:first-child::after{left:50%}.branch:last-child::after{right:50%}.branch:only-child::after{display:none}
-        .sub{display:flex;flex-direction:column;gap:9px;margin-left:18px;padding-left:16px;border-left:2px solid var(--border)}
-        .sub .staff{position:relative}.sub .staff::before{content:"";position:absolute;left:-18px;top:26px;width:16px;border-top:2px solid var(--border)}
-        .staff{display:flex;flex-direction:column;align-items:stretch;gap:6px;text-align:left;width:100%;padding:12px 13px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-top:3px solid var(--accent);border-radius:9px;cursor:pointer;font:inherit;transition:transform .12s,border-color .12s}
-        .staff.lead{border-top:4px solid var(--lead);box-shadow:0 1px 3px rgba(0,0,0,.08)}
-        .staff:hover{transform:translateY(-2px);border-color:var(--accent)}.staff:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
-        .staff h2{font:700 18px Georgia,serif;margin:0}.heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
-        .model{font:10px ui-monospace,monospace;color:var(--accent);padding:3px 6px;border-radius:4px;background:\(dark ? "#203d3c" : "#e4f0ee");white-space:nowrap}
-        .role{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:650}
-        .summary{font-size:12px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-        .owns{font-size:12px}.owns b{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:2px}.owns ul{margin:0;padding-left:15px;display:grid;gap:2px}
-        .facts{color:var(--muted);font:10.5px/1.55 ui-monospace,monospace;border-top:1px dashed var(--border);padding-top:5px}
-        .chat{color:var(--accent);font-size:11.5px;font-weight:600}
-        .who{margin-top:30px}.who h2{font:700 20px Georgia,serif;margin:0 0 10px}
-        .who table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:12px}
-        .who th,.who td{text-align:left;vertical-align:top;padding:7px 9px;border-bottom:1px solid var(--border)}
+        :root{color-scheme:\(dark ? "dark" : "light");\(palette)}
+        *{box-sizing:border-box}body{margin:0;padding:22px;background:var(--bg);color:var(--ink);font:13.5px/1.45 -apple-system,BlinkMacSystemFont,sans-serif}
+        h1{font:700 30px Georgia,serif;margin:0 0 6px}
+        header{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start}header p{color:var(--muted);margin:0 0 4px;max-width:860px}
+        .zoom{font:600 13px -apple-system,sans-serif;padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--card);color:var(--accent);cursor:pointer;white-space:nowrap}
+        .tools{margin:12px 0 0;display:flex;gap:8px}.tools button{font:600 12px -apple-system,sans-serif;padding:5px 10px;border-radius:7px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+        .principal{max-width:340px;margin:16px auto 0;padding:12px;text-align:center;border:1px solid #c7ac82;background:rgba(199,172,130,.18);border-radius:10px}
+        .principal h2{font:700 19px Georgia,serif;margin:0}.principal p{margin:2px 0 0;font-size:11.5px;color:var(--lead);text-transform:uppercase;letter-spacing:.06em}
+        .stem{width:2px;height:18px;background:var(--line);margin:auto}
+        .scroll{overflow-x:auto;padding-bottom:10px}.tree{display:flex;gap:14px;min-width:max-content;padding-top:18px;position:relative;justify-content:center;align-items:flex-start}
+        .col{width:285px;position:relative;display:flex;flex-direction:column;gap:8px}
+        .col::before{content:"";position:absolute;top:-18px;left:50%;height:18px;border-left:2px solid var(--line)}
+        .col::after{content:"";position:absolute;top:-18px;left:-8px;right:-8px;border-top:2px solid var(--line)}
+        .col:first-child::after{left:50%}.col:last-child::after{right:50%}.col:only-child::after{display:none}
+        .ch{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);background:var(--card);border:1px solid var(--line);border-top:3px solid var(--lead);border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between}
+        .ch span{color:var(--muted)}
+        .person{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px}
+        .person.lead{border-left-color:var(--lead)}
+        .person summary{cursor:pointer;padding:9px 10px;list-style:none;display:grid;grid-template-columns:1fr auto;gap:2px 8px}
+        .person summary::-webkit-details-marker{display:none}.pn{font-weight:700}.pt{grid-column:1/3;color:var(--muted);font-size:12px}
+        .tags{grid-column:1/3;display:flex;gap:5px;flex-wrap:wrap}
+        .badge{font-size:10px;padding:2px 6px;border-radius:999px;background:rgba(55,107,105,.12);color:var(--accent);height:fit-content;white-space:nowrap}
+        .badge.lead{background:rgba(199,172,130,.22);color:var(--lead)}.badge.model{font-family:ui-monospace,monospace}
+        .pd{padding:0 10px 10px;border-top:1px dashed var(--line)}.kv{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:12.5px}
+        .kv span{color:var(--muted);white-space:nowrap}.kv b{font-weight:600;text-align:right;word-break:break-word}
+        .jdh{margin-top:8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+        .pd ul{margin:2px 0 4px;padding-left:16px}.pd p{margin:3px 0;font-size:12.5px}
+        .chat{display:inline-block;margin-top:8px;font:600 12px -apple-system,sans-serif;color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
+        .chat:hover{text-decoration:underline}.chat:focus-visible,.person summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+        .who{margin-top:28px}.who h2{font:700 19px Georgia,serif;margin:0 0 10px}
+        .who table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:12px}
+        .who th,.who td{text-align:left;vertical-align:top;padding:7px 9px;border-bottom:1px solid var(--line)}
         .who th{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}.who td:first-child{font-weight:650;white-space:nowrap}
-        .footer{padding-top:18px;color:var(--muted);font-size:12px}
-        @media(prefers-reduced-motion:reduce){.staff{transition:none}.staff:hover{transform:none}}
-        </style></head><body><main>
-        <header><div><h1>Digital Workforce Org Chart</h1>
-        <p>\(staffCount) AI staff running a one-person company for \(escape(chart.name)): one owner per job, no overlaps. Planner is the master schedule; agents propose, Alfred decides.</p>
-        <p class="hint">Select a staff card to chat with that agent. Scroll sideways if the chart is wider than the pane.</p></div>\(zoomButton)</header>
-        <section class="principal" aria-label="Principal"><h2>\(escape(chart.name))</h2><p>\(escape(chart.title))</p></section>
+        .model{font:10px ui-monospace,monospace;color:var(--accent)}
+        footer{margin-top:20px;font-size:12px;color:var(--muted)}
+        </style></head><body>
+        <header><div><h1>Agent Workforce Org Chart</h1>
+        <p>\(staffCount) AI staff for \(escape(chart.name)): one owner per job, no overlaps. Nova finds and sizes growth; Oracle owns strategy and recommends; Alfred decides.</p>
+        <p>Click an agent for what they own, their schedule and model, and the button to chat with them. Scroll sideways if the chart is wider than the pane.</p>
+        <div class="tools"><button type="button" id="openall">Expand all</button><button type="button" id="closeall">Collapse all</button></div></div>\(zoomButton)</header>
+        <div class="principal"><h2>\(escape(chart.name))</h2><p>\(escape(chart.title))</p></div>
         <div class="stem" aria-hidden="true"></div>
-        <div class="scroll"><section class="tree" aria-label="Org chart">\(branches)</section></div>
+        <div class="scroll"><section class="tree" aria-label="Org chart">\(columns)</section></div>
         \(table)
-        <footer class="footer">Ownership comes from the "who owns what" table in ~/DigitalWorkforce/COMPANY.md, reporting lines from its "reports to" lines, schedules from the scheduler (~/DigitalWorkforce/bin/scheduler.py) and models from each agent's definition. Each staff member has a separate saved chat.</footer>
-        </main><script>
+        <footer>Ownership comes from the "who owns what" table in ~/DigitalWorkforce/COMPANY.md, reporting lines from its "reports to" lines, schedules from the scheduler (~/DigitalWorkforce/bin/scheduler.py) and models from each agent's definition. Each agent has its own saved chat.</footer>
+        <script>
         document.querySelectorAll('[data-agent]').forEach(function(button){
           button.addEventListener('click',function(){window.webkit.messageHandlers.staffChat.postMessage({id:button.dataset.agent});});
         });
+        document.getElementById('openall').onclick=function(){document.querySelectorAll('details').forEach(function(x){x.open=true})};
+        document.getElementById('closeall').onclick=function(){document.querySelectorAll('details').forEach(function(x){x.open=false})};
         var zoom=document.getElementById('zoom');
         if(zoom){zoom.addEventListener('click',function(){window.webkit.messageHandlers.staffChat.postMessage({zoom:'1'});});}
         </script></body></html>
@@ -204,25 +214,35 @@ enum WorkforceArtifactHTML {
         let scheduled = jobs.filter { $0.detail?.lowercased() == agent.id }.map(\.schedule)
         if !scheduled.isEmpty { return scheduled.joined(separator: " · ") }
         let when = (owns[agent.id] ?? []).map(\.when).filter { !$0.isEmpty }
-        return when.isEmpty ? "No fixed schedule" : when.joined(separator: " · ")
+        return when.isEmpty ? "On demand" : when.joined(separator: " · ")
     }
 
+    /// One compact, expandable card, styled like a person on the Human Workforce chart.
     private static func card(_ node: OrgNode, manager: String, jobs: [ScheduledJob],
                              owns: [String: [AgentRoster.Ownership]], lead: Bool) -> String {
         guard let agent = node.agent else { return "" }
-        let summary = agent.summary.isEmpty ? agent.title : String(agent.summary.prefix(260))
-        let jobsOwned = owns[agent.id] ?? []
-        let body = jobsOwned.isEmpty
-            ? "<span class=\"summary\">\(escape(summary))</span>"
-            : "<span class=\"owns\"><b>Owns</b><ul>" + jobsOwned.map { "<li>\(escape($0.job))</li>" }.joined() + "</ul></span>"
         let team = staff(of: node).compactMap { $0.agent?.displayName }
-        let leadsLine = team.isEmpty ? "" : "<br>Leads \(escape(team.joined(separator: ", ")))"
+        let when = schedule(agent, jobs: jobs, owns: owns)
+        // The tag shows the agent's main slot: its daily run when it has one (Nova's 06:43 scan, not Fri).
+        let slots = when.components(separatedBy: " · ")
+        let firstSlot = slots.first { $0.hasPrefix("Daily") } ?? slots.first ?? when
+        var tags = "<span class=\"badge model\">\(escape(agent.modelName))</span><span class=\"badge\">🕒 \(escape(firstSlot))</span>"
+        if lead && !team.isEmpty { tags += "<span class=\"badge lead\">Leads \(team.count)</span>" }
+        let jobsOwned = owns[agent.id] ?? []
+        let ownsBlock = jobsOwned.isEmpty
+            ? (agent.summary.isEmpty ? "" : "<div class=\"jdh\">Role</div><p>\(escape(String(agent.summary.prefix(320))))</p>")
+            : "<div class=\"jdh\">Owns</div><ul>" + jobsOwned.map { "<li>\(escape($0.job))</li>" }.joined() + "</ul>"
+        let leadsRow = team.isEmpty ? "" : "<div class=\"kv\"><span>Leads</span><b>\(escape(team.joined(separator: ", ")))</b></div>"
         return """
-        <button type="button" class="staff\(lead ? " lead" : "")" data-agent="\(escape(agent.id))" aria-label="Chat with \(escape(agent.displayName))">
-        <span class="heading"><h2>\(escape(agent.displayName))</h2><span class="model">\(escape(agent.modelName))</span></span>
-        <span class="role">\(escape(agent.title))</span>\(body)
-        <span class="facts">Reports to \(escape(manager))\(leadsLine)<br>🕒 \(escape(schedule(agent, jobs: jobs, owns: owns)))</span>
-        <span class="chat">Chat with \(escape(agent.displayName)) →</span></button>
+        <details class="person\(lead ? " lead" : "")"><summary><span class="pn">\(escape(agent.displayName))</span><span></span>
+        <span class="pt">\(escape(agent.title))</span><span class="tags">\(tags)</span></summary>
+        <div class="pd">
+        <div class="kv"><span>Reports to</span><b>\(escape(manager))</b></div>\(leadsRow)
+        <div class="kv"><span>Schedule</span><b>\(escape(when))</b></div>
+        <div class="kv"><span>Model</span><b>\(escape(agent.modelName))</b></div>
+        \(ownsBlock)
+        <button type="button" class="chat" data-agent="\(escape(agent.id))">Chat with \(escape(agent.displayName)) →</button>
+        </div></details>
         """
     }
 

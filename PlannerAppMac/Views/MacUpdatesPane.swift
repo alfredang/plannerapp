@@ -1,10 +1,14 @@
 import SwiftUI
 import AppKit
 
-/// Sidebar ▸ Updates: the history of every report page the agents have published (the
-/// `reports/` folder and its `index.json`), newest first, grouped by day. Clicking one opens it
-/// in the agent panel's Browser tab.
+/// Sidebar ▸ Updates / Logs: the report pages the agents have published (the `reports/` folder and
+/// its `index.json`, plus the Mac-only HR pages), newest first, grouped by day. Updates holds only the
+/// briefs and weekly updates (`ReportPresentation.isUpdate`); Logs holds everything else, so checks,
+/// scans and monitors don't bury the briefs. Clicking one opens it in the agent panel's Browser tab.
 struct MacUpdatesPane: View {
+    enum Feed { case updates, logs }
+    var feed: Feed = .updates
+
     @ObservedObject private var browser = AgentBrowser.shared
     @AppStorage("hermesPanelVisible") private var panelVisible = true
     @State private var search = ""
@@ -18,10 +22,16 @@ struct MacUpdatesPane: View {
         return toggledDays.contains(key) ? !openByDefault : openByDefault
     }
 
+    private var feedReports: [AgentBrowser.Report] {
+        browser.reports.filter {
+            ReportPresentation.isUpdate(file: $0.file, title: $0.displayTitle) == (feed == .updates)
+        }
+    }
+
     private var filtered: [AgentBrowser.Report] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return browser.reports }
-        return browser.reports.filter {
+        guard !q.isEmpty else { return feedReports }
+        return feedReports.filter {
             [$0.displayTitle, $0.agent ?? "", $0.summary ?? "", $0.date ?? ""]
                 .joined(separator: " ").lowercased().contains(q)
         }
@@ -68,15 +78,17 @@ struct MacUpdatesPane: View {
                     .buttonStyle(.plain)
                 }
             }
-            if browser.reports.isEmpty {
+            if feedReports.isEmpty {
                 ContentUnavailableView(
-                    "No updates yet", systemImage: "doc.richtext",
-                    description: Text("Reports your agents publish appear here — the 07:30 Morning Brief, daily briefs and weekly reviews."))
+                    feed == .updates ? "No updates yet" : "No logs yet", systemImage: "doc.richtext",
+                    description: Text(feed == .updates
+                        ? "The briefs and weekly updates appear here: Morning Brief, Business Brief, and the weekly strategy, project, HR and AI news updates."
+                        : "Everything else the agents publish: project checks, scans, watchers and monitors."))
             }
         }
-        .searchable(text: $search, prompt: "Search updates")
-        .navigationTitle("Updates")
-        .navigationSubtitle("\(browser.reports.count) report\(browser.reports.count == 1 ? "" : "s")")
+        .searchable(text: $search, prompt: feed == .updates ? "Search updates" : "Search logs")
+        .navigationTitle(feed == .updates ? "Updates" : "Logs")
+        .navigationSubtitle("\(feedReports.count) report\(feedReports.count == 1 ? "" : "s")")
         .toolbar {
             ToolbarItem {
                 Button { browser.reloadReports() } label: { Image(systemName: "arrow.clockwise") }
@@ -162,6 +174,8 @@ struct MacUpdatesPane: View {
         case "ledger": return "💰"
         case "oracle": return "🧭"
         case "nova": return "🚀"
+        case "helm": return "🗂️"
+        case "vesta": return "👥"
         default: return "📄"
         }
     }

@@ -66,11 +66,21 @@ the workspace `memory/` folder.
   ReportReply]`, `cloudKitDatabase: .automatic`, local/in-memory fallback. Starts
   `UpdatesSync` + `AppointmentAgent`; app delegate applies appearance and calls
   `HermesBridge.prepareWorkspace()`. Closing the window does not quit.
-- `Views/MacRootView.swift` — `NavigationSplitView`; sidebar sections Strategy (Goals, Ideas), Tasks
-  (To-Do, Pinned), Schedule (Today, Appointments — grouped by day, absorbed Upcoming — and
-  Calendar), Content (Pages, Updates), Agents (Agent Jobs = `jobs`, plus a "Hermes Desktop" button (`HermesDesktop.open`: activates/launches
-  `com.nousresearch.hermes`; the old embedded Hermes Dashboard pane was removed)), My Lists, Browse
-  (Archive), Support. `SidebarItem` keeps `.scheduled`/`.todos` for persisted state only. User lists (`ListHierarchy`) + Digital Workforce staff.
+- `Views/MacRootView.swift` — `NavigationSplitView`; sidebar sections in this order: Strategy (Updates —
+  the launch page — Goals, Ideas), Workforce (the Human Workforce and Trainers list trees, the Digital Workforce list
+  tree shown as "Agent Workforce" with its staff, Agent Jobs = `jobs`, and a "Hermes Agent" button —
+  `HermesDesktop.open` activates/launches `com.nousresearch.hermes`), Schedule (Today, Appointments —
+  grouped by day, absorbed Upcoming — and Calendar), Projects ("All Projects" = the Projects list's own
+  items, then its sub-lists), Tasks (To-Do, Pinned), Content (Pages), Logs, My Lists (every other list
+  tree), Browse (Archive), Support. Which roots get their own section: `projectsRoot` / `workforceRoots`
+  (matched by name; data unchanged). Each section's drag-to-reorder maps its indices back onto the full
+  outline (`moveRows`). `SidebarItem` keeps `.scheduled`/`.todos` for persisted state only.
+- Updates vs Logs: `ReportPresentation.isUpdate` (shared) keeps only the briefs and weekly updates in
+  Updates (Morning Brief, Business Brief, Weekly Business Strategy Summary, Weekly Project Update,
+  Weekly HR Brief, Weekly AI News Update, matched by file name then title); everything else is Logs.
+  `MacUpdatesPane(feed:)` draws both. The Mac also lists Mac-only pages from
+  `<workspace>/people/updates/index.json` (Weekly HR Brief; personal data), which `UpdatesSync` never
+  reads, so they never reach iCloud or the iPhone.
 - Panes: `MacPlannerPane` (items + capture bar; on Goals and Ideas the items area is
   `MacResearchPagesView`: one tab per item, the selected one's page rendered in the pane through an
   embedded `AgentBrowser`, so Reply boxes work and links open in the panel), `MacCalendarPane`, `MacUpdatesPane`,

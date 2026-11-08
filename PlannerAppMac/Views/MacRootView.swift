@@ -10,7 +10,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     // Smart lists
     case all, today, scheduled, pinned, todos, appointments, pages, goals, ideas
     // Browse
-    case calendar, jobs, updates, archive
+    case calendar, jobs, updates, logs, archive
     // Support
     case settings, feedback, about
 
@@ -30,6 +30,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .calendar:     return "Calendar"
         case .jobs:         return "Agent Jobs"
         case .updates:      return "Updates"
+        case .logs:         return "Logs"
         case .archive:      return "Archive"
         case .settings:     return "Settings"
         case .feedback:     return "Feedback"
@@ -51,6 +52,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .calendar:     return "calendar.badge.clock"
         case .jobs:         return "clock.arrow.circlepath"
         case .updates:      return "doc.richtext.fill"
+        case .logs:         return "list.bullet.rectangle"
         case .archive:      return "archivebox.fill"
         case .settings:     return "gearshape.fill"
         case .feedback:     return "bubble.left.and.bubble.right.fill"
@@ -58,8 +60,8 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    /// The sidebar groups the categories into Strategy (Goals, Ideas), Tasks (To-Do, Pinned, Today),
-    /// Schedule (Appointments, Calendar), Content (Pages, Updates) and Agents (Agent Jobs) — see
+    /// The sidebar groups the categories into Strategy (Updates, Goals, Ideas), Tasks (To-Do, Pinned),
+    /// Schedule (Today, Appointments, Calendar), Content (Pages) and Agents (Agent Jobs) — see
     /// `MacRootView.sidebar`. Pages, Goals and Ideas stay out of the work lists, so they never inflate
     /// the To-Do or Pinned counts. Not offered, but kept for persisted state and
     /// `-debugSidebar`: `.todos` (duplicated To-Do) and `.scheduled` (Upcoming — the same
@@ -113,7 +115,8 @@ struct MacRootView: View {
     /// The appearance actually on screen (follows `AppearanceController` via NSApp).
     @Environment(\.colorScheme) private var colorScheme
 
-    @State private var selection: SidebarSelection = .category(.all)
+    /// Planner opens on Updates (today's reports, Morning Brief first).
+    @State private var selection: SidebarSelection = .category(.updates)
     @State private var staffRoster: [String: AgentProfile] = [:]
     @State private var showingNewList = false
     @State private var newListName = ""
@@ -292,9 +295,9 @@ struct MacRootView: View {
             }
         }
         .onChange(of: lists.count) {
-            // If the selected user list was deleted (locally or via sync), fall back to All.
+            // If the selected user list was deleted (locally or via sync), fall back to Updates.
             if case .userList(let id) = selection, !lists.contains(where: { $0.id == id }) {
-                selection = .category(.all)
+                selection = .category(.updates)
             }
         }
         // Hermes agent bridge: keep the workspace + JSON snapshot current, and execute the
@@ -436,28 +439,33 @@ struct MacRootView: View {
 
     private var sidebar: some View {
         List(selection: $selection) {
-            // Grouped by what the items are: goals and ideas, work, time, content, agents.
+            // Worked out once per render, not once per row. Projects and the two workforce trees get
+            // their own sections; My Lists holds the rest. Drags map back onto `allRows` (moveRows).
+            let collapsed = sidebarCollapsed
+            let counts = subtreeActiveCounts
+            let allRows = ListHierarchy.rows(lists, collapsed: collapsed)
+            // Strategy, Workforce, Schedule, Projects, Tasks, Content, Logs, then the user's own lists.
             Section("Strategy") {
-                categoryRow(.goals, count: count(for: .goals))
-                categoryRow(.ideas, count: count(for: .ideas))
-            }
-            Section("Tasks") {
-                ForEach([SidebarItem.all, .pinned]) { categoryRow($0, count: count(for: $0)) }
-            }
-            Section("Schedule") {
-                categoryRow(.today, count: count(for: .today))
-                // Appointments grouped by day (it absorbed the old Upcoming view).
-                categoryRow(.appointments, count: count(for: .appointments))
-                categoryRow(.calendar, count: upcomingAppointmentCount)
-            }
-            Section("Content") {
-                categoryRow(.pages, count: count(for: .pages))
-                // History of the agents' report pages; opens them in the Browser tab.
+                // The agents' reports (Morning Brief etc.), opened in the Browser tab. First row
+                // and the page Planner opens on.
                 Label(SidebarItem.updates.title, systemImage: SidebarItem.updates.symbol)
                     .badge(todaysUpdates)
                     .tag(SidebarSelection.category(.updates))
+                categoryRow(.goals, count: count(for: .goals))
+                categoryRow(.ideas, count: count(for: .ideas))
             }
-            Section("Agents") {
+            Section("Workforce") {
+                // Human Workforce (HR org chart, interns), Trainers (trainer directory), Agent Workforce
+                // (the Digital Workforce list: agents + org chart), the agents' scheduled jobs, then Hermes.
+                ForEach(Self.workforceRoots, id: \.self) { name in
+                    if let root = rootList(name) {
+                        let tree = treeRows(root, in: allRows)
+                        ForEach(tree) { row in
+                            listRows(row, depth: row.depth, collapsed: collapsed, counts: counts)
+                        }
+                        .onMove { moveRows(tree, in: allRows, from: $0, to: $1) }
+                    }
+                }
                 // Scheduled background jobs (agents, cron) — not planner items, so no count.
                 Label(SidebarItem.jobs.title, systemImage: SidebarItem.jobs.symbol)
                     .tag(SidebarSelection.category(.jobs))
@@ -465,7 +473,7 @@ struct MacRootView: View {
                 // action, not a pane, so it has no selection tag.
                 Button(action: HermesDesktop.open) {
                     HStack {
-                        Label("Hermes Desktop", systemImage: "arrow.up.forward.app")
+                        Label("Hermes Agent", systemImage: "arrow.up.forward.app")
                         Spacer()
                     }
                     .contentShape(Rectangle())
@@ -473,28 +481,43 @@ struct MacRootView: View {
                 .buttonStyle(.plain)
                 .help("Switch to the Hermes desktop app")
             }
-            Section {
-                // Worked out once per render, not once per row.
-                let collapsed = collapsedLists
-                let counts = subtreeActiveCounts
-                ForEach(ListHierarchy.rows(lists, collapsed: collapsed)) { row in
-                    userListRow(row.list, depth: row.depth,
-                                isCollapsed: collapsed.contains(row.list.id),
-                                count: counts[row.list.id] ?? 0)
-                    if row.list.name.caseInsensitiveCompare("Digital Workforce") == .orderedSame,
-                       !collapsed.contains(row.list.id) {
-                        let listed = Set((row.list.children ?? []).map { $0.name.lowercased() })
-                        ForEach(AgentRoster.staffIDs.filter { !listed.contains($0) }, id: \.self) { id in
-                            if let agent = staffRoster[id] {
-                                Label(agent.displayName, systemImage: "person.crop.circle")
-                                    .padding(.leading, CGFloat(row.depth + 1) * 28)
-                                    .tag(SidebarSelection.digitalStaff(id))
-                                    .accessibilityLabel("Chat with \(agent.displayName)")
-                            }
-                        }
+            Section("Schedule") {
+                categoryRow(.today, count: count(for: .today))
+                // Appointments grouped by day (it absorbed the old Upcoming view).
+                categoryRow(.appointments, count: count(for: .appointments))
+                categoryRow(.calendar, count: upcomingAppointmentCount)
+            }
+            if let projects = rootList(Self.projectsRoot) {
+                let tree = Array(treeRows(projects, in: allRows).dropFirst())
+                Section("Projects") {
+                    // The Projects folder's own items (and its whole count); its sub-lists follow.
+                    Label("All Projects", systemImage: "folder")
+                        .badge(counts[projects.id] ?? 0)
+                        .tag(selection(for: projects))
+                    ForEach(tree) { row in
+                        listRows(row, depth: row.depth - 1, collapsed: collapsed, counts: counts)
                     }
+                    .onMove { moveRows(tree, in: allRows, from: $0, to: $1) }
                 }
-                .onMove(perform: moveLists)
+            }
+            Section("Tasks") {
+                ForEach([SidebarItem.all, .pinned]) { categoryRow($0, count: count(for: $0)) }
+            }
+            Section("Content") {
+                categoryRow(.pages, count: count(for: .pages))
+            }
+            Section("Logs") {
+                // Every agent report that isn't a brief or weekly update (checks, scans, watchers,
+                // monitors), kept out of Updates. No badge, so it doesn't pull attention.
+                Label(SidebarItem.logs.title, systemImage: SidebarItem.logs.symbol)
+                    .tag(SidebarSelection.category(.logs))
+            }
+            Section {
+                let mine = myListRows(allRows)
+                ForEach(mine) { row in
+                    listRows(row, depth: row.depth, collapsed: collapsed, counts: counts)
+                }
+                .onMove { moveRows(mine, in: allRows, from: $0, to: $1) }
                 Button {
                     newListName = ""
                     newListParent = nil
@@ -560,6 +583,14 @@ struct MacRootView: View {
     }
 
     /// Compact iCloud sync indicator pinned under the sidebar.
+    /// "Planner 2.9 (58)": the version and build, shown at the bottom left of the sidebar.
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "Planner \(version) (\(build))"
+    }
+
     private var syncStatusRow: some View {
         HStack(spacing: 6) {
             Image(systemName: syncStatus.isOn ? "checkmark.icloud.fill" : "icloud.slash")
@@ -568,7 +599,14 @@ struct MacRootView: View {
             Text(syncStatus.label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(appVersion)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .fixedSize()
+                .help("Planner version (build)")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -604,12 +642,12 @@ struct MacRootView: View {
             }
             if list.name.caseInsensitiveCompare("Digital Workforce") == .orderedSame {
                 Button { openWorkforce(list) } label: {
-                    Label(list.name, systemImage: "folder")
+                    Label("Agent Workforce", systemImage: "folder")
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Digital Workforce")
+                .accessibilityLabel("Agent Workforce")
                 .help("Expand the staff and open the interactive org chart")
             } else if let status = ATOStatus.of(list, in: atoStatusRaw) {
                 Label {
@@ -711,7 +749,9 @@ struct MacRootView: View {
     /// Updates badge: reports published today.
     private var todaysUpdates: Int {
         let today = Date().formatted(.iso8601.year().month().day())
-        return agentBrowser.reports.filter { $0.date == today }.count
+        return agentBrowser.reports.filter {
+            $0.date == today && ReportPresentation.isUpdate(file: $0.file, title: $0.displayTitle)
+        }.count
     }
 
     /// Calendar badge: appointments from today onwards (everyone's — the calendar shows all).
@@ -771,10 +811,82 @@ struct MacRootView: View {
         }
     }
 
-    private func moveLists(from source: IndexSet, to destination: Int) {
-        // Same collapsed set as the ForEach above — onMove indices refer to visible rows.
-        ListHierarchy.applyMove(ListHierarchy.rows(lists, collapsed: collapsedLists),
-                                from: source, to: destination)
+    // MARK: - Sidebar list sections
+
+    /// Root lists that get their own sidebar section instead of sitting in My Lists.
+    static let projectsRoot = "Projects"
+    /// In this order: Human Workforce, Trainers, then Agent Workforce (the list is named "Digital Workforce").
+    static let workforceRoots = ["Human Workforce", "Trainers", "Digital Workforce"]
+
+    private func rootList(_ name: String) -> PlannerList? {
+        lists.first { $0.parent == nil && $0.name.caseInsensitiveCompare(name) == .orderedSame }
+    }
+
+    /// The collapsed set the sidebar draws with. The Projects root has no row of its own (its
+    /// sub-lists are the Projects section), so it always counts as open.
+    private var sidebarCollapsed: Set<UUID> {
+        var set = collapsedLists
+        if let projects = rootList(Self.projectsRoot) { set.remove(projects.id) }
+        return set
+    }
+
+    /// One root's visible rows (root first), cut from the full outline.
+    private func treeRows(_ root: PlannerList, in all: [ListHierarchy.Row]) -> [ListHierarchy.Row] {
+        guard let start = all.firstIndex(where: { $0.list.id == root.id }) else { return [] }
+        let end = all[(start + 1)...].firstIndex(where: { $0.depth == 0 }) ?? all.endIndex
+        return Array(all[start..<end])
+    }
+
+    /// Rows for My Lists: every tree except the ones with their own section.
+    private func myListRows(_ all: [ListHierarchy.Row]) -> [ListHierarchy.Row] {
+        let own = ([Self.projectsRoot] + Self.workforceRoots).compactMap { rootList($0)?.id }
+        var result: [ListHierarchy.Row] = []
+        var skipping = false
+        for row in all {
+            if row.depth == 0 { skipping = own.contains(row.list.id) }
+            if !skipping { result.append(row) }
+        }
+        return result
+    }
+
+    /// A list row, plus (under an open Digital Workforce) the agents that have no list of their own.
+    @ViewBuilder
+    private func listRows(_ row: ListHierarchy.Row, depth: Int, collapsed: Set<UUID>,
+                          counts: [UUID: Int]) -> some View {
+        userListRow(row.list, depth: depth,
+                    isCollapsed: collapsed.contains(row.list.id),
+                    count: counts[row.list.id] ?? 0)
+        if row.list.name.caseInsensitiveCompare("Digital Workforce") == .orderedSame,
+           !collapsed.contains(row.list.id) {
+            let listed = Set((row.list.children ?? []).map { $0.name.lowercased() })
+            ForEach(AgentRoster.staffIDs.filter { !listed.contains($0) }, id: \.self) { id in
+                if let agent = staffRoster[id] {
+                    Label(agent.displayName, systemImage: "person.crop.circle")
+                        .padding(.leading, CGFloat(depth + 1) * 28)
+                        .tag(SidebarSelection.digitalStaff(id))
+                        .accessibilityLabel("Chat with \(agent.displayName)")
+                }
+            }
+        }
+    }
+
+    /// `onMove` inside one section: its indices count only that section's rows, so map the
+    /// dragged row and the drop point back onto the full outline (same collapsed set the sidebar
+    /// draws with), where ListHierarchy works out the new parent and sibling order.
+    private func moveRows(_ shown: [ListHierarchy.Row], in all: [ListHierarchy.Row],
+                          from source: IndexSet, to destination: Int) {
+        guard let first = source.first, first < shown.count else { return }
+        func index(_ row: ListHierarchy.Row) -> Int? { all.firstIndex { $0.id == row.id } }
+        guard let from = index(shown[first]) else { return }
+        let to: Int
+        if destination < shown.count, let i = index(shown[destination]) {
+            to = i
+        } else if let last = shown.last, let i = index(last) {
+            to = i + 1
+        } else {
+            return
+        }
+        ListHierarchy.applyMove(all, from: IndexSet(integer: from), to: to)
     }
 
     private var renameBinding: Binding<Bool> {
@@ -808,7 +920,9 @@ struct MacRootView: View {
         case .category(.jobs):
             MacSchedulePane()
         case .category(.updates):
-            MacUpdatesPane()
+            MacUpdatesPane(feed: .updates)
+        case .category(.logs):
+            MacUpdatesPane(feed: .logs)
         case .category(.archive):
             ArchiveView()
         case .category(.settings):
