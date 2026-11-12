@@ -2,7 +2,8 @@
 
 ## [3.0] — 2026-11-12
 
-- Online classes and meetings copied into your Google Calendar keep their original Google Meet link. Google no longer swaps in a new link or emails you that the link was updated
+- Planner no longer adds your classes to your calendars. Classes and their Google Meet links come only from the training system, so each class shows once, with its own Meet link
+- Meetings copied into your Google Calendar keep their original Google Meet link. Google no longer swaps in a new link or emails you that the link was updated
 - On Mac, your project folders now sit directly under Projects in the sidebar
 
 ## [2.9] — 2026-11-08

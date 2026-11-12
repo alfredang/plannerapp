@@ -16,7 +16,10 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   `AboutView`, `RemindersSettingsView`. Changes there must still build for macOS: keep
   UIKit-only code behind `#if os(iOS)` and check the Mac build too.
 - `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` live in `project.yml` `settings.base`
-  (currently 3.0 / 47). The Mac target overrides its own build number.
+  (currently 3.0 / 48). The Mac target overrides its own build number. iOS 3.0 actually shipped
+  as build **2611121139** (the upload script's old timestamp default), so any further 3.0 upload
+  needs a higher number; 3.1 can go back to 49. The project's `upload_binary.sh` now defaults to
+  the `project.yml` number.
 
 ## Architecture
 
@@ -42,7 +45,7 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   date phrases that must appear verbatim, `SmartParser` makes the date; end time, location and
   meeting link ride in `notes`),
   `SmartParser` (deterministic dates), `ReminderScheduler` + `TodayAlerts` (local
-  notifications), `CalendarSync` (two-way EventKit sync with every ticked calendar, e.g. Google angchewhoe@ + angch@: each appointment is copied to all of them, events from any come into Planner; `CalendarAutoSync` runs it at launch, on `EKEventStoreChanged` and every 2 min; links by `calendarItemExternalIdentifier` in `calendarEventID` + a `Planner id:` line in each copy's notes + per-device `calendar.links`; per-device agreed-state in UserDefaults decides push vs pull; same-marker duplicate copies are removed), `CloudSyncStatus` (`syncNow`, last sync),
+  notifications), `CalendarSync` (two-way EventKit sync with every ticked calendar, e.g. Google angchewhoe@ + angch@: each appointment is copied to all of them, events from any come into Planner; `CalendarAutoSync` runs it at launch, on `EKEventStoreChanged` and every 2 min; links by `calendarItemExternalIdentifier` in `calendarEventID` + a `Planner id:` line in each copy's notes + per-device `calendar.links`; per-device agreed-state in UserDefaults decides push vs pull; same-marker duplicate copies are removed; **classes are read-only**: `ClassEvent.isClass` (Models/ClassEvent.swift — mode tag, `WSQ - `, TGS code, Course Run ID, `Class:` line, TMS organiser) makes `write` refuse them, since classes, their events and Meets come only from AI-LMS-TMS / AI-MMS / Apps Script; keep it in step with `is_class` in Hermes `calendar-sync/dual_sync.py`), `CloudSyncStatus` (`syncNow`, last sync),
   `DuplicateAudit`, `ModelUndoSupport`, `SpeechRecognizer`, `WeekStart`.
 - UI (`Views/MainTabView.swift`): bottom tabs Planner, Calendar, Archive, Settings, Feedback,
   About. `TodoListView` (Planner) has top tabs **Updates | Tasks | Appointments**, opens on

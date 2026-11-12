@@ -298,7 +298,9 @@ enum CalendarSync {
 
             // Missing copies. Not where this device already linked one (it was deleted there),
             // nor for an item whose event vanished everywhere (deleted in the calendar).
-            let mayCopy = live && date >= today && date < windowEnd && (pairs.isEmpty ? !wasLinked : true)
+            // Never for a class: the TMS/MMS/Apps Script puts it in the calendars.
+            let mayCopy = live && !ClassEvent.isClass(item) && date >= today && date < windowEnd
+                && (pairs.isEmpty ? !wasLinked : true)
                 && (localItems.contains(item.id) || Date().timeIntervalSince(item.createdAt) > adoptionGrace)
             if mayCopy {
                 for (i, index) in indexes.enumerated()
@@ -391,7 +393,8 @@ enum CalendarSync {
             let key = linkKey(event)
             if fingerprint(event) == now {
                 // In step. Planner's own copies also follow note edits (comments, links).
-                if ownsEvent(event, item: item), canEdit(event), event.notes != eventNotes(for: item) {
+                if ownsEvent(event, item: item), canEdit(event), !ClassEvent.isClass(item),
+                   event.notes != eventNotes(for: item) {
                     event.notes = eventNotes(for: item)
                     try? store.save(event, span: .thisEvent, commit: true)
                 }
@@ -426,6 +429,10 @@ enum CalendarSync {
 
     private static func write(_ item: PlannerItem, to event: EKEvent, created: Bool) -> Bool {
         guard let date = item.date else { return false }
+        // Classes, their calendar events and their Meet links come only from AI-LMS-TMS,
+        // AI-MMS or the Google Apps Script. Planner never creates, copies or edits a class
+        // event: it only reads them (changes made in the calendar still come into Planner).
+        guard !ClassEvent.isClass(item) else { return false }
         event.title = item.title
         let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
         if parts.hour == 0 && parts.minute == 0 {
@@ -499,6 +506,14 @@ enum CalendarSync {
         if let url = event.url?.absoluteString, url.hasPrefix("http"),
            MeetingLink.find(in: lines.joined(separator: "\n")) == nil {
             lines.append("\(MeetingLink.tag) \(url)")
+        }
+        // A TMS class invite is marked as a class even when its title doesn't show it, so
+        // Planner never copies it (see `ClassEvent`).
+        let organiser = event.organizer?.url.absoluteString
+            .replacingOccurrences(of: "mailto:", with: "", options: .caseInsensitive)
+        if ClassEvent.isClass(title: event.title ?? "", organiser: organiser),
+           !ClassEvent.isClass(title: event.title ?? "", notes: lines.joined(separator: "\n")) {
+            lines.append("Class: set up in AI-LMS-TMS")
         }
         var notes = lines.joined(separator: "\n")
         if !event.isAllDay {

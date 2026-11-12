@@ -110,8 +110,10 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   person's list shows theirs. Set who "you" are in Settings ▸ Me.
 - 📆 **Two-way Calendar sync** — keep appointments in step with the calendars you tick (for
   example a personal and a work Google account added in iOS Settings): each appointment is
-  copied to all of them, and events from any of them come into Planner. Google Meet links are
-  kept exactly as they are; a copy never gets a new Meet. EventKit only, off until enabled.
+  copied to all of them, and events from any of them come into Planner. Classes are read-only:
+  Planner shows them but never creates, copies or edits a class event (classes and their Meet
+  links come only from the training system). Google Meet links are kept exactly as they are; a
+  copy never gets a new Meet. EventKit only, off until enabled.
 - ❓ **"Did this happen?"** — an appointment that's over but never ticked asks instead of
   judging, with **Yes, it happened**, **Cancelled**, **Rescheduled** and **Reply / comment**.
   Cancelled crosses it out (with Undo); Rescheduled picks a new date and time, moves the
