@@ -490,10 +490,8 @@ struct MacRootView: View {
             if let projects = rootList(Self.projectsRoot) {
                 let tree = Array(treeRows(projects, in: allRows).dropFirst())
                 Section("Projects") {
-                    // The Projects folder's own items (and its whole count); its sub-lists follow.
-                    Label("All Projects", systemImage: "folder")
-                        .badge(counts[projects.id] ?? 0)
-                        .tag(selection(for: projects))
+                    // The Projects folder's sub-lists sit directly under the header, one level up;
+                    // the folder itself has no row.
                     ForEach(tree) { row in
                         listRows(row, depth: row.depth - 1, collapsed: collapsed, counts: counts)
                     }

@@ -1,5 +1,10 @@
 # Changelog
 
+## [3.0] — 2026-11-12
+
+- Online classes and meetings copied into your Google Calendar keep their original Google Meet link. Google no longer swaps in a new link or emails you that the link was updated
+- On Mac, your project folders now sit directly under Projects in the sidebar
+
 ## [2.9] — 2026-11-08
 
 - Open a list on your iPhone or iPad and its pages, such as a client overview or the All Client Projects board, are shown first; tap one to read it, with the same content you see on your Mac

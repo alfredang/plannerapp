@@ -20,6 +20,12 @@ enum MeetingLink {
         return firstMatch(hostPattern, in: text, group: 0).map(clean)
     }
 
+    /// A Google Meet link. Calendar copies must never carry one outside the notes, or Google
+    /// replaces it with a new Meet (see `CalendarSync.write`).
+    static func isGoogleMeet(_ link: String) -> Bool {
+        link.range(of: #"(?i)(^|[/.])meet\.google\.com(/|$)"#, options: .regularExpression) != nil
+    }
+
     /// A tappable URL for a stored link ("meet.google.com/x" → "https://meet.google.com/x").
     static func url(for link: String) -> URL? {
         let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)

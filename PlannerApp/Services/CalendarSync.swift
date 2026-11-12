@@ -446,8 +446,18 @@ enum CalendarSync {
         }
         if created || ownsEvent(event, item: item) {
             event.notes = eventNotes(for: item)
-            if let link = item.meetingLink, event.location?.isEmpty ?? true {
+            // A Google Meet URL in a Google event's location makes Google attach a Meet of
+            // its own, and as the code belongs to another organiser (the TMS creates class
+            // Meets on the work calendar) it swaps in a brand-new link and emails "The Google
+            // Meet video conference link was automatically updated". So Meet links ride in the
+            // notes only ("Meeting link: …", already in eventNotes); other hosts go in location.
+            if let link = item.meetingLink, !MeetingLink.isGoogleMeet(link), event.location?.isEmpty ?? true {
                 event.location = MeetingLink.url(for: link)?.absoluteString ?? link
+            }
+            // Copies written before that rule carry the Meet URL in location: clear it.
+            if let location = event.location, MeetingLink.isGoogleMeet(location),
+               location.range(of: #"^\s*\S+\s*$"#, options: .regularExpression) != nil {
+                event.location = nil
             }
         }
         do {

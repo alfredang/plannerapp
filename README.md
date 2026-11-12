@@ -108,8 +108,10 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - 👤 **Delegate with Assign to** — put someone's name on an item and it leaves your queue:
   the smart views show only your own work (unassigned, or assigned to you), while that
   person's list shows theirs. Set who "you" are in Settings ▸ Me.
-- 📆 **Mirror to your system Calendar** — optionally copy dated appointments into any calendar
-  you pick, including a Google account added in iOS Settings; EventKit only, off until enabled.
+- 📆 **Two-way Calendar sync** — keep appointments in step with the calendars you tick (for
+  example a personal and a work Google account added in iOS Settings): each appointment is
+  copied to all of them, and events from any of them come into Planner. Google Meet links are
+  kept exactly as they are; a copy never gets a new Meet. EventKit only, off until enabled.
 - ❓ **"Did this happen?"** — an appointment that's over but never ticked asks instead of
   judging, with **Yes, it happened**, **Cancelled**, **Rescheduled** and **Reply / comment**.
   Cancelled crosses it out (with Undo); Rescheduled picks a new date and time, moves the
@@ -129,7 +131,7 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
 - 🖥 **macOS desktop edition** — a two-column Mac app that opens on **Updates**. The sidebar is grouped
   into sections: **Strategy** (Updates, Goals, Ideas), **Workforce** (Human Workforce, Trainers,
   Agent Workforce, Agent Jobs, Hermes Agent), **Schedule** (Today, Appointments, Calendar),
-  **Projects** (All Projects and each project folder), **Tasks** (To-Do, Pinned), **Content**
+  **Projects** (each project folder), **Tasks** (To-Do, Pinned), **Content**
   (Pages), **Logs**, then your own lists; the item list with the capture bar is on the right. Distributed as a
   [DMG](https://github.com/alfredang/plannerapp/releases/latest/download/Planner.dmg); build it
   yourself with `./scripts/build-macos-dmg.sh`.

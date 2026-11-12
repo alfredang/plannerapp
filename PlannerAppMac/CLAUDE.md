@@ -56,7 +56,7 @@ the workspace `memory/` folder.
   - Sharing another iOS view means adding it to the `PlannerAppMac` sources in `project.yml`.
 - `PRODUCT_NAME: Planner` → the app is `Planner.app`, binary `Contents/MacOS/Planner`.
 - Bundle id `com.tertiaryinfotech.plannerapp` (same as iOS), team `GU9WTSTX9M`, macOS 14+.
-- Mac overrides `CURRENT_PROJECT_VERSION` (currently "58") separately from the iOS base value;
+- Mac overrides `CURRENT_PROJECT_VERSION` (currently "63") separately from the iOS base value;
   `MARKETING_VERSION` is shared.
 - SwiftTerm is pinned `exactVersion: 1.11.2` — 1.12+ needs the Xcode Metal toolchain. Don't bump.
 
@@ -70,8 +70,8 @@ the workspace `memory/` folder.
   the launch page — Goals, Ideas), Workforce (the Human Workforce and Trainers list trees, the Digital Workforce list
   tree shown as "Agent Workforce" with its staff, Agent Jobs = `jobs`, and a "Hermes Agent" button —
   `HermesDesktop.open` activates/launches `com.nousresearch.hermes`), Schedule (Today, Appointments —
-  grouped by day, absorbed Upcoming — and Calendar), Projects ("All Projects" = the Projects list's own
-  items, then its sub-lists), Tasks (To-Do, Pinned), Content (Pages), Logs, My Lists (every other list
+  grouped by day, absorbed Upcoming — and Calendar), Projects (the Projects list's sub-lists one level
+  up; the folder itself has no row, its own items show in To-Do/Pages), Tasks (To-Do, Pinned), Content (Pages), Logs, My Lists (every other list
   tree), Browse (Archive), Support. Which roots get their own section: `projectsRoot` / `workforceRoots`
   (matched by name; data unchanged). Each section's drag-to-reorder maps its indices back onto the full
   outline (`moveRows`). `SidebarItem` keeps `.scheduled`/`.todos` for persisted state only.
