@@ -1,5 +1,9 @@
 # Changelog
 
+## [3.1] — 2026-11-14
+
+- Swipe an appointment to the left in the Calendar, in the month view or the list, and tap Delete to remove it from Planner
+
 ## [3.0] — 2026-11-12
 
 - Planner no longer adds your classes to your calendars. Classes and their Google Meet links come only from the training system, so each class shows once, with its own Meet link

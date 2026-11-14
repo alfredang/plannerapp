@@ -105,6 +105,9 @@ all synced across your iPhone and Mac through your personal iCloud, with full un
   it too.
 - 📌 **Pin to top** — tap the pin on a row (or swipe right on iPhone); pinned entries float
   above the rest, and the **Pinned** view collects them.
+- 🗑️ **Swipe to delete in the Calendar (iPhone)** — swipe an appointment left in the month
+  view or the list and tap **Delete**. It leaves Planner on every device; the event in your
+  Google or Apple calendar is left as it is.
 - 👤 **Delegate with Assign to** — put someone's name on an item and it leaves your queue:
   the smart views show only your own work (unassigned, or assigned to you), while that
   person's list shows theirs. Set who "you" are in Settings ▸ Me.
@@ -274,7 +277,7 @@ PlannerAppMac/                          — macOS desktop edition (DMG)
                 LahLahVoiceLink.swift   — mic button: dictate to the agent with LahLah Voice
                 MacSettingsPane.swift   — owner, appearance, WhatsApp, agent safety
 
-PlannerAppUITests/                      — iOS UI tests (navigation, appointment edits)
+PlannerAppUITests/                      — iOS UI tests (navigation, appointment edits, calendar swipe-to-delete)
 
 scripts/build-macos-dmg.sh              — Release build → signed, notarized DMG
 scripts/test-*.swift                    — standalone regression tests (capture-bar edits,

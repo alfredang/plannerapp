@@ -4,6 +4,7 @@ import SwiftData
 /// The iPhone/iPad calendar of every appointment — the same two modes as the Mac pane:
 ///  * **Month** — a month grid with each day's appointments written into its cell (tap a
 ///    day for its agenda below, swipe to change month, long-press a day to add one);
+///    swipe an appointment left to delete it (in either mode);
 ///  * **List** — every appointment in date order, grouped by day, opened at today.
 /// Everyone's appointments are shown (the assignee is labelled on the row), unlike the
 /// Planner's smart views which only show the owner's own queue.
@@ -86,15 +87,22 @@ struct CalendarView: View {
 
                 switch mode {
                 case .month:
-                    // One scrolling page, so pulling down anywhere syncs with iCloud.
-                    ScrollView {
+                    // One scrolling page, so pulling down anywhere syncs with iCloud. A List
+                    // (not a ScrollView) so the day's appointments can be swiped to delete.
+                    List {
                         VStack(spacing: 0) {
                             monthHeader
                             monthGrid(days)
                             Divider()
-                            dayAgenda(days[selectedDay] ?? [])
                         }
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        dayAgenda(days[selectedDay] ?? [])
                     }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .environment(\.defaultMinListRowHeight, 0)
                     .refreshable { await sync.syncNow(context: context) }
                 case .list:
                     Divider()
@@ -357,49 +365,66 @@ struct CalendarView: View {
 
     // MARK: - Selected-day agenda
 
-    /// The selected day's appointments, drawn as an inset-grouped card (not a List) so it
-    /// scrolls with the grid as one page.
+    /// The selected day's appointments as rows of the month page's list, drawn to look like
+    /// one inset-grouped card. Real list rows, so each one swipes left to delete.
+    @ViewBuilder
     private func dayAgenda(_ items: [PlannerItem]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(DaySections.title(for: selectedDay))
-                if let holiday = SingaporeHolidays.name(on: selectedDay) {
-                    Spacer()
-                    Label(holiday, systemImage: "flag.fill")
-                        .foregroundStyle(Theme.holidayText)
-                }
+        HStack {
+            Text(DaySections.title(for: selectedDay))
+            if let holiday = SingaporeHolidays.name(on: selectedDay) {
+                Spacer()
+                Label(holiday, systemImage: "flag.fill")
+                    .foregroundStyle(Theme.holidayText)
             }
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
-
-            VStack(alignment: .leading, spacing: 0) {
-                if items.isEmpty {
-                    Button {
-                        addAppointment(on: selectedDay)
-                    } label: {
-                        Label("No appointments — tap to add one", systemImage: "plus.circle")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.borderless)
-                    .padding(.horizontal, 16)
-                } else {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        if index > 0 { Divider().padding(.leading, 16) }
-                        row(item)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                    }
-                }
-            }
-            .background(Color(.secondarySystemGroupedBackground),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .padding(.horizontal, 16)
         }
-        .padding(.top, 16)
-        .padding(.bottom, 24)
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 6, trailing: 16))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+
+        if items.isEmpty {
+            Button {
+                addAppointment(on: selectedDay)
+            } label: {
+                Label("No appointments — tap to add one", systemImage: "plus.circle")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.borderless)
+            .listRowInsets(EdgeInsets(top: 0, leading: 32, bottom: 0, trailing: 32))
+            .listRowSeparator(.hidden)
+            .listRowBackground(cardBackground(first: true, last: true))
+        } else {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                row(item)
+                    .padding(.vertical, 6)
+                    .overlay(alignment: .top) {
+                        if index > 0 { Divider().padding(.trailing, -16) }
+                    }
+                    .listRowInsets(EdgeInsets(top: 0, leading: 32, bottom: 0, trailing: 32))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(cardBackground(first: index == 0, last: index == items.count - 1))
+            }
+        }
+
+        Color.clear
+            .frame(height: 24)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+    }
+
+    /// One row's slice of the day card: rounded only at the card's top and bottom.
+    private func cardBackground(first: Bool, last: Bool) -> some View {
+        UnevenRoundedRectangle(topLeadingRadius: first ? 12 : 0,
+                               bottomLeadingRadius: last ? 12 : 0,
+                               bottomTrailingRadius: last ? 12 : 0,
+                               topTrailingRadius: first ? 12 : 0,
+                               style: .continuous)
+            .fill(Color(.secondarySystemGroupedBackground))
+            .padding(.horizontal, 16)
     }
 
     private func row(_ item: PlannerItem) -> some View {
@@ -408,6 +433,22 @@ struct CalendarView: View {
         } onEdit: {
             editingItem = item
         }
+        // Swipe left to delete. Not a full swipe: deleting takes the swipe and a tap.
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                delete(item)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .tint(.red)
+        }
+    }
+
+    /// Removes the appointment from Planner on every device. Its calendar events are left
+    /// alone (a class or an invite is not Planner's to remove) and are not imported again.
+    private func delete(_ item: PlannerItem) {
+        withAnimation { context.delete(item) }
+        try? context.save()
     }
 
     private func addAppointment(on day: Date) {

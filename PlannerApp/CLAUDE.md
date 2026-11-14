@@ -16,7 +16,7 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   `AboutView`, `RemindersSettingsView`. Changes there must still build for macOS: keep
   UIKit-only code behind `#if os(iOS)` and check the Mac build too.
 - `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` live in `project.yml` `settings.base`
-  (currently 3.0 / 48). The Mac target overrides its own build number. iOS 3.0 actually shipped
+  (currently 3.1 / 49). The Mac target overrides its own build number. iOS 3.0 actually shipped
   as build **2611121139** (the upload script's old timestamp default), so any further 3.0 upload
   needs a higher number; 3.1 can go back to 49. The project's `upload_binary.sh` now defaults to
   the `project.yml` number.
@@ -51,7 +51,8 @@ CloudKit sync with the Mac edition; Mac notes are in `../PlannerAppMac/CLAUDE.md
   About. `TodoListView` (Planner) has top tabs **Updates | Tasks | Appointments**, opens on
   Updates (`UpdatesView`), and shows the chatbot capture bar (type or dictate) on Tasks and
   Appointments. `CalendarView` is month grid + list with a refresh button and pull-to-refresh
-  (`CloudSyncStatus.syncNow`); Planner and Updates are `.refreshable` too.
+  (`CloudSyncStatus.syncNow`); both modes are a `List`, so an appointment row swipes left to
+  Delete (`context.delete`, calendar events untouched and not re-imported); Planner and Updates are `.refreshable` too.
   **+ on Appointments and on the Calendar opens `AppointmentChatView`** (iOS-only, not in the
   Mac target): paste/pick a screenshot (Vision OCR on-device), dictate or type → draft card →
   Add / Edit (the form, prefilled via `ParsedEntry.notes`/`meetingLink`). "add this to
